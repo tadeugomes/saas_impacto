@@ -1,0 +1,352 @@
+📘 REGISTRO OFICIAL DE FONTES DE DADOS
+Sistema de Análise do Impacto Econômico do Setor Portuário Brasileiro
+
+Versão: 1.0
+Data: 2025-01-XX
+Responsável técnico: (a definir)
+Ambiente: Google BigQuery – Região US
+
+1. Objetivo do Documento
+
+Este documento tem por finalidade registrar oficialmente as fontes de dados públicas utilizadas pelo Sistema de Análise do Impacto Econômico do Setor Portuário Brasileiro, descrevendo:
+
+a origem institucional dos dados;
+
+os conjuntos e tabelas utilizados no BigQuery;
+
+o escopo temático de cada base;
+
+as observações técnicas e metodológicas relevantes para uso futuro.
+
+O documento não define indicadores, fórmulas ou modelos analíticos, que serão objeto de documentação específica em etapa posterior.
+
+2. Princípios Gerais de Uso dos Dados
+
+Todas as bases listadas são públicas, oficiais e auditáveis.
+
+Os dados são consumidos diretamente no BigQuery, utilizando nomes totalmente qualificados (projeto.dataset.tabela).
+
+A região US é adotada como padrão para evitar custos e erros de cross-region.
+
+Sempre que disponíveis, são priorizadas tabelas e views tratadas/validadas pelas instituições de origem.
+
+Qualquer limitação metodológica das fontes é explicitamente registrada neste documento.
+
+3. Dados Portuários – ANTAQ
+3.1 Instituição Responsável
+
+Agência Nacional de Transportes Aquaviários – ANTAQ
+
+3.2 Projeto e Dataset BigQuery
+antaqdados.br_antaq_estatistico_aquaviario
+
+3.3 Escopo Geral
+
+Movimentação de cargas (toneladas, TEUs);
+
+Atracações;
+
+Tempos operacionais;
+
+Instalações portuárias;
+
+Mercadorias e tipologia de carga;
+
+Taxas de ocupação;
+
+Metadados e registros de validação.
+
+3.4 Tabelas Operacionais
+
+atracacao
+
+carga
+
+carga_conteinerizada
+
+carga_hidrovia
+
+carga_regiao
+
+carga_rio
+
+instalacao_origem
+
+instalacao_destino
+
+tempos_atracacao
+
+tempos_atracacao_paralisacao
+
+taxa_ocupacao
+
+taxa_ocupacao_com_carga
+
+taxa_ocupacao_to_atracacao
+
+mercadoria_carga
+
+mercadoria_carga_conteiner
+
+dicionario_dados
+
+log_validacao_mensal
+
+3.5 Views Validadas (Uso Preferencial)
+
+v_atracacao_validada
+
+v_carga_validada
+
+v_carga_oficial_antaq
+
+v_carga_metodologia_oficial
+
+v_resumo_instalacoes
+
+v_resumo_integridade_referencial
+
+v_resumo_mercadorias
+
+vw_atracacao_enriched
+
+vw_carga_enriched
+
+v_analise_portuaria_1semestre_2025
+
+vw_metadados_consulta
+
+3.6 Observações Técnicas
+
+As views validadas incorporam regras oficiais da ANTAQ.
+
+As tabelas brutas são utilizadas apenas para auditoria ou análises exploratórias.
+
+Esta é a fonte primária e oficial de dados portuários do sistema.
+
+4. Produto Interno Bruto (PIB) – IBGE
+4.1 Instituição Responsável
+
+Instituto Brasileiro de Geografia e Estatística – IBGE
+
+4.2 Dataset (Base dos Dados)
+
+Produto Interno Bruto – PIB
+
+4.3 Caminho BigQuery
+basedosdados.br_ibge_pib.municipio
+
+4.4 Escopo
+
+PIB a preços correntes;
+
+PIB per capita;
+
+Desagregação setorial:
+
+Agropecuária;
+
+Indústria;
+
+Serviços;
+
+Abrangência municipal, estadual e nacional.
+
+4.5 Cobertura Temporal
+
+1996 a 2023
+
+Última atualização na Base dos Dados: agosto de 2024
+
+5. População – IBGE
+5.1 Dataset
+
+População – IBGE
+
+5.2 Caminho BigQuery
+basedosdados.br_ibge_populacao.municipio
+
+5.3 Escopo
+
+População residente por município e UF;
+
+Estimativas intercensitárias e valores censitários.
+
+5.4 Uso Estrutural
+
+Indicadores per capita;
+
+Padronização territorial;
+
+Base demográfica de controle.
+
+6. Emprego Formal – RAIS
+6.1 Instituição Responsável
+
+Ministério do Trabalho e Emprego
+
+6.2 Dataset
+
+Relação Anual de Informações Sociais – RAIS
+
+6.3 Caminho BigQuery
+basedosdados.br_me_rais.microdados_vinculos
+
+6.4 Escopo
+
+Estoque anual de vínculos formais;
+
+Remuneração;
+
+Ocupação (CBO);
+
+Atividade econômica (CNAE);
+
+Sexo e escolaridade;
+
+Localização municipal.
+
+6.5 Observação Metodológica
+
+Base censitária administrativa.
+
+Única fonte de emprego formal utilizada no sistema.
+
+7. Comércio Exterior – Comex Stat (SECEX)
+7.1 Instituição Responsável
+
+Secretaria de Comércio Exterior – MDIC
+
+7.2 Dataset
+
+Comex Stat
+
+7.3 Caminhos BigQuery
+
+Exportações:
+
+basedosdados.br_me_comex_stat.municipio_exportacao
+
+
+Importações:
+
+basedosdados.br_me_comex_stat.municipio_importacao
+
+7.4 Escopo
+
+Valor FOB (US$);
+
+Peso líquido (kg);
+
+Produto (NCM);
+
+País de origem/destino;
+
+Município e UF.
+
+7.5 Nota Metodológica Importante (⚠️)
+
+Embora exista identificação da unidade da Receita Federal (URF), permitindo tecnicamente análises “por porto”, a SECEX não valida oficialmente estatísticas por porto.
+Qualquer uso dessa dimensão deve ser explicitamente tratado como estimativa técnica, com nota metodológica.
+
+8. Arrecadação Pública – SICONFI / FINBRA
+8.1 Instituição Responsável
+
+Tesouro Nacional – Ministério da Fazenda
+
+8.2 Dataset
+
+SICONFI / FINBRA
+
+8.3 Caminho BigQuery
+basedosdados.br_tesouro_finbra.receitas
+
+8.4 Escopo
+
+ICMS;
+
+ISS;
+
+IPVA;
+
+Taxas;
+
+Transferências intergovernamentais.
+
+8.5 Observações
+
+Dados predominantemente anuais.
+
+Não há desagregação por setor econômico.
+
+9. Índice de Preços – IPCA
+9.1 Dataset
+
+Índice Nacional de Preços ao Consumidor Amplo – IPCA
+
+9.2 Caminho BigQuery
+basedosdados.br_ibge_ipca.mes_brasil
+
+9.3 Uso no Sistema
+
+Deflacionamento de valores monetários;
+
+Construção de séries reais comparáveis no tempo.
+
+10. Censo Demográfico – IBGE
+10.1 Datasets
+
+Censos Demográficos 2010 e 2022
+
+10.2 Caminhos BigQuery (exemplos)
+basedosdados.br_ibge_censo_2010.*
+basedosdados.br_ibge_censo_2022.*
+
+10.3 Escopo
+
+Perfil sociodemográfico;
+
+Escolaridade;
+
+Condições domiciliares;
+
+Estrutura populacional.
+
+10.4 Observação
+
+Priorizar tabelas agregadas por município.
+
+Microdados não são consumidos diretamente pelo sistema.
+
+11. PNAD Contínua – IBGE
+11.1 Dataset
+
+Pesquisa Nacional por Amostra de Domicílios Contínua – PNAD-C
+
+11.2 Caminhos BigQuery
+basedosdados.br_ibge_pnadc.agregado_brasil
+basedosdados.br_ibge_pnadc.agregado_uf
+
+11.3 Escopo
+
+Rendimento;
+
+Ocupação;
+
+Informalidade;
+
+Condições sociais.
+
+11.4 Observação Metodológica
+
+Pesquisa amostral.
+
+Utilizada apenas como complemento analítico à RAIS.
+
+12. Considerações Finais
+
+Este documento constitui o registro oficial das fontes de dados do sistema.
+
+Indicadores, modelos econométricos e métricas de impacto serão documentados separadamente.
+
+Atualizações deste registro devem ser versionadas e datadas.

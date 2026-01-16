@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bigquery": {
+      "command": "/Users/tgt/.local/bin/mcp-toolbox",
+      "args": ["--prebuilt", "bigquery", "--stdio"],
+      "env": {
+        "BIGQUERY_PROJECT": "saasimpacto"
+      }
+    }
+  }
+}
