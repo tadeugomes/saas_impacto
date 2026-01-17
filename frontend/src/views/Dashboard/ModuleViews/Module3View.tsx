@@ -9,13 +9,18 @@ import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
 
-// Note: These indicators currently have NO DATA in the database
+// Indicadores do Módulo 3 - Recursos Humanos (RAIS)
+// Nota: IND-3.03 e IND-3.09 necessitam visualização especial (dados agrupados)
 const INDICATORS_INFO = [
   { code: 'IND-3.01', name: 'Empregos Portuários', unit: 'Empregos', desc: 'Total de empregos no setor portuário (RAIS)', valueField: 'empregos_portuarios' },
   { code: 'IND-3.02', name: 'Paridade de Gênero', unit: '%', desc: 'Percentual de mulheres no setor portuário', valueField: 'percentual_feminino' },
   { code: 'IND-3.04', name: 'Taxa Emprego Temporário', unit: '%', desc: 'Percentual de contratos temporários', valueField: 'taxa_temporario' },
   { code: 'IND-3.05', name: 'Salário Médio', unit: 'R$', desc: 'Remuneração média mensal', valueField: 'salario_medio' },
   { code: 'IND-3.06', name: 'Massa Salarial', unit: 'R$', desc: 'Massa salarial anual estimada', valueField: 'massa_salarial_anual' },
+  { code: 'IND-3.07', name: 'Produtividade', unit: 'ton/emp', desc: 'Toneladas movimentadas por empregado portuário', valueField: 'ton_por_empregado' },
+  { code: 'IND-3.08', name: 'Receita por Empregado', unit: 'R$/emp', desc: 'PIB por empregado portuário (proxy)', valueField: 'pib_por_empregado_portuario' },
+  { code: 'IND-3.10', name: 'Idade Média', unit: 'Anos', desc: 'Idade média dos trabalhadores portuários', valueField: 'idade_media' },
+  { code: 'IND-3.11', name: 'Variação Anual Empregos', unit: '%', desc: 'Variação percentual anual de empregos', valueField: 'variacao_percentual' },
   { code: 'IND-3.12', name: 'Participação Emprego Local', unit: '%', desc: 'Participação do setor portuário no emprego total do município', valueField: 'participacao_emprego_local' },
 ];
 
@@ -45,7 +50,11 @@ export function Module3View() {
               ano: selectedYear,
               id_instalacao: selectedInstallation || undefined
             },
-          }).catch(() => ({ data: [] }))
+          }).catch((err) => {
+            // Log do erro para facilitar debugging
+            console.error(`Erro ao buscar indicador ${ind.code}:`, err);
+            return { data: [], error: err.response?.data?.detail || err.message };
+          })
         );
         const results = await Promise.all(promises);
         const mapped: Record<string, any> = {};
@@ -54,6 +63,7 @@ export function Module3View() {
         });
         setIndicators(mapped);
       } catch (err: any) {
+        console.error('Erro ao carregar indicadores do Módulo 3:', err);
         setError(err.response?.data?.detail || 'Erro ao carregar indicadores');
       } finally {
         setIsLoading(false);
@@ -78,7 +88,7 @@ export function Module3View() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Módulo 3 - Recursos Humanos</h1>
           <p className="text-gray-500 mt-1">
-            6 indicadores de recursos humanos
+            10 indicadores de recursos humanos baseados em dados RAIS
           </p>
         </div>
         <ExportButton moduleCode="3" />
@@ -92,6 +102,7 @@ export function Module3View() {
         {INDICATORS_INFO.map((ind) => {
           const indData = indicators[ind.code];
           const hasData = indData?.data && indData.data.length > 0;
+          const hasError = indData?.error;
 
           return (
             <ChartCard
@@ -113,8 +124,20 @@ export function Module3View() {
                   valueFormat={getIndicatorFormat(ind.code)}
                 />
               ) : (
-                <div className="h-64 flex items-center justify-center text-gray-400">
-                  Dados não disponíveis
+                <div className="h-64 flex flex-col items-center justify-center text-gray-400">
+                  {hasError ? (
+                    <>
+                      <p className="text-red-500 mb-2">Erro ao carregar dados</p>
+                      <p className="text-sm text-gray-500">{hasError}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Dados não disponíveis</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Verifique os filtros ou aguarde disponibilização dos dados RAIS
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </ChartCard>
