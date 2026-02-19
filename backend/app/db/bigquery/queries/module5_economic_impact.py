@@ -1,13 +1,15 @@
 """
 Queries BigQuery para o Módulo 5 - Impacto Econômico Regional.
 
-Este módulo contém as queries SQL para cálculo dos 18 indicadores
+Este módulo contém as queries SQL para cálculo dos 21 indicadores
 do Módulo 5 de impacto econômico regional.
 
 NOTA: Usa view oficial ANTAQ v_carga_metodologia_oficial para dados de carga.
 """
 
 from typing import Optional
+
+from app.db.bigquery.marts.module5 import MART_IMPACTO_ECONOMICO_FQTN
 
 
 # ============================================================================
@@ -63,6 +65,7 @@ def query_pib_municipal(
         where_clauses.append(f"p.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "p.ano DESC" if id_municipio else "p.pib DESC"
 
     return f"""
     SELECT
@@ -78,7 +81,7 @@ def query_pib_municipal(
         p.pib IS NOT NULL
         {f"AND {where_sql}" if where_sql else ""}
     ORDER BY
-        p.pib DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -104,6 +107,7 @@ def query_pib_per_capita(
         where_clauses.append(f"p.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "p.ano DESC" if id_municipio else "pib_per_capita DESC"
 
     return f"""
     SELECT
@@ -123,7 +127,7 @@ def query_pib_per_capita(
         AND pop.populacao > 0
         {f"AND {where_sql}" if where_sql else ""}
     ORDER BY
-        pib_per_capita DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -149,6 +153,7 @@ def query_populacao_municipal(
         where_clauses.append(f"p.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "p.ano DESC" if id_municipio else "p.populacao DESC"
 
     return f"""
     SELECT
@@ -164,7 +169,7 @@ def query_populacao_municipal(
         p.populacao IS NOT NULL
         {f"AND {where_sql}" if where_sql else ""}
     ORDER BY
-        p.populacao DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -190,6 +195,7 @@ def query_pib_setorial_servicos(
         where_clauses.append(f"p.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "p.ano DESC" if id_municipio else "pib_servicos_percentual DESC"
 
     return f"""
     SELECT
@@ -207,7 +213,7 @@ def query_pib_setorial_servicos(
         AND p.pib > 0
         {f"AND {where_sql}" if where_sql else ""}
     ORDER BY
-        pib_servicos_percentual DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -233,6 +239,7 @@ def query_pib_setorial_industria(
         where_clauses.append(f"p.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "p.ano DESC" if id_municipio else "pib_industria_percentual DESC"
 
     return f"""
     SELECT
@@ -250,7 +257,7 @@ def query_pib_setorial_industria(
         AND p.pib > 0
         {f"AND {where_sql}" if where_sql else ""}
     ORDER BY
-        pib_industria_percentual DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -269,37 +276,31 @@ def query_intensidade_portuaria(
     """
     where_subquery = []
     if id_municipio:
-        where_subquery.append(f"dir2.id_municipio = '{id_municipio}'")
+        where_subquery.append(f"m.id_municipio = '{id_municipio}'")
     if ano:
-        where_subquery.append(f"CAST(c.ano AS INT64) = {ano}")
+        where_subquery.append(f"m.ano = {ano}")
     elif ano_inicio and ano_fim:
-        where_subquery.append(f"CAST(c.ano AS INT64) BETWEEN {ano_inicio} AND {ano_fim}")
+        where_subquery.append(f"m.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_subquery_sql = "\n            AND ".join(where_subquery) if where_subquery else ""
 
+    order_by = "m.ano DESC" if id_municipio else "intensidade_portuaria DESC"
+
     return f"""
     SELECT
-        a.id_municipio,
+        m.id_municipio,
         municipio_dir.nome AS nome_municipio,
-        a.ano,
-        ROUND(a.tonelagem / NULLIF(p.pib, 0), 4) AS intensidade_portuaria
-    FROM
-        (SELECT dir2.id_municipio, CAST(c.ano AS INT64) AS ano, SUM(c.vlpesocargabruta_oficial) AS tonelagem
-         FROM `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-         JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir2 ON c.municipio = dir2.nome
-         WHERE c.vlpesocargabruta_oficial IS NOT NULL
-         {f"AND {where_subquery_sql}" if where_subquery_sql else ""}
-         GROUP BY 1, 2) a
-    INNER JOIN
-        `{BD_DADOS_PIB}` p ON a.id_municipio = p.id_municipio AND a.ano = p.ano
+        m.ano,
+        ROUND(m.tonelagem_antaq_oficial / NULLIF(m.pib, 0), 4) AS intensidade_portuaria
+    FROM {MART_IMPACTO_ECONOMICO_FQTN} m
     LEFT JOIN
-        `{BD_DADOS_DIRETORIO_MUNICIPIO}` municipio_dir ON a.id_municipio = municipio_dir.id_municipio
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` municipio_dir ON m.id_municipio = municipio_dir.id_municipio
     WHERE
-        p.pib IS NOT NULL
-        AND p.pib > 0
+        m.pib IS NOT NULL
+        AND m.pib > 0
+        {f"AND {where_subquery_sql}" if where_subquery_sql else ""}
     ORDER BY
-        a.ano DESC,
-        intensidade_portuaria DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -318,34 +319,34 @@ def query_intensidade_comercial(
     """
     where_clauses = []
     if id_municipio:
-        where_clauses.append(f"dir.id_municipio = '{id_municipio}'")
+        where_clauses.append(f"m.id_municipio = '{id_municipio}'")
     if ano:
-        where_clauses.append(f"CAST(c.ano AS INT64) = {ano}")
+        where_clauses.append(f"m.ano = {ano}")
     elif ano_inicio and ano_fim:
-        where_clauses.append(f"CAST(c.ano AS INT64) BETWEEN {ano_inicio} AND {ano_fim}")
+        where_clauses.append(f"m.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "m.ano DESC" if id_municipio else "intensidade_comercial DESC"
 
     return f"""
     SELECT
-        dir.id_municipio,
+        m.id_municipio,
         dir.nome AS nome_municipio,
-        CAST(c.ano AS INT64) AS ano,
-        ROUND(SUM(c.vlpesocargabruta_oficial) / NULLIF(
-            (SELECT pib FROM `{BD_DADOS_PIB}` p2 WHERE p2.id_municipio = dir.id_municipio AND p2.ano = CAST(c.ano AS INT64) LIMIT 1), 0
-        ), 4) AS intensidade_comercial
-    FROM
-        `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-    JOIN
-        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON c.municipio = dir.nome
+        m.ano,
+        ROUND(
+            (COALESCE(m.exportacao_dolar, 0) + COALESCE(m.importacao_dolar, 0)) /
+            NULLIF(m.pib, 0),
+            4
+        ) AS intensidade_comercial
+    FROM {MART_IMPACTO_ECONOMICO_FQTN} m
+    LEFT JOIN
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
     WHERE
-        c.vlpesocargabruta_oficial IS NOT NULL
+        m.pib IS NOT NULL
+        AND m.pib > 0
         {f"AND {where_sql}" if where_sql else ""}
-    GROUP BY
-        dir.id_municipio, dir.nome, 2
     ORDER BY
-        ano DESC,
-        intensidade_comercial DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -381,6 +382,7 @@ def query_concentracao_emprego_portuario(
         where_totais.append(f"r2.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_totais_sql = "\n        AND ".join(where_totais)
+    order_by = "p.ano DESC" if id_municipio else "concentracao_emprego_pct DESC"
 
     return f"""
     WITH portuarios AS (
@@ -422,8 +424,7 @@ def query_concentracao_emprego_portuario(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON p.id_municipio = dir.id_municipio
     ORDER BY
-        p.ano DESC,
-        concentracao_emprego_pct DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -458,6 +459,7 @@ def query_concentracao_salarial_portuaria(
 
     where_portuarios_sql = "\n        AND ".join(where_portuarios)
     where_totais_sql = "\n        AND ".join(where_totais)
+    order_by = "p.ano DESC" if id_municipio else "concentracao_salarial_pct DESC"
 
     return f"""
     WITH portuarios AS (
@@ -501,8 +503,7 @@ def query_concentracao_salarial_portuaria(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON p.id_municipio = dir.id_municipio
     ORDER BY
-        p.ano DESC,
-        concentracao_salarial_pct DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -524,6 +525,7 @@ def query_crescimento_pib_municipal(
         where_clauses.append(f"p.ano <= {ano}")
 
     where_sql = "\n        AND ".join(where_clauses) if where_clauses else ""
+    order_by = "a.ano DESC" if id_municipio else "crescimento_pib_percentual DESC"
 
     return f"""
     WITH pib_ano AS (
@@ -549,8 +551,7 @@ def query_crescimento_pib_municipal(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON a.id_municipio = dir.id_municipio
     ORDER BY
-        a.ano DESC,
-        crescimento_pib_percentual DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -567,28 +568,26 @@ def query_crescimento_tonelagem(
     """
     where_clauses = []
     if id_municipio:
-        where_clauses.append(f"dir.id_municipio = '{id_municipio}'")
+        where_clauses.append(f"m.id_municipio = '{id_municipio}'")
     if ano:
-        where_clauses.append(f"CAST(c.ano AS INT64) <= {ano}")
+        where_clauses.append(f"m.ano <= {ano}")
 
     where_sql = "\n            AND ".join(where_clauses) if where_clauses else ""
 
     return f"""
     WITH tonelagem_ano AS (
         SELECT
-            dir.id_municipio,
-            dir.nome,
-            CAST(c.ano AS INT64) AS ano,
-            SUM(c.vlpesocargabruta_oficial) AS tonelagem
-        FROM
-            `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-        JOIN
-            `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON c.municipio = dir.nome
+            m.id_municipio,
+            municipio_dir.nome,
+            m.ano,
+            m.tonelagem_antaq_oficial AS tonelagem
+        FROM {MART_IMPACTO_ECONOMICO_FQTN} m
+        LEFT JOIN
+            `{BD_DADOS_DIRETORIO_MUNICIPIO}` municipio_dir
+            ON m.id_municipio = municipio_dir.id_municipio
         WHERE
-            c.vlpesocargabruta_oficial IS NOT NULL
+            m.tonelagem_antaq_oficial IS NOT NULL
             {f"AND {where_sql}" if where_sql else ""}
-        GROUP BY
-            dir.id_municipio, dir.nome, CAST(c.ano AS INT64)
     )
     SELECT
         a.id_municipio,
@@ -600,105 +599,7 @@ def query_crescimento_tonelagem(
     INNER JOIN
         tonelagem_ano b ON a.id_municipio = b.id_municipio AND a.ano = b.ano + 1
     ORDER BY
-        a.ano DESC,
-        crescimento_tonelagem_pct DESC
-    LIMIT 20
-    """
-
-
-def query_correlacao_tonelagem_pib(
-    id_municipio: Optional[str] = None,
-    min_anos: int = 5,
-) -> str:
-    """
-    IND-5.14: Correlação Tonelagem × PIB.
-
-    Unidade: Coeficiente (-1 a +1)
-    Granularidade: Município
-    """
-    where_clause = f"AND municipio_dir.id_municipio = '{id_municipio}'" if id_municipio else ""
-
-    return f"""
-    WITH dados_completos AS (
-        SELECT
-            a.id_municipio,
-            a.ano,
-            a.tonelagem,
-            p.pib
-        FROM
-            (SELECT municipio_dir.id_municipio, municipio_dir.nome, CAST(c.ano AS INT64) AS ano, SUM(c.vlpesocargabruta_oficial) AS tonelagem
-             FROM `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-             JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` municipio_dir ON c.municipio = municipio_dir.nome
-             WHERE c.vlpesocargabruta_oficial IS NOT NULL
-             {where_clause}
-             GROUP BY municipio_dir.id_municipio, municipio_dir.nome, CAST(c.ano AS INT64)) a
-        INNER JOIN
-            `{BD_DADOS_PIB}` p ON a.id_municipio = p.id_municipio AND a.ano = p.ano
-    )
-    SELECT
-        dc.id_municipio,
-        dir.nome AS nome_municipio,
-        ROUND(CORR(dc.tonelagem, dc.pib), 4) AS correlacao_tonelagem_pib,
-        COUNT(*) AS anos_analisados
-    FROM
-        dados_completos dc
-    LEFT JOIN
-        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON dc.id_municipio = dir.id_municipio
-    GROUP BY
-        dc.id_municipio, dir.nome
-    HAVING
-        COUNT(*) >= {min_anos}
-    ORDER BY
-        correlacao_tonelagem_pib DESC
-    LIMIT 20
-    """
-
-
-def query_participacao_pib_regional(
-    id_municipio: Optional[str] = None,
-    ano: Optional[int] = None,
-) -> str:
-    """
-    IND-5.18: Participação no PIB Regional.
-
-    Unidade: Percentual
-    Granularidade: Município/Ano
-    """
-    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
-    where_ano = f"AND m.ano = {ano}" if ano else ""
-
-    return f"""
-    WITH pib_municipios AS (
-        SELECT
-            id_microrregiao,
-            ano,
-            SUM(pib) AS pib_regiao
-        FROM
-            `{BD_DADOS_PIB}`
-        WHERE
-            id_microrregiao IS NOT NULL
-            {where_ano}
-        GROUP BY
-            id_microrregiao,
-            ano
-    )
-    SELECT
-        m.id_municipio,
-        dir.nome AS nome_municipio,
-        m.ano,
-        ROUND(m.pib * 100.0 / NULLIF(r.pib_regiao, 0), 4) AS participacao_pib_regional_pct
-    FROM
-        `{BD_DADOS_PIB}` m
-    INNER JOIN
-        pib_municipios r ON m.id_microrregiao = r.id_microrregiao AND m.ano = r.ano
-    LEFT JOIN
-        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
-    WHERE
-        m.pib IS NOT NULL
-        {where_clause}
-    ORDER BY
-        m.ano DESC,
-        participacao_pib_regional_pct DESC
+        {"a.ano DESC, crescimento_tonelagem_pct DESC" if id_municipio else "crescimento_tonelagem_pct DESC"}
     LIMIT 20
     """
 
@@ -719,6 +620,7 @@ def query_crescimento_empregos(
     where_ano = f"AND r.ano <= {ano}" if ano else ""
 
     where_portuarios_sql = "\n        AND ".join(where_portuarios)
+    order_by = "a.ano DESC" if id_municipio else "crescimento_empregos_pct DESC"
 
     return f"""
     WITH empregos_ano AS (
@@ -747,8 +649,7 @@ def query_crescimento_empregos(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON a.id_municipio = dir.id_municipio
     ORDER BY
-        a.ano DESC,
-        crescimento_empregos_pct DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -774,6 +675,7 @@ def query_crescimento_comercio_exterior(
 
     where_exp_sql = "\n        AND ".join(where_exp) if where_exp else ""
     where_imp_sql = "\n        AND ".join(where_imp) if where_imp else ""
+    order_by = "a.ano DESC" if id_municipio else "crescimento_comercio_pct DESC"
 
     return f"""
     WITH exportacoes_anual AS (
@@ -828,8 +730,104 @@ def query_crescimento_comercio_exterior(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON a.id_municipio = dir.id_municipio
     ORDER BY
-        a.ano DESC,
-        dir.nome
+        {order_by}
+    LIMIT 20
+    """
+
+
+def query_correlacao_tonelagem_pib(
+    id_municipio: Optional[str] = None,
+    min_anos: int = 5,
+) -> str:
+    """
+    IND-5.14: Correlação Tonelagem × PIB.
+
+    Unidade: Coeficiente (-1 a +1)
+    Granularidade: Município
+    """
+    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
+
+    return f"""
+    WITH dados_completos AS (
+        SELECT
+            m.id_municipio,
+            m.ano,
+            m.tonelagem_antaq_oficial AS tonelagem,
+            m.pib
+        FROM
+            {MART_IMPACTO_ECONOMICO_FQTN} m
+        WHERE
+            m.tonelagem_antaq_oficial IS NOT NULL
+            AND m.pib IS NOT NULL
+            {where_clause}
+    )
+    SELECT
+        dc.id_municipio,
+        dir.nome AS nome_municipio,
+        ROUND(CORR(dc.tonelagem, dc.pib), 4) AS correlacao,
+        ROUND(CORR(dc.tonelagem, dc.pib), 4) AS correlacao_tonelagem_pib,
+        COUNT(*) AS n_observacoes,
+        COUNT(*) AS anos_analisados
+    FROM
+        dados_completos dc
+    LEFT JOIN
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON dc.id_municipio = dir.id_municipio
+    GROUP BY
+        dc.id_municipio, dir.nome
+    HAVING
+        COUNT(*) >= {min_anos}
+    ORDER BY
+        correlacao_tonelagem_pib DESC
+    LIMIT 20
+    """
+
+
+def query_participacao_pib_regional(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+) -> str:
+    """
+    IND-5.18: Participação no PIB Regional.
+
+    Unidade: Percentual
+    Granularidade: Município/Ano
+    """
+    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_ano = f"AND m.ano = {ano}" if ano else ""
+    order_by = "m.ano DESC" if id_municipio else "participacao_pib_regional_pct DESC"
+
+    return f"""
+    WITH pib_municipios AS (
+        SELECT
+            id_microrregiao,
+            ano,
+            SUM(pib) AS pib_regiao
+        FROM
+            `{BD_DADOS_PIB}`
+        WHERE
+            id_microrregiao IS NOT NULL
+            {where_ano}
+        GROUP BY
+            id_microrregiao,
+            ano
+    )
+    SELECT
+        m.id_municipio,
+        dir.nome AS nome_municipio,
+        m.ano,
+        ROUND(m.pib * 100.0 / NULLIF(r.pib_regiao, 0), 4) AS participacao_pib_regional_pct
+    FROM
+        `{BD_DADOS_PIB}` m
+    INNER JOIN
+        pib_municipios r ON m.id_microrregiao = r.id_microrregiao AND m.ano = r.ano
+    LEFT JOIN
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
+    WHERE
+        m.pib IS NOT NULL
+        {where_clause}
+    ORDER BY
+        {order_by}
+    LIMIT 20
     """
 
 
@@ -843,61 +841,44 @@ def query_correlacao_tonelagem_empregos(
     Unidade: Coeficiente (-1 a +1)
     Granularidade: Município
     """
-    where_clause_rais = f"AND r.id_municipio = '{id_municipio}'" if id_municipio else ""
-    where_ano_rais = ""  # Sem restrição de ano para calcular correlação
-
-    where_clause_carga = f"AND dir.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
 
     return f"""
-    WITH empregos_anual AS (
+    WITH dados_completos AS (
         SELECT
-            r.id_municipio,
-            r.ano,
-            COUNT(*) AS empregos
+            m.id_municipio,
+            m.ano,
+            e.empregos_portuarios AS empregos,
+            m.tonelagem_antaq_oficial AS tonelagem
         FROM
-            `{BD_DADOS_RAIS}` r
+            {MART_IMPACTO_ECONOMICO_FQTN} m
+        INNER JOIN (
+            SELECT
+                r.id_municipio,
+                r.ano,
+                COUNT(*) AS empregos_portuarios
+            FROM {BD_DADOS_RAIS} r
+            WHERE
+                cnae_2_subclasse IN {CNAES_CLAUSE}
+                AND vinculo_ativo_3112 = '1'
+                {where_clause}
+            GROUP BY
+                id_municipio,
+                ano
+        ) e
+            ON m.id_municipio = e.id_municipio AND m.ano = e.ano
         WHERE
-            r.cnae_2_subclasse IN {CNAES_CLAUSE}
-            AND r.vinculo_ativo_3112 = '1'
-            {where_clause_rais}
-        GROUP BY
-            r.id_municipio,
-            r.ano
-    ),
-    tonelagem_anual AS (
-        SELECT
-            dir.id_municipio,
-            CAST(c.ano AS INT64) AS ano,
-            SUM(c.vlpesocargabruta_oficial) AS tonelagem
-        FROM
-            `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-        JOIN
-            `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON c.municipio = dir.nome
-        WHERE
-            c.vlpesocargabruta_oficial IS NOT NULL
-            {where_clause_carga}
-        GROUP BY
-            dir.id_municipio,
-            c.ano
-    ),
-    dados_completos AS (
-        SELECT
-            COALESCE(e.id_municipio, t.id_municipio) AS id_municipio,
-            COALESCE(e.ano, t.ano) AS ano,
-            e.empregos,
-            t.tonelagem
-        FROM
-            empregos_anual e
-        FULL OUTER JOIN
-            tonelagem_anual t USING (id_municipio, ano)
-        WHERE
-            e.empregos IS NOT NULL
-            AND t.tonelagem IS NOT NULL
+            m.tonelagem_antaq_oficial IS NOT NULL
+            AND m.tonelagem_antaq_oficial > 0
+            AND m.pib IS NOT NULL
+            AND e.empregos_portuarios IS NOT NULL
     )
     SELECT
         dc.id_municipio,
         dir.nome AS nome_municipio,
+        ROUND(CORR(dc.tonelagem, dc.empregos), 4) AS correlacao,
         ROUND(CORR(dc.tonelagem, dc.empregos), 4) AS correlacao_tonelagem_empregos,
+        COUNT(*) AS n_observacoes,
         COUNT(*) AS anos_analisados
     FROM
         dados_completos dc
@@ -981,7 +962,9 @@ def query_correlacao_comercio_pib(
     SELECT
         dc.id_municipio,
         dir.nome AS nome_municipio,
+        ROUND(CORR(dc.comercio, dc.pib), 4) AS correlacao,
         ROUND(CORR(dc.comercio, dc.pib), 4) AS correlacao_comercio_pib,
+        COUNT(*) AS n_observacoes,
         COUNT(*) AS anos_analisados
     FROM
         dados_completos dc
@@ -1012,39 +995,24 @@ def query_elasticidade_tonelagem_pib(
 
     Interpretação: Variação % na tonelagem para cada 1% de variação no PIB
     """
-    where_clause = f"AND dir.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
 
     return f"""
-    WITH tonelagem_anual AS (
+    WITH dados_log AS (
         SELECT
-            dir.id_municipio,
+            m.id_municipio,
             dir.nome,
-            CAST(c.ano AS INT64) AS ano,
-            SUM(c.vlpesocargabruta_oficial) AS tonelagem
+            m.ano,
+            LN(m.tonelagem_antaq_oficial) AS ln_tonelagem,
+            LN(m.pib) AS ln_pib
         FROM
-            `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-        JOIN
-            `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON c.municipio = dir.nome
+            {MART_IMPACTO_ECONOMICO_FQTN} m
+        LEFT JOIN
+            `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
         WHERE
-            c.vlpesocargabruta_oficial IS NOT NULL
+            m.tonelagem_antaq_oficial > 0
+            AND m.pib > 0
             {where_clause}
-        GROUP BY
-            dir.id_municipio, dir.nome, c.ano
-    ),
-    dados_log AS (
-        SELECT
-            a.id_municipio,
-            a.nome,
-            a.ano,
-            LN(a.tonelagem) AS ln_tonelagem,
-            LN(p.pib) AS ln_pib
-        FROM
-            tonelagem_anual a
-        INNER JOIN
-            `{BD_DADOS_PIB}` p ON a.id_municipio = p.id_municipio AND a.ano = p.ano
-        WHERE
-            a.tonelagem > 0
-            AND p.pib > 0
     ),
     estatisticas AS (
         SELECT
@@ -1070,7 +1038,13 @@ def query_elasticidade_tonelagem_pib(
             (n * sum_ln_ton_pib - sum_ln_ton * sum_ln_pib) /
             NULLIF(n * sum_ln_pib_sq - sum_ln_pib * sum_ln_pib, 0),
             4
+        ) AS elasticidade,
+        ROUND(
+            (n * sum_ln_ton_pib - sum_ln_ton * sum_ln_pib) /
+            NULLIF(n * sum_ln_pib_sq - sum_ln_pib * sum_ln_pib, 0),
+            4
         ) AS elasticidade_tonelagem_pib,
+        n AS n_observacoes,
         n AS anos_analisados
     FROM
         estatisticas
@@ -1094,6 +1068,7 @@ def query_crescimento_relativo_uf(
     """
     where_mun = f"AND p.id_municipio = '{id_municipio}'" if id_municipio else ""
     where_ano = f"AND p.ano <= {ano}" if ano else ""
+    order_by = "m.ano DESC" if id_municipio else "crescimento_relativo_uf_pp DESC"
 
     return f"""
     WITH pib_municipal AS (
@@ -1150,6 +1125,7 @@ def query_crescimento_relativo_uf(
         m.ano,
         ROUND(m.crescimento_municipal_pct, 2) AS crescimento_municipal_pct,
         ROUND(u.crescimento_estadual_pct, 2) AS crescimento_estadual_pct,
+        ROUND(m.crescimento_municipal_pct - u.crescimento_estadual_pct, 2) AS crescimento_relativo_uf_pp,
         ROUND(m.crescimento_municipal_pct - u.crescimento_estadual_pct, 2) AS crescimento_relativo_uf_pct
     FROM
         cresc_municipal m
@@ -1158,8 +1134,7 @@ def query_crescimento_relativo_uf(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
     ORDER BY
-        m.ano DESC,
-        crescimento_relativo_uf_pct DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -1197,6 +1172,7 @@ def query_razao_emprego_total_portuario(
         where_totais.append(f"r2.ano BETWEEN {ano_inicio} AND {ano_fim}")
 
     where_totais_sql = "\n        AND ".join(where_totais)
+    order_by = "p.ano DESC" if id_municipio else "razao_emprego_total_portuario DESC"
 
     return f"""
     WITH portuarios AS (
@@ -1240,8 +1216,7 @@ def query_razao_emprego_total_portuario(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON p.id_municipio = dir.id_municipio
     ORDER BY
-        p.ano DESC,
-        razao_emprego_total_portuario DESC
+        {order_by}
     LIMIT 20
     """
 
@@ -1261,8 +1236,9 @@ def query_indice_concentracao_portuaria_m5(
     Unidade: Índice (0-100)
     Granularidade: Município/Ano
     """
-    where_clause = f"AND r.id_municipio = '{id_municipio}'" if id_municipio else ""
-    where_ano = f"AND r.ano = {ano}" if ano else ""
+    where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_ano = f"AND m.ano = {ano}" if ano else ""
+    order_by = "n.ano DESC" if id_municipio else "indice_concentracao_portuaria DESC"
 
     return f"""
     WITH emprego_concentracao AS (
@@ -1270,13 +1246,13 @@ def query_indice_concentracao_portuaria_m5(
             p.id_municipio,
             p.ano,
             p.empregos_portuarios * 100.0 / NULLIF(t.empregos_totais, 0) AS participacao_emprego
-        FROM (
+    FROM (
             SELECT r.id_municipio, r.ano, COUNT(*) AS empregos_portuarios
             FROM `{BD_DADOS_RAIS}` r
             WHERE r.cnae_2_subclasse IN {CNAES_CLAUSE}
                 AND r.vinculo_ativo_3112 = '1'
-                {where_clause}
-                {where_ano}
+                {f"AND r.id_municipio = '{id_municipio}'" if id_municipio else ""}
+                {f"AND r.ano = {ano}" if ano else ""}
             GROUP BY r.id_municipio, r.ano
         ) p
         JOIN (
@@ -1284,26 +1260,21 @@ def query_indice_concentracao_portuaria_m5(
             FROM `{BD_DADOS_RAIS}` r2
             WHERE r2.vinculo_ativo_3112 = '1'
                 {f"AND r2.id_municipio = '{id_municipio}'" if id_municipio else ""}
-                {where_ano}
+                {f"AND r2.ano = {ano}" if ano else ""}
             GROUP BY r2.id_municipio, r2.ano
         ) t USING (id_municipio, ano)
     ),
     intensidade_portuaria AS (
         SELECT
-            a.id_municipio,
-            a.ano,
-            a.tonelagem / NULLIF(p.pib, 0) AS intensidade_portuaria
-        FROM (
-            SELECT municipio_dir.id_municipio, CAST(c.ano AS INT64) AS ano,
-                   SUM(c.vlpesocargabruta_oficial) AS tonelagem
-            FROM `{VIEW_CARGA_METODOLOGIA_OFICIAL}` c
-            JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` municipio_dir ON c.municipio = municipio_dir.nome
-            WHERE c.vlpesocargabruta_oficial IS NOT NULL
-                {f"AND municipio_dir.id_municipio = '{id_municipio}'" if id_municipio else ""}
-                {where_ano}
-            GROUP BY municipio_dir.id_municipio, c.ano
-        ) a
-        JOIN `{BD_DADOS_PIB}` p ON a.id_municipio = p.id_municipio AND a.ano = p.ano
+            m.id_municipio,
+            m.ano,
+            m.tonelagem_antaq_oficial / NULLIF(m.pib, 0) AS intensidade_portuaria
+        FROM {MART_IMPACTO_ECONOMICO_FQTN} m
+        WHERE 1=1
+            {where_ano}
+            {where_clause}
+            AND m.pib IS NOT NULL
+            AND m.tonelagem_antaq_oficial IS NOT NULL
     ),
     participacao_pib_regional AS (
         SELECT
@@ -1314,10 +1285,10 @@ def query_indice_concentracao_portuaria_m5(
         JOIN (
             SELECT id_microrregiao, ano, SUM(pib) AS pib_regiao
             FROM `{BD_DADOS_PIB}`
-            WHERE id_microrregiao IS NOT NULL {where_ano}
+            WHERE id_microrregiao IS NOT NULL {f"AND ano = {ano}" if ano else ""}
             GROUP BY id_microrregiao, ano
         ) r ON m.id_microrregiao = r.id_microrregiao AND m.ano = r.ano
-        WHERE m.pib IS NOT NULL {f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""}
+        WHERE m.pib IS NOT NULL {where_clause}
     ),
     indicadores_juntos AS (
         SELECT
@@ -1366,8 +1337,7 @@ def query_indice_concentracao_portuaria_m5(
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON n.id_municipio = dir.id_municipio
     ORDER BY
-        n.ano DESC,
-        indice_concentracao_portuaria DESC
+        {order_by}
     LIMIT 20
     """
 
