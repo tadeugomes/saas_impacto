@@ -406,20 +406,36 @@ class TestRouter:
 
         return TestClient(test_app, raise_server_exceptions=False)
 
-    def test_post_analises_returns_201(self):
-        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+    def test_post_analises_returns_202_queued(self):
+        """POST /analises deve retornar 202 com status=queued (PR-06: async)."""
+        from app.schemas.impacto_economico import EconomicImpactAnalysisResponse
 
-        detail = EconomicImpactAnalysisDetailResponse(**self._mock_detail())
+        now = self._now()
+        queued = EconomicImpactAnalysisResponse(
+            id=ANALYSIS_ID,
+            tenant_id=TENANT_ID,
+            user_id=USER_ID,
+            status="queued",
+            method="did",
+            created_at=now,
+            updated_at=now,
+        )
         svc = MagicMock()
-        svc.create_and_run = AsyncMock(return_value=detail)
+        svc.create_queued = AsyncMock(return_value=queued)
 
-        client = self._make_client(svc)
-        resp = client.post(f"{self.PREFIX}/analises", json=BASE_REQUEST)
+        with patch(
+            "app.api.v1.impacto_economico.router.run_economic_impact_analysis"
+        ) as mock_task:
+            mock_task.delay = MagicMock()
+            client = self._make_client(svc)
+            resp = client.post(f"{self.PREFIX}/analises", json=BASE_REQUEST)
 
-        assert resp.status_code == 201
+        assert resp.status_code == 202
         body = resp.json()
         assert "id" in body
-        assert body["status"] == "success"
+        assert body["status"] == "queued"
+        # Garante que a task foi despachada
+        mock_task.delay.assert_called_once_with(str(ANALYSIS_ID), str(TENANT_ID))
 
     def test_post_analises_validation_error_422(self):
         svc = MagicMock()

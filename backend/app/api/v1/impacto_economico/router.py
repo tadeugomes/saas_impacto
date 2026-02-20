@@ -47,6 +47,7 @@ from app.services.impacto_economico.analysis_service import (
     AnalysisNotFoundError,
     AnalysisService,
 )
+from app.tasks.impacto_economico import run_economic_impact_analysis
 
 router = APIRouter(
     prefix="/impacto-economico",
@@ -82,11 +83,12 @@ def _extract_user_id(request: Request) -> uuid.UUID | None:
 
 @router.post(
     "/analises",
-    response_model=EconomicImpactAnalysisDetailResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Criar e Executar Análise Causal",
+    response_model=EconomicImpactAnalysisResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Criar Análise Causal (Execução Assíncrona)",
     description="""
-Dispara uma análise causal de impacto econômico portuário.
+Registra uma análise causal de impacto econômico portuário e a enfileira
+para execução assíncrona pelo worker Celery.
 
 **Métodos disponíveis:**
 - `did` — Difference-in-Differences (Two-Way Fixed Effects com diagnósticos)
@@ -95,17 +97,20 @@ Dispara uma análise causal de impacto econômico portuário.
 - `event_study` — Event study com janela pre/post
 - `compare` — Executa DiD + IV e compara consistência dos resultados
 
-**Fluxo MVP (síncrono):**
-A análise é executada inline e o resultado é retornado na resposta.
-O status passará por `queued → running → success | failed`.
+**Fluxo assíncrono (PR-06):**
+A resposta retorna imediatamente com `status: queued`.
+O worker processa a análise em background e atualiza o status para
+`running → success | failed`.
+Consulte o progresso via `GET /analises/{id}` e o resultado via
+`GET /analises/{id}/result`.
 
 **Isolamento:** cada análise fica vinculada ao tenant do token JWT.
 """,
     responses={
-        201: {"description": "Análise criada e executada com sucesso."},
+        202: {"description": "Análise aceita para processamento (status=queued)."},
         400: {"description": "Parâmetros inválidos."},
         422: {"description": "Erro de validação nos dados de entrada."},
-        500: {"description": "Erro interno durante execução do pipeline."},
+        500: {"description": "Erro ao persistir análise ou enfileirar task."},
     },
 )
 async def create_analysis(
@@ -113,17 +118,18 @@ async def create_analysis(
     http_request: Request,
     service: AnalysisService = Depends(_get_analysis_service),
     current_user: User = Depends(get_current_user),
-) -> EconomicImpactAnalysisDetailResponse:
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+) -> EconomicImpactAnalysisResponse:
     """
-    Cria e executa uma análise causal de impacto econômico.
+    Registra a análise com status='queued' e despacha para o worker Celery.
 
-    Retorna o registro completo após execução (inclui `result_summary`
-    e `result_full` quando bem-sucedido).
+    Retorna imediatamente com `status: queued` e o `id` da análise para
+    polling posterior via GET /analises/{id}.
     """
     user_id = _extract_user_id(http_request)
 
     try:
-        return await service.create_and_run(
+        analysis = await service.create_queued(
             request=body,
             user_id=user_id or (current_user.id if current_user else None),
         )
@@ -135,8 +141,13 @@ async def create_analysis(
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao executar análise: {exc}",
+            detail=f"Erro ao criar análise: {exc}",
         )
+
+    # Despacha execução para o worker Celery (não bloqueante)
+    run_economic_impact_analysis.delay(str(analysis.id), str(tenant_id))
+
+    return analysis
 
 
 @router.get(
