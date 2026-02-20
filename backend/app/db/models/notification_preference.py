@@ -34,7 +34,7 @@ class NotificationPreference(Base):
         index=True,
     )
     channel = Column(String(20), nullable=False)
-    endpoint = Column(String(255), nullable=True)
+    endpoint = Column(String(255), nullable=False)
     enabled = Column(Boolean, nullable=False, default=True)
 
     created_at = Column(
