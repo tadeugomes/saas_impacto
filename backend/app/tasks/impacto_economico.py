@@ -19,15 +19,15 @@ Retentativas:
 from __future__ import annotations
 
 import asyncio
-import logging
 import uuid
+from app.core.logging import get_logger
 
 from celery import Task
 from sqlalchemy import select, text
 
 from app.tasks.celery_app import celery_app
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Helper assíncrono ──────────────────────────────────────────────────────
@@ -97,6 +97,16 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
         # 4. Executar pipeline causal (marca running → success|failed internamente)
         service = AnalysisService(db=db, tenant_id=_tenant_id)
         await service._execute(analysis, request)
+        try:
+            from app.tasks.notifications import notify_analysis_complete
+
+            notify_analysis_complete.delay(analysis_id, tenant_id)
+        except Exception as exc:
+            logger.exception(
+                "Falha ao enfileirar notificação da análise %s: %s",
+                analysis_id,
+                exc,
+            )
 
         logger.info("Análise %s concluída com status='%s'.", analysis_id, analysis.status)
 

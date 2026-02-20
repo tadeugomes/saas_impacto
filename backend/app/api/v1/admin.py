@@ -14,6 +14,7 @@ from app.core.tenant import get_tenant_id
 from app.db.base import get_db
 from app.schemas.audit import AuditLogItem, AuditLogListResponse
 from app.services.audit_service import AuditService, get_audit_service
+from app.tasks.maintenance import purge_expired_audit_logs
 
 
 router = APIRouter(
@@ -86,3 +87,46 @@ async def list_audit_logs(
             for item in items
         ],
     )
+
+
+@router.post(
+    "/audit-logs/purge",
+    response_model=dict,
+    summary="Executar purge de logs de auditoria vencidos",
+    description="""
+    Remove registros de auditoria com idade maior que o valor definido em
+    `AUDIT_LOG_RETENTION_DAYS` e retorna a quantidade removida.
+    """,
+)
+async def purge_audit_logs(
+    _: object = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> dict:
+    """Dispara a rotina de manutenção de auditoria sob demanda."""
+    try:
+        removed = await audit_service.purge_expired(db)
+        return {
+            "removed": removed,
+            "status": "ok",
+            "message": f"{removed} log(s) removidos com sucesso.",
+        }
+    except Exception as exc:
+        return {
+            "removed": 0,
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+@router.post(
+    "/audit-logs/purge-task",
+    response_model=dict,
+    summary="Enfileirar purge de logs no Celery",
+)
+async def purge_audit_logs_task(
+    _: object = Depends(require_admin),
+) -> dict:
+    """Dispara purge via Celery para não bloquear request."""
+    purge_expired_audit_logs.delay()
+    return {"queued": True}

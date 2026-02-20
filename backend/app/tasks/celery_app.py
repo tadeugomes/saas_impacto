@@ -18,6 +18,7 @@ Uso:
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.config import get_settings
 
@@ -29,7 +30,7 @@ celery_app = Celery(
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
     # Registro automático das tasks ao importar o pacote
-    include=["app.tasks.impacto_economico"],
+    include=["app.tasks.impacto_economico", "app.tasks.maintenance", "app.tasks.notifications"],
 )
 
 # ── Configuração global ────────────────────────────────────────────────────
@@ -56,3 +57,10 @@ celery_app.conf.update(
     task_default_retry_delay=60,   # 60 s entre tentativas
     task_max_retries=3,
 )
+
+celery_app.conf.beat_schedule = {
+    "purge-expired-audit-logs": {
+        "task": "app.tasks.maintenance.purge_expired_audit_logs",
+        "schedule": crontab(hour=3, minute=0),
+    }
+}

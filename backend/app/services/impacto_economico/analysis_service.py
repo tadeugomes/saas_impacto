@@ -23,9 +23,9 @@ RLS:
 """
 from __future__ import annotations
 
-import logging
 import uuid
 from typing import Any
+from app.core.logging import get_logger
 
 from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +39,7 @@ from app.schemas.impacto_economico import (
 )
 from app.services.impacto_economico.causal.serialize import serialize_causal_result
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Tamanho máximo do payload inline (bytes JSON estimados) ──────────────────
 _MAX_INLINE_BYTES = 512 * 1024  # 512 KB → acima disso, usar artifact_path
@@ -324,6 +324,45 @@ class AnalysisService:
             )
         return analysis
 
+    async def _resolve_scm_controls(
+        self,
+        treated_ids: list[str],
+        control_ids: list[str] | None,
+        treatment_year: int,
+        scope: str,
+        ano_inicio: int,
+        ano_fim: int,
+    ) -> list[str]:
+        """Resolve lista de controles para SCM/ASCM.
+
+        Caso não haja controle explícito, usa matching automático para
+        sugerir municípios comparáveis com base no mart de impacto.
+        """
+        if control_ids:
+            return list(dict.fromkeys(str(x) for x in control_ids if str(x) not in treated_ids))
+
+        from app.services.impacto_economico.causal.matching import suggest_control_matches
+
+        matching = await suggest_control_matches(
+            treated_ids=treated_ids,
+            treatment_year=treatment_year,
+            scope=scope,
+            n_controls=min(30, max(1, ano_fim - ano_inicio)),
+            ano_inicio=ano_inicio,
+            ano_fim=ano_fim,
+        )
+        suggested = [
+            entry.get("id_municipio")
+            for entry in matching.get("suggested_controls", [])
+            if entry.get("id_municipio")
+        ]
+        if not suggested:
+            raise ValueError(
+                "Não foi possível sugerir controles automáticos para SCM/ASCM. "
+                "Informe control_ids manualmente."
+            )
+        return [str(x) for x in suggested]
+
     async def _run_causal_pipeline(
         self, request: EconomicImpactAnalysisCreateRequest
     ) -> dict[str, Any]:
@@ -460,15 +499,31 @@ class AnalysisService:
             # aqui via task Celery (método legado ou flag reativada depois do
             # enfileiramento), levanta explicitamente para mark_failed() capturar.
             self._assert_method_available(request.method)
-            # Se a flag estiver habilitada mas o módulo real ainda não existir,
-            # os stubs abaixo levantam SCMNotAvailableError / AugmentedSCMNotAvailableError.
+            control_ids = await self._resolve_scm_controls(
+                request.treated_ids,
+                request.control_ids,
+                request.treatment_year,
+                request.scope,
+                request.ano_inicio,
+                request.ano_fim,
+            )
+            df = await builder.build_did_panel(
+                treated_municipios=request.treated_ids,
+                control_municipios=control_ids,
+                treatment_year=request.treatment_year,
+                ano_inicio=request.ano_inicio,
+                ano_fim=request.ano_fim,
+                use_mart=request.use_mart,
+                scope=request.scope,
+            )
+
             if request.method == "scm":
                 from app.services.impacto_economico.causal.scm import (
                     run_scm_with_diagnostics,
                 )
                 results = {
                     outcome: run_scm_with_diagnostics(
-                        df=None,  # type: ignore[arg-type]  # substituir quando portado
+                        df=df,
                         outcome=outcome,
                         treatment_year=request.treatment_year,
                         controls=request.controls,
@@ -481,7 +536,7 @@ class AnalysisService:
                 )
                 results = {
                     outcome: run_augmented_scm_with_diagnostics(
-                        df=None,  # type: ignore[arg-type]  # substituir quando portado
+                        df=df,
                         outcome=outcome,
                         treatment_year=request.treatment_year,
                         controls=request.controls,

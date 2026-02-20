@@ -42,6 +42,8 @@ from app.schemas.impacto_economico import (
     EconomicImpactAnalysisDetailResponse,
     EconomicImpactAnalysisListResponse,
     EconomicImpactAnalysisResponse,
+    MatchingRequest,
+    MatchingResponse,
 )
 from app.services.impacto_economico.analysis_service import (
     AnalysisNotFoundError,
@@ -160,6 +162,38 @@ async def create_analysis(
     run_economic_impact_analysis.delay(str(analysis.id), str(tenant_id))
 
     return analysis
+
+
+@router.post(
+    "/matching",
+    response_model=MatchingResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Sugerir controles por matching",
+    description="""
+    Gera sugestão de controles estatisticamente comparáveis para SCM/ASCM.
+
+    O matching usa distância no pré-tratamento considerando features
+    econômicas do painel de impacto em nível municipal.
+    """,
+)
+async def suggest_controls(
+    body: MatchingRequest,
+    _: User = Depends(require_module_permission(5, "execute")),
+) -> MatchingResponse:
+    """Endpoint de apoio ao frontend para preencher control_ids automaticamente."""
+    from app.services.impacto_economico.causal.matching import suggest_control_matches
+
+    result = await suggest_control_matches(
+        treated_ids=body.treated_ids,
+        treatment_year=body.treatment_year,
+        scope=body.scope,
+        n_controls=body.n_controls,
+        ano_inicio=body.ano_inicio,
+        ano_fim=body.ano_fim,
+        features=body.features,
+    )
+
+    return MatchingResponse.model_validate(result)
 
 
 @router.get(

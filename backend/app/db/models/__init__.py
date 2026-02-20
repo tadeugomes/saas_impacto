@@ -4,6 +4,7 @@ from app.db.models.dashboard_view import DashboardView
 from app.db.models.economic_impact_analysis import EconomicImpactAnalysis
 from app.db.models.tenant_module_permission import TenantModulePermission
 from app.db.models.audit_log import AuditLog
+from app.db.models.notification_preference import NotificationPreference
 
 __all__ = [
     "Tenant",
@@ -12,4 +13,5 @@ __all__ = [
     "EconomicImpactAnalysis",
     "TenantModulePermission",
     "AuditLog",
+    "NotificationPreference",
 ]

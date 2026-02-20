@@ -4,7 +4,7 @@ Aplicação Principal FastAPI - SaaS Impacto Portuário
 Entry point do servidor REST API com suporte a multi-tenancy.
 """
 
-import logging
+from app.core.logging import configure_structlog, get_logger
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from time import perf_counter
@@ -25,6 +25,7 @@ from app.api.v1 import auth
 from app.api.v1.indicators import module1_router, generic_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.users import router as users_router
 from app.api.v1.impacto_economico.router import router as impacto_economico_router
 from app.db.base import engine
 from app.db.bigquery.client import BigQueryError, BigQueryClient, get_bigquery_client
@@ -33,7 +34,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 settings = get_settings()
-logger = logging.getLogger(__name__)
+configure_structlog()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -45,13 +47,18 @@ async def lifespan(app: FastAPI):
     Shutdown: Limpeza de recursos
     """
     # Startup
-    print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
-    print(f"📊 Environment: {settings.environment}")
+    logger.info(
+        "startup_started",
+        event="app_start",
+        app_name=settings.app_name,
+        app_version=settings.app_version,
+        environment=settings.environment,
+    )
 
     yield
 
     # Shutdown
-    print("👋 Shutting down...")
+    logger.info("shutdown", event="app_shutdown")
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -72,6 +79,7 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
         logger.info(
             "request_completed",
+            event="http_request",
             extra={
                 "request_id": request_id,
                 "method": request.method,
@@ -185,6 +193,7 @@ api_router.include_router(admin_router)
 api_router.include_router(module1_router)
 api_router.include_router(generic_router)
 api_router.include_router(reports_router)
+api_router.include_router(users_router)
 api_router.include_router(impacto_economico_router)
 
 app.include_router(api_router)

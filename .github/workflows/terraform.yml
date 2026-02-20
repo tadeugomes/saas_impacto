@@ -1,0 +1,58 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "infra/terraform/environments/production/**"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push'
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_TERRAFORM_SA_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform init
+        working-directory: infra/terraform/environments/staging
+        run: terraform init -reconfigure -backend-config="bucket=saas-impacto-tfstate" -backend-config="prefix=terraform/state"
+
+      - name: Terraform plan
+        working-directory: infra/terraform/environments/staging
+        run: terraform plan -no-color
+
+  apply-staging:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: []
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_TERRAFORM_SA_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform init
+        working-directory: infra/terraform/environments/staging
+        run: terraform init -reconfigure -backend-config="bucket=saas-impacto-tfstate" -backend-config="prefix=terraform/state"
+
+      - name: Terraform apply
+        working-directory: infra/terraform/environments/staging
+        run: terraform apply -auto-approve

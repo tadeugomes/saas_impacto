@@ -68,6 +68,7 @@ from app.services.impacto_economico.causal.augmented_scm import (
     run_augmented_scm,
     run_augmented_scm_with_diagnostics,
 )
+from app.services.impacto_economico.causal.matching import suggest_control_matches
 
 __all__ = [
     # prep
@@ -107,4 +108,6 @@ __all__ = [
     "AugmentedSCMNotAvailableError",
     "run_augmented_scm",
     "run_augmented_scm_with_diagnostics",
+    # matching (PR-26)
+    "suggest_control_matches",
 ]

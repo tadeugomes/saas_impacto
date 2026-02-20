@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     otel_service_name: str = "saas-impacto-backend"
     otel_sampling_ratio: float = 1.0
 
+    # Notificações
+    notifications_enabled: bool = False
+    sendgrid_api_key: str | None = None
+
     # Rate limiting
     rate_limiting_enabled: bool = True
     rate_limit_window_seconds: int = 60

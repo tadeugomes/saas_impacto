@@ -4,8 +4,8 @@ Middleware de auditoria para registrar operações mutantes.
 
 from __future__ import annotations
 
-import logging
 from time import perf_counter
+from app.core.logging import get_logger
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -15,7 +15,7 @@ from app.core.security import decode_access_token
 from app.db.base import AsyncSessionLocal
 from app.services.audit_service import AuditService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AuditMiddleware(BaseHTTPMiddleware):

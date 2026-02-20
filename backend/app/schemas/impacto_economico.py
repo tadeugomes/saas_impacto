@@ -305,3 +305,105 @@ class EconomicImpactAnalysisListResponse(BaseModel):
     page_size: int = Field(default=20, ge=1, le=100)
 
     model_config = {"from_attributes": True}
+
+
+# ── Matching ──────────────────────────────────────────────────────────────────
+
+class MatchingCandidate(BaseModel):
+    """Item retornado por matching de controles."""
+
+    id_municipio: str = Field(..., description="Código IBGE do município candidato.")
+    similarity_score: float | None = Field(
+        default=None,
+        description="Similaridade entre tratado e candidato (maior é mais próximo).",
+    )
+    distance: float | None = Field(
+        default=None,
+        description="Distância padronizada no espaço de features.",
+    )
+    is_treated: bool = Field(default=False)
+
+
+class MatchingRequest(BaseModel):
+    """Payload de entrada para sugerir controles parecidos."""
+
+    treated_ids: Annotated[
+        list[str],
+        Field(
+            ...,
+            min_length=1,
+            max_length=50,
+            description="Municípios tratados para os quais sugerir controles.",
+        ),
+    ]
+
+    treatment_year: int = Field(
+        ...,
+        ge=2000,
+        le=2030,
+        description="Ano de início do tratamento para filtro pré-período.",
+    )
+
+    scope: ScopeLiteral = Field(
+        default="state",
+        description=(
+            "Escopo geográfico da busca:\n"
+            "- `state`: limita candidatos aos estados dos tratados\n"
+            "- `municipal`: usa todos os municípios do painel"
+        ),
+    )
+
+    n_controls: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        description="Quantidade máxima de controles sugeridos.",
+    )
+
+    ano_inicio: int = Field(
+        default=2010,
+        ge=2000,
+        le=2030,
+        description="Início da janela usada para cálculo de distâncias.",
+    )
+
+    ano_fim: int = Field(
+        default=2023,
+        ge=2000,
+        le=2030,
+        description="Fim da janela usada para cálculo de distâncias.",
+    )
+
+    features: list[str] | None = Field(
+        default=None,
+        max_length=20,
+        description=(
+            "Features de balanceamento customizadas."
+            " Se None, usa default do serviço."
+        ),
+    )
+
+    @field_validator("treatment_year")
+    @classmethod
+    def validate_treatment_year_after_ano_inicio(cls, value: int, info) -> int:
+        ano_inicio = info.data.get("ano_inicio", 2010)
+        if value <= ano_inicio:
+            raise ValueError(
+                "treatment_year deve ser maior que ano_inicio para haver período pré-tratamento."
+            )
+        return value
+
+
+class MatchingResponse(BaseModel):
+    """Resultado do matching."""
+
+    suggested_controls: list[MatchingCandidate] = Field(
+        default_factory=list,
+        description="Lista ordenada por maior similaridade.",
+    )
+    balance_table: dict[str, Any] = Field(default_factory=dict)
+    scope: ScopeLiteral = "state"
+    treatment_year: int = Field(..., ge=2000, le=2030)
+    n_treated: int = Field(default=0, ge=0)
+    n_candidates: int = Field(default=0, ge=0)
+    features: list[str] = Field(default_factory=list)
