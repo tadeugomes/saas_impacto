@@ -1,4 +1,4 @@
-"""Engine de inferência causal — DiD, IV, Panel IV.
+"""Engine de inferência causal — DiD, IV, Panel IV, SCM (interface).
 
 Portado de new_impacto/src/causal e adaptado para uso como
 biblioteca interna do backend SaaS.
@@ -15,6 +15,10 @@ Fluxo típico::
     panel = build_did_panel(df, treated_ids=["3304557"], post_year=2015)
     result = run_did_with_diagnostics(panel, outcome="pib_log", treatment_year=2015)
     payload = serialize_causal_result(result)  # list[dict] JSON-safe
+
+Módulos experimentais (feature flag):
+    :mod:`scm` — Synthetic Control Method (stub; requer ENABLE_SCM=true)
+    :mod:`augmented_scm` — Augmented SCM (stub; requer ENABLE_AUGMENTED_SCM=true)
 """
 
 from app.services.impacto_economico.causal.prep import (
@@ -52,6 +56,16 @@ from app.services.impacto_economico.causal.serialize import (
     dataframe_to_records,
     sanitize_scalars,
 )
+from app.services.impacto_economico.causal.scm import (
+    SCMNotAvailableError,
+    run_scm,
+    run_scm_with_diagnostics,
+)
+from app.services.impacto_economico.causal.augmented_scm import (
+    AugmentedSCMNotAvailableError,
+    run_augmented_scm,
+    run_augmented_scm_with_diagnostics,
+)
 
 __all__ = [
     # prep
@@ -83,4 +97,12 @@ __all__ = [
     "serialize_causal_result",
     "dataframe_to_records",
     "sanitize_scalars",
+    # scm (experimental — feature flag ENABLE_SCM)
+    "SCMNotAvailableError",
+    "run_scm",
+    "run_scm_with_diagnostics",
+    # augmented_scm (experimental — feature flag ENABLE_AUGMENTED_SCM)
+    "AugmentedSCMNotAvailableError",
+    "run_augmented_scm",
+    "run_augmented_scm_with_diagnostics",
 ]

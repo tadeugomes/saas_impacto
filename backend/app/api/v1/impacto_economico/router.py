@@ -46,6 +46,7 @@ from app.schemas.impacto_economico import (
 from app.services.impacto_economico.analysis_service import (
     AnalysisNotFoundError,
     AnalysisService,
+    MethodNotAvailableError,
 )
 from app.tasks.impacto_economico import run_economic_impact_analysis
 
@@ -97,6 +98,10 @@ para execução assíncrona pelo worker Celery.
 - `event_study` — Event study com janela pre/post
 - `compare` — Executa DiD + IV e compara consistência dos resultados
 
+**Métodos experimentais (retornam 501 até habilitação):**
+- `scm` — Synthetic Control Method (requer `ENABLE_SCM=true` + módulo portado)
+- `augmented_scm` — Augmented SCM/Ben-Michael 2021 (requer `ENABLE_AUGMENTED_SCM=true`)
+
 **Fluxo assíncrono (PR-06):**
 A resposta retorna imediatamente com `status: queued`.
 O worker processa a análise em background e atualiza o status para
@@ -132,6 +137,12 @@ async def create_analysis(
         analysis = await service.create_queued(
             request=body,
             user_id=user_id or (current_user.id if current_user else None),
+        )
+    except MethodNotAvailableError as exc:
+        # Método experimental com feature flag desabilitada → 501 Not Implemented
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
         )
     except ValueError as exc:
         raise HTTPException(

@@ -15,7 +15,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ── Literais de domínio ───────────────────────────────────────────────────────
 
-MethodLiteral = Literal["did", "iv", "panel_iv", "event_study", "compare"]
+MethodLiteral = Literal[
+    "did", "iv", "panel_iv", "event_study", "compare",
+    # ── Métodos experimentais (requerem feature flag) ──────────────────────
+    # "scm" e "augmented_scm" são aceitos pela API mas retornam HTTP 501
+    # enquanto os módulos synthetic_control.py / synthetic_augmented.py
+    # não estiverem portados e ENABLE_SCM / ENABLE_AUGMENTED_SCM=true.
+    "scm",
+    "augmented_scm",
+]
 ScopeLiteral = Literal["state", "municipal"]
 StatusLiteral = Literal["queued", "running", "success", "failed"]
 

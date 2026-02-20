@@ -105,6 +105,19 @@ class Settings(BaseSettings):
     quarto_path: str = "/usr/bin/quarto"
     reports_output_path: str = "/tmp/reports"
 
+    # Feature Flags — Métodos Causais Experimentais
+    # ──────────────────────────────────────────────
+    # Desabilitados por padrão até que os módulos correspondentes
+    # sejam portados do repositório new_impacto e validados.
+    #
+    # Para habilitar SCM quando synthetic_control.py estiver disponível:
+    #   ENABLE_SCM=true
+    #
+    # Para habilitar Augmented SCM quando synthetic_augmented.py estiver disponível:
+    #   ENABLE_AUGMENTED_SCM=true
+    enable_scm: bool = False
+    enable_augmented_scm: bool = False
+
 
 @lru_cache()
 def get_settings() -> Settings:

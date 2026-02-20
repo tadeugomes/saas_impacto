@@ -43,7 +43,11 @@ from app.db.base import Base
 
 # ── Valores válidos ───────────────────────────────────────────────────────────
 VALID_STATUSES = ("queued", "running", "success", "failed")
-VALID_METHODS = ("did", "iv", "panel_iv", "event_study", "compare")
+VALID_METHODS = (
+    "did", "iv", "panel_iv", "event_study", "compare",
+    # Experimental — requerem feature flag (ENABLE_SCM / ENABLE_AUGMENTED_SCM)
+    "scm", "augmented_scm",
+)
 
 
 class EconomicImpactAnalysis(Base):
