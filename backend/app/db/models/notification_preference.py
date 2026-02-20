@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Column, Boolean, DateTime, ForeignKey, String
+from sqlalchemy import CheckConstraint, Column, Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -49,4 +49,14 @@ class NotificationPreference(Base):
         nullable=False,
     )
 
-    __table_args__ = ()
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('email', 'webhook')",
+            name="ck_notification_preferences_channel",
+        ),
+        CheckConstraint(
+            r"(channel = 'email' AND endpoint ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') "
+            r"OR (channel = 'webhook' AND endpoint ~* '^https?://.+')",
+            name="ck_notification_preferences_endpoint_by_channel",
+        ),
+    )
