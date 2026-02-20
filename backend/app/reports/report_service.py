@@ -4,13 +4,15 @@ Serviço de geração de relatórios DOCX.
 Orquestra a consulta de dados e geração de documentos Word.
 """
 
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from collections.abc import Mapping
 from io import BytesIO
 
 from .docx_generator import DOCXGenerator
-from .templates import MODULE_TEMPLATES, get_module_template, format_value
+from .templates import get_module_template, format_value
 
 
 class ReportService:
@@ -360,9 +362,14 @@ class ReportService:
         retornadas por `EconomicImpactAnalysisDetailResponse`.
         """
         analysis_data = self._coerce_mapping(analysis)
-        result_summary = self._coerce_mapping(analysis_data.get("result_summary") or {})
-        result_full = self._coerce_mapping(analysis_data.get("result_full") or {})
+        result_summary = dict(self._coerce_mapping(analysis_data.get("result_summary") or {}))
+        result_full, artifact_warnings = self._resolve_result_full(analysis_data)
         request_params = self._coerce_mapping(analysis_data.get("request_params") or {})
+
+        if artifact_warnings:
+            warnings = list(result_summary.get("warnings", []))
+            warnings.extend(artifact_warnings)
+            result_summary["warnings"] = warnings
 
         analysis_id = str(analysis_data.get("id") or "desconhecida")
         method = str(analysis_data.get("method") or "did").lower()
@@ -403,6 +410,80 @@ class ReportService:
         doc_bytes = self.generator.save()
         filename = f"analise_{method}_{analysis_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
         return doc_bytes, filename
+
+    def _resolve_result_full(
+        self,
+        analysis: Mapping[str, Any],
+    ) -> tuple[Mapping[str, Any], list[str]]:
+        """Resolve `result_full`, com fallback em `artifact_path` quando necessário."""
+        inline_result = self._coerce_mapping(analysis.get("result_full") or {})
+        if inline_result:
+            return inline_result, []
+
+        artifact_path = analysis.get("artifact_path")
+        if not artifact_path:
+            return {}, []
+
+        loaded, warnings = self._load_result_from_artifact(str(artifact_path))
+        return loaded, warnings
+
+    def _load_result_from_artifact(self, artifact_path: str) -> tuple[Mapping[str, Any], list[str]]:
+        """Carrega JSON do `artifact_path` e retorna payload e avisos operacionais."""
+        path = (artifact_path or "").strip()
+        if not path:
+            return {}, ["artifact_path vazio; sem payload inline disponível."]
+
+        if path.startswith("file://"):
+            path = path[7:]
+
+        if path.startswith("gs://"):
+            return self._load_gcs_artifact(path)
+
+        local_path = Path(path).expanduser()
+        if not local_path.is_absolute():
+            local_path = local_path.resolve()
+
+        if not local_path.exists():
+            return {}, [f"artifact_path não encontrado: {path}"]
+
+        try:
+            with local_path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as exc:  # noqa: BLE001
+            return {}, [f"Falha ao ler artifact_path {path}: {exc}"]
+
+        if isinstance(payload, dict):
+            return payload, []
+        return {}, [f"artifact_path com formato inválido (não é JSON object): {path}"]
+
+    def _load_gcs_artifact(self, artifact_path: str) -> tuple[Mapping[str, Any], list[str]]:
+        """Carrega JSON de URI GCS (`gs://bucket/objeto`) sem quebrar ausência de SDK."""
+        # Dependência opcional para manter compatibilidade; sem SDK, alerta amigável.
+        try:
+            from google.cloud import storage  # type: ignore
+        except Exception:
+            return {}, [
+                "Dependência google-cloud-storage não instalada: resultado completo não carregado."
+            ]
+
+        try:
+            _, bucket_and_blob = artifact_path.split("gs://", 1)
+            bucket_name, blob_name = bucket_and_blob.split("/", 1)
+        except ValueError as exc:
+            return {}, [f"artifact_path inválido para GCS: {artifact_path} ({exc})"]
+
+        try:
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            content = blob.download_as_text()
+            payload = json.loads(content)
+        except Exception as exc:  # noqa: BLE001
+            return {}, [f"Falha ao carregar artifact_path GCS {artifact_path}: {exc}"]
+
+        if isinstance(payload, dict):
+            return payload, []
+        return {}, [f"artifact_path GCS com formato inválido (não é JSON object): {artifact_path}"]
 
     def _add_impact_executive_summary(
         self,
@@ -855,7 +936,11 @@ class ReportService:
                         for item in coefficients
                     ]
                     self.generator.add_indicator_table(headers, rows)
-                    self.generator.add_chart_placeholder(f"Event Study - {outcome}")
+                    chart_bytes = self._build_event_study_chart_png(coefficients)
+                    if chart_bytes:
+                        self.generator.add_chart_image(chart_bytes, f"Event Study - {outcome}")
+                    else:
+                        self.generator.add_chart_placeholder(f"Event Study - {outcome}")
                 else:
                     self.generator.add_text("Sem coeficientes por período.")
 
@@ -912,6 +997,58 @@ class ReportService:
                     self.generator.add_indicator_table(["Campo", "Valor"], rows)
                 else:
                     self.generator.add_text("Sem detalhamento adicional disponível.")
+
+    def _build_event_study_chart_png(
+        self,
+        coefficients: list[dict[str, Any]],
+    ) -> bytes | None:
+        """Monta gráfico de Event Study em memória (PNG), quando matplotlib estiver disponível."""
+        try:
+            from matplotlib import pyplot as plt  # type: ignore
+        except Exception:
+            return None
+
+        points = []
+        for raw_item in coefficients:
+            item = self._coerce_mapping(raw_item)
+            rel_time = item.get("rel_time")
+            coef = (
+                item.get("coef")
+                if item.get("coef") is not None
+                else item.get("att")
+                if item.get("att") is not None
+                else item.get("estimate")
+            )
+            if not isinstance(rel_time, (int, float)) or not isinstance(coef, (int, float)):
+                continue
+            points.append((int(rel_time), float(coef)))
+
+        if len(points) < 2:
+            return None
+
+        x, y = zip(*sorted(points), strict=False)
+
+        try:
+            plt.figure(figsize=(6.0, 3.8))
+            plt.plot(x, y, marker="o", linewidth=2, color="#1f77b4")
+            plt.axhline(0, linewidth=1, linestyle="--", color="gray")
+            plt.axvline(0, linewidth=1, linestyle=":", color="black")
+            plt.title("Evolução do efeito por período")
+            plt.xlabel("Período relativo ao tratamento")
+            plt.ylabel("Coeficiente")
+            plt.grid(axis="both", alpha=0.2)
+
+            from io import BytesIO
+
+            buffer = BytesIO()
+            plt.tight_layout()
+            plt.savefig(buffer, format="png", dpi=120)
+            plt.close()
+            buffer.seek(0)
+            return buffer.getvalue()
+        except Exception:
+            plt.close()
+            return None
 
     def _add_impact_diagnostics_section(
         self,

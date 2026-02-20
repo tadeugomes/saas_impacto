@@ -8,9 +8,9 @@ Cobertura:
 from __future__ import annotations
 
 from io import BytesIO
+import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
 
@@ -227,7 +227,7 @@ class TestAnalysisService:
         obj.is_terminal = status in ("success", "failed")
         return obj
 
-    def _make_service(self) -> "AnalysisService":
+    def _make_service(self):
         from app.services.impacto_economico.analysis_service import AnalysisService
         db = AsyncMock()
         db.execute = AsyncMock()
@@ -306,7 +306,7 @@ class TestAnalysisService:
             "app.services.impacto_economico.analysis_service.EconomicImpactAnalysis",
             return_value=mock_analysis,
         ):
-            result = await service._create_queued(req, user_id=USER_ID)
+            await service._create_queued(req, user_id=USER_ID)
 
         service._db.add.assert_called_once()
         service._db.commit.assert_called()
@@ -855,6 +855,57 @@ class TestImpactReportService:
         assert "Metodologia" in text
         assert "Limitações e Interpretação" in text
         assert "Qualidade e Validação" in text
+
+    def test_generate_impact_analysis_report_uses_artifact_path(self, tmp_path):
+        from app.reports import ReportService
+
+        artifact_path = tmp_path / "result_full.json"
+        artifact_payload = {
+            "pib_log": {
+                "main_result": {
+                    "coef": 0.25,
+                    "std_err": 0.05,
+                    "p_value": 0.012,
+                    "ci_lower": 0.10,
+                    "ci_upper": 0.40,
+                    "n_obs": 95,
+                }
+            }
+        }
+        artifact_path.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+        analysis = {
+            "id": str(uuid.uuid4()),
+            "status": "success",
+            "method": "did",
+            "request_params": {
+                "treatment_year": 2015,
+                "ano_inicio": 2010,
+                "ano_fim": 2023,
+                "scope": "state",
+                "treated_ids": ["2100055"],
+                "outcomes": ["pib_log"],
+            },
+            "result_summary": {
+                "outcome": "pib_log",
+                "coef": 0.25,
+                "std_err": 0.05,
+                "p_value": 0.012,
+                "n_obs": 95,
+                "ci_lower": 0.10,
+                "ci_upper": 0.40,
+            },
+            "result_full": None,
+            "artifact_path": str(artifact_path),
+        }
+
+        report_service = ReportService()
+        docx_buffer, filename = report_service.generate_impact_analysis_report(analysis)
+        text = self._extract_docx_text(docx_buffer)
+
+        assert filename.endswith(".docx")
+        assert "Resultado Principal" in text
+        assert "pib_log" in text
 
     def test_generate_impact_analysis_report_for_compare(self):
         from app.reports import ReportService

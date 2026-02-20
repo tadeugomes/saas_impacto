@@ -172,6 +172,27 @@ class DOCXGenerator:
             pBdr.append(elm)
         pPr.append(pBdr)
 
+    def add_chart_image(
+        self,
+        image_bytes: bytes,
+        chart_title: str,
+        width_inches: float = 6.0,
+    ) -> None:
+        """Adiciona uma imagem de gráfico ao documento."""
+        if not image_bytes:
+            self.add_chart_placeholder(chart_title)
+            return
+
+        paragraph = self.doc.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.add_run(chart_title).italic = True
+
+        try:
+            image_stream = BytesIO(image_bytes)
+            self.doc.add_picture(image_stream, width=Inches(width_inches))
+        except Exception:
+            self.add_chart_placeholder(chart_title)
+
     def add_text(self, text: str, bold: bool = False, italic: bool = False):
         """Adiciona um texto simples."""
         para = self.doc.add_paragraph()
@@ -182,7 +203,7 @@ class DOCXGenerator:
     def add_bullet_list(self, items: List[str]):
         """Adiciona uma lista com marcadores."""
         for item in items:
-            para = self.doc.add_paragraph(item, style='List Bullet')
+            self.doc.add_paragraph(item, style='List Bullet')
 
     def add_page_break(self):
         """Adiciona uma quebra de página."""
