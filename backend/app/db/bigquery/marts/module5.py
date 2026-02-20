@@ -334,27 +334,58 @@ def build_impacto_economico_mart_sql(versao_pipeline: str = "v1.0.0") -> str:
 
 def build_indicator_metadata_sql() -> str:
     """Retorna SQL de metadados de indicadores processados no mart."""
+    # Metadados-fonte da camada de API (fonte única da verdade de catálogo).
+    # Evita manter este contrato em duplicidade.
+    from app.services.generic_indicator_service import INDICATORS_METADATA
+
+    module5_rows = [
+        meta
+        for code, meta in INDICATORS_METADATA.items()
+        if str(code).startswith("IND-5.")
+    ]
+
+    if not module5_rows:
+        # fallback defensivo para não quebrar a pipeline caso haja regressão no import
+        module5_rows = []
+
+    def _sql_val(v: object) -> str:
+        if v is None:
+            return "NULL"
+        s = str(v)
+        s = s.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{s}'"
+
+    rows_sql = ",\n        ".join(
+            (
+                "STRUCT("
+                + ", ".join(
+                    [
+                        f"{_sql_val(meta.get('codigo'))} AS codigo_indicador",
+                        f"{_sql_val(meta.get('nome'))} AS nome",
+                        f"{_sql_val(meta.get('unidade'))} AS unidade",
+                        f"{_sql_val(meta.get('fonte_dados'))} AS fonte_dados",
+                        f"{_sql_val(meta.get('granularidade'))} AS granularidade",
+                        f"{_sql_val(meta.get('descricao'))} AS descricao",
+                    ]
+                )
+                + f", '{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}' AS versao_pipeline, CURRENT_TIMESTAMP() AS data_atualizacao)"
+                for meta in sorted(module5_rows, key=lambda m: m.get("codigo", ""))
+            )
+        )
+
+    if not rows_sql:
+        rows_sql = (
+            "STRUCT('IND-5.01' AS codigo_indicador, 'PIB Municipal' AS nome, 'R$' AS unidade, "
+            "'IBGE - PIB municipal' AS fonte_dados, 'Município/Ano' AS granularidade, "
+            "'Indicador 5.01 - nível de fallback.' AS descricao, "
+            f"'{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}' AS versao_pipeline, CURRENT_TIMESTAMP() AS data_atualizacao)"
+        )
+
     return f"""
     CREATE OR REPLACE TABLE {MART_M5_METADATA_TABLE_FQTN}
-    (
-        codigo_indicador STRING,
-        nome STRING,
-        unidade STRING,
-        fonte_dados STRING,
-        granularidade STRING,
-        descricao STRING,
-        versao_pipeline STRING,
-        data_atualizacao TIMESTAMP
-    )
     AS
-    SELECT
-        CAST(NULL AS STRING) AS codigo_indicador,
-        CAST(NULL AS STRING) AS nome,
-        CAST(NULL AS STRING) AS unidade,
-        CAST(NULL AS STRING) AS fonte_dados,
-        CAST(NULL AS STRING) AS granularidade,
-        CAST(NULL AS STRING) AS descricao,
-        '{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}' AS versao_pipeline,
-        CURRENT_TIMESTAMP() AS data_atualizacao
-    LIMIT 0
+    SELECT *
+    FROM UNNEST([
+        {rows_sql}
+    ])
     """

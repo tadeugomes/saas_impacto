@@ -137,6 +137,20 @@ curl -X POST "http://localhost:8000/api/v1/indicators/query" \
     "id_municipio": "3550308",
     "ano": 2022
   }'
+
+### 4. Validação completa do Módulo 5 (BigQuery)
+
+```bash
+cd /Users/tgt/Documents/GitHub/saas_impacto
+source venv/bin/activate
+
+# Regenera os marts e metadados do Módulo 5 antes da validação
+PYTHONPATH=/Users/tgt/Documents/GitHub/saas_impacto/backend \
+python -m scripts.build_module5_marts --versao-pipeline v1.0.2
+
+# Executa validação de ponta a ponta do Módulo 5 com dados reais
+python testar_modulo5_dados_reais.py
+```
 ```
 
 ## Comandos Úteis
