@@ -32,6 +32,7 @@ variable "worker_image" {
 
 variable "secrets" {
   type        = map(string)
+  sensitive   = true
   description = "Mapa de segredos (nome -> valor)"
   default     = {}
 }

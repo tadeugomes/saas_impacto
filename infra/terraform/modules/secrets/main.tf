@@ -1,6 +1,13 @@
-variable "project_id" {}
+variable "project_id" {
+  type        = string
+  description = "ID do projeto."
+}
+
 variable "secrets" {
-  type = map(string)
+  type        = map(string)
+  sensitive   = true
+  default     = {}
+  description = "Mapa de segredos (nome -> valor)."
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -21,4 +28,5 @@ resource "google_secret_manager_secret_version" "version" {
 
 output "secret_ids" {
   value = { for k, v in google_secret_manager_secret.this : k => v.id }
+  sensitive = true
 }
