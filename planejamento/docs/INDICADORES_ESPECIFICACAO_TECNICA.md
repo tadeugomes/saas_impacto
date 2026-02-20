@@ -27,7 +27,7 @@
 
 ### 1.1 Escopo
 
-Este documento especifica **78 indicadores** organizados em 7 módulos para implementação no BigQuery e exposição via API FastAPI.
+Este documento especifica **81 indicadores** organizados em 7 módulos para implementação no BigQuery e exposição via API FastAPI.
 
 ### 1.2 Padrão UNCTAD
 
@@ -39,10 +39,10 @@ Indicadores marcados com `[UNCTAD]` seguem a metodologia do Port Performance Sco
 | Operações de Carga | 13 | 11 | 2 |
 | Recursos Humanos | 12 | 8 | 4 |
 | Comércio Exterior | 10 | 0 | 10 |
-| Impacto Econômico | 18 | 0 | 18 |
+| Impacto Econômico | 21 | 0 | 21 |
 | Finanças Públicas | 6 | 0 | 6 |
 | Índices Sintéticos | 7 | 0 | 7 |
-| **TOTAL** | **78** | **29** | **49** |
+| **TOTAL** | **81** | **29** | **52** |
 
 ### 1.3 Abordagem Metodológica
 

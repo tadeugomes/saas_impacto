@@ -9,15 +9,12 @@ export function useAuth() {
   const { user, isAuthenticated, isLoading, setAuth, clearAuth, setLoading } = useAuthStore();
 
   const login = useCallback(async (credentials: LoginRequest) => {
+    setLoading(true);
     try {
-      setLoading(true);
       const data = await authService.login(credentials);
-      // Buscar dados do usuário
       const userData = await authService.getCurrentUser();
       setAuth(userData, data.access_token);
       navigate('/');
-    } catch (error) {
-      throw error;
     } finally {
       setLoading(false);
     }

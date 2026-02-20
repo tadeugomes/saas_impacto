@@ -130,7 +130,7 @@ export function BarChart({
             color: '#6b7280',
             // Para gráficos horizontais, limitar o tamanho do texto
             ...(horizontal && {
-              callback: function(value: string | number, _index: number) {
+              callback: (value: string | number) => {
                 const label = typeof value === 'string' ? value : String(value);
                 // Truncar labels muito longos
                 return label.length > 25 ? label.substring(0, 22) + '...' : label;

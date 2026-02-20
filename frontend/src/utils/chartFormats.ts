@@ -3,7 +3,7 @@
  * Fornece callbacks e opções de escala para formatação brasileira de valores.
  */
 
-import type { ScaleOptions, Tick, TooltipItem } from 'chart.js';
+import type { ScaleOptions, TooltipItem } from 'chart.js';
 import { formatByType, type ChartValueFormat } from './numberFormat';
 
 export type { ChartValueFormat } from './numberFormat';
@@ -25,7 +25,7 @@ interface TickCallbackParams {
 export function createTickCallback(params: TickCallbackParams) {
   const { format, maxValue } = params;
 
-  return function(value: string | number, _index: number, _ticks: Tick[]): string {
+  return function(value: string | number): string {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
 
     if (isNaN(num)) {
@@ -141,7 +141,11 @@ export function createFormattedScaleOptions(config: ScaleConfig = {}): ScaleOpti
   // Adicionar formatação de ticks
   if (format) {
     const maxValue = max !== undefined ? max : 0;
-    (scaleOptions.ticks as any).callback = createTickCallback({ format, maxValue });
+    if (scaleOptions.ticks) {
+      const tickCallback = createTickCallback({ format, maxValue });
+      (scaleOptions.ticks as { callback?: (value: string | number, index: number, ticks: unknown[]) => string }).callback =
+        (value: string | number) => tickCallback(value);
+    }
   }
 
   return scaleOptions;

@@ -5,17 +5,18 @@ import type {
   IndicatorResponse,
   ModulesOverview,
   IndicatorMetadata,
+  AllIndicatorsMetadataResponse,
 } from '../types/api';
 
 export const indicatorsService = {
-  async queryIndicator<T = any>(request: IndicatorRequest): Promise<IndicatorResponse<T>> {
+  async queryIndicator<T = unknown>(request: IndicatorRequest): Promise<IndicatorResponse<T>> {
     const { params, ...rest } = request;
     const body = { ...rest, ...params };
     const response = await apiClient.post<IndicatorResponse<T>>('/api/v1/indicators/query', body);
     return response.data;
   },
 
-  async getMetadata(): Promise<{ indicadores: IndicatorMetadata[] }> {
+  async getMetadata(): Promise<AllIndicatorsMetadataResponse> {
     const response = await apiClient.get('/api/v1/indicators/metadata');
     return response.data;
   },

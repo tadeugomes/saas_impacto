@@ -8,6 +8,7 @@ import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
+import type { IndicatorResponse } from '../../../types/api';
 
 const INDICATORS_INFO = [
   { code: 'IND-6.01', name: 'Arrecadação ICMS', unit: 'R$', desc: 'Total arrecadado de ICMS no município', valueField: 'arrecadacao_icms' },
@@ -17,17 +18,43 @@ const INDICATORS_INFO = [
   { code: 'IND-6.06', name: 'ICMS por Tonelada', unit: 'R$/t', desc: 'ICMS arrecadado por tonelada movimentada', valueField: 'icms_por_tonelada' },
 ];
 
-function getValueFromData(item: any, valueField: string): number {
-  return item[valueField] ?? item.valor ?? item.total ?? 0;
+type IndicatorRow = Record<string, unknown>;
+type ModuleIndicatorResponse = IndicatorResponse<IndicatorRow>;
+type IndicatorMap = Record<string, ModuleIndicatorResponse>;
+
+const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorResponse => ({
+  codigo_indicador: codigoIndicador,
+  nome: codigoIndicador,
+  unidade: '',
+  unctad: false,
+  data: [],
+});
+
+function getValueFromData(item: IndicatorRow, valueField: string): number {
+  const fieldValue = item[valueField];
+  if (typeof fieldValue === 'number') {
+    return fieldValue;
+  }
+  const fallbackValue = item.valor ?? item.total;
+  if (typeof fallbackValue === 'number') {
+    return fallbackValue;
+  }
+  return 0;
 }
 
-function getLabelFromData(item: any): string {
-  return item.nome_municipio || item.id_municipio || item.porto || item.id_instalacao || 'N/A';
+function getLabelFromData(item: IndicatorRow): string {
+  return (
+    (typeof item.nome_municipio === 'string' && item.nome_municipio) ||
+    (typeof item.id_municipio === 'string' && item.id_municipio) ||
+    (typeof item.porto === 'string' && item.porto) ||
+    (typeof item.id_instalacao === 'string' && item.id_instalacao) ||
+    'N/A'
+  );
 }
 
 export function Module6View() {
   const { selectedYear, selectedInstallation } = useFilterStore();
-  const [indicators, setIndicators] = useState<Record<string, any>>({});
+  const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,22 +64,24 @@ export function Module6View() {
       setError(null);
       try {
         const promises = INDICATORS_INFO.map((ind) =>
-          indicatorsService.queryIndicator({
+          indicatorsService.queryIndicator<IndicatorRow>({
             codigo_indicador: ind.code,
             params: {
               ano: selectedYear,
               id_instalacao: selectedInstallation || undefined
             },
-          }).catch(() => ({ data: [] }))
+          }).catch(() => createEmptyIndicatorResponse(ind.code))
         );
         const results = await Promise.all(promises);
-        const mapped: Record<string, any> = {};
+        const mapped: IndicatorMap = {};
         results.forEach((result, i) => {
           mapped[INDICATORS_INFO[i].code] = result;
         });
         setIndicators(mapped);
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Erro ao carregar indicadores');
+      } catch (err: unknown) {
+        const errorResponse = err as { response?: { data?: { detail?: unknown } } };
+        const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao carregar indicadores';
+        setError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao carregar indicadores');
       } finally {
         setIsLoading(false);
       }
@@ -97,10 +126,10 @@ export function Module6View() {
           >
             {indicators[ind.code]?.data && indicators[ind.code].data.length > 0 ? (
               <BarChart
-                labels={indicators[ind.code].data.slice(0, 10).map((d: any) => getLabelFromData(d))}
+                labels={indicators[ind.code].data.slice(0, 10).map((d: IndicatorRow) => getLabelFromData(d))}
                 datasets={[{
                   label: ind.unit,
-                  data: indicators[ind.code].data.slice(0, 10).map((d: any) => getValueFromData(d, ind.valueField || '')),
+                  data: indicators[ind.code].data.slice(0, 10).map((d: IndicatorRow) => getValueFromData(d, ind.valueField || '')),
                 }]}
                 yAxisLabel={ind.unit}
                 horizontal

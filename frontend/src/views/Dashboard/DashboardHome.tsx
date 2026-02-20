@@ -21,7 +21,7 @@ const MODULE_INFO = [
   { id: 2, name: 'Operações de Carga', icon: Package, color: 'module2', path: '/dashboard/module2', indicators: 13 },
   { id: 3, name: 'Recursos Humanos', icon: Users, color: 'module3', path: '/dashboard/module3', indicators: 12 },
   { id: 4, name: 'Comércio Exterior', icon: Globe, color: 'module4', path: '/dashboard/module4', indicators: 10 },
-  { id: 5, name: 'Impacto Econômico', icon: TrendingUp, color: 'module5', path: '/dashboard/module5', indicators: 18 },
+  { id: 5, name: 'Impacto Econômico', icon: TrendingUp, color: 'module5', path: '/dashboard/module5', indicators: 21 },
   { id: 6, name: 'Finanças Públicas', icon: Building, color: 'module6', path: '/dashboard/module6', indicators: 6 },
   { id: 7, name: 'Índices Sintéticos', icon: LineChart, color: 'module7', path: '/dashboard/module7', indicators: 7 },
 ];
@@ -37,9 +37,11 @@ export function DashboardHome() {
         setIsLoading(true);
         const data = await indicatorsService.getModulesOverview();
         setOverview(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorResponse = err as { response?: { data?: { detail?: unknown } } };
+        const detail = errorResponse?.response?.data?.detail;
         console.error('Erro ao carregar overview:', err);
-        setError(err.response?.data?.detail || 'Erro ao carregar overview');
+        setError(typeof detail === 'string' ? detail : 'Erro ao carregar overview');
       } finally {
         setIsLoading(false);
       }
@@ -53,9 +55,9 @@ export function DashboardHome() {
   }
 
   // Default values when API fails
-  const totalIndicadores = overview?.total_indicadores || 78;
-  const unctadCompliant = overview?.unctad_compliant || 78;
-  const totalModulos = overview?.total_modulos || 7;
+  const totalIndicadores = overview?.total_indicadores ?? 0;
+  const unctadCompliant = overview?.unctad_compliant ?? 0;
+  const totalModulos = overview?.total_modulos ?? 7;
   const sistemaNome = overview?.sistema || 'SaaS Impacto Portuário';
 
   return (
@@ -137,11 +139,11 @@ export function DashboardHome() {
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500">Indicadores</span>
-                  <span className="font-medium text-gray-900">{moduleData?.total_indicadores || module.indicators}</span>
+                  <span className="font-medium text-gray-900">{moduleData?.total_indicadores ?? module.indicators}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mt-1">
                   <span className="text-gray-500">UNCTAD</span>
-                  <span className="font-medium text-blue-600">{moduleData?.unctad_compliant || module.indicators}</span>
+                  <span className="font-medium text-blue-600">{moduleData?.unctad_compliant ?? 0}</span>
                 </div>
               </div>
             </Link>

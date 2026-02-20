@@ -21,8 +21,9 @@ export function LoginView() {
 
     try {
       await login({ email, password });
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail;
+    } catch (err: unknown) {
+      const errorResponse = err as { response?: { data?: { detail?: unknown } } };
+      const errorMessage = errorResponse?.response?.data?.detail;
       setError(
         typeof errorMessage === 'string'
           ? errorMessage

@@ -7,7 +7,8 @@ interface MainLayoutProps {
   requireAuth?: boolean;
 }
 
-export function MainLayout({ }: MainLayoutProps) {
+export function MainLayout(_props: MainLayoutProps) {
+  void _props;
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (

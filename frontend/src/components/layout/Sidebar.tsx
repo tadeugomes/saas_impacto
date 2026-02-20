@@ -55,7 +55,7 @@ const navItems = [
     path: '/dashboard/module5',
     icon: TrendingUp,
     label: 'Módulo 5',
-    description: 'Impacto Econômico (18)',
+    description: 'Impacto Econômico (21)',
     moduleColor: 'module5',
   },
   {

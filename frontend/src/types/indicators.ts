@@ -19,5 +19,5 @@ export interface IndicatorData {
   description: string;
   unit: string;
   unctad: boolean;
-  data: any[];
+  data: Array<Record<string, unknown>>;
 }
