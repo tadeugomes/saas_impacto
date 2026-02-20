@@ -94,12 +94,36 @@ def _set_env_defaults() -> None:
         "BQ_DATASET_ANTAQ": "antaq",
         "BQ_DATASET_MARTS": "marts_impacto",
         "SECRET_KEY": "test-secret-key-32-chars-minimum!!",
+        "JWT_SECRET_KEY": "test-jwt-secret-key-32chars-min!",
         "DEBUG": "false",
         "POSTGRES_POOL_SIZE": "1",
         "POSTGRES_MAX_OVERFLOW": "0",
+        # Celery: usa sempre o modo "eager" em testes unitários
+        # (executa a task inline, sem broker Redis real)
+        "CELERY_BROKER_URL": "redis://localhost:6379/1",
+        "CELERY_RESULT_BACKEND": "redis://localhost:6379/2",
     }
     for key, val in defaults.items():
         os.environ.setdefault(key, val)
+
+
+def _configure_celery_eager() -> None:
+    """Configura Celery para executar tasks de forma síncrona (sem broker/Redis).
+
+    ``task_always_eager=True``: .delay() / .apply_async() executam inline.
+    ``result_backend="cache+memory://"``: resultados em memória, sem Redis.
+    ``task_eager_propagates=True``: exceções propagadas (útil para retry tests).
+    """
+    try:
+        from app.tasks.celery_app import celery_app
+        celery_app.conf.update(
+            task_always_eager=True,
+            task_eager_propagates=True,
+            result_backend="cache+memory://",  # sem Redis no CI unitário
+            broker_url="memory://",            # sem Redis no CI unitário
+        )
+    except Exception:
+        pass  # Celery não disponível ou import circular → ignorar silenciosamente
 
 
 # ---------------------------------------------------------------------------
@@ -108,3 +132,4 @@ def _set_env_defaults() -> None:
 _inject_asyncpg_stub()
 _inject_google_cloud_stub()
 _set_env_defaults()
+_configure_celery_eager()
