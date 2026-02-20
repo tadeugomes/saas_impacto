@@ -13,6 +13,7 @@ from app.core.tenant import TenantContextMiddleware
 from app.api.v1 import auth
 from app.api.v1.indicators import module1_router, generic_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.impacto_economico.router import router as impacto_economico_router
 
 settings = get_settings()
 
@@ -76,6 +77,7 @@ api_router.include_router(auth.router)
 api_router.include_router(module1_router)
 api_router.include_router(generic_router)
 api_router.include_router(reports_router)
+api_router.include_router(impacto_economico_router)
 
 app.include_router(api_router)
 
