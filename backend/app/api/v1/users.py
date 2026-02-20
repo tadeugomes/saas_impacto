@@ -57,13 +57,5 @@ async def update_notifications(
 ) -> list[NotificationPreferenceResponse]:
     """Substitui a lista de preferências do usuário atual."""
     service = NotificationService(current_user.tenant_id, current_user.id)
-    prefs = [
-        NotificationPreferenceCreate(
-            channel=item.channel,
-            endpoint=item.endpoint,
-            enabled=item.enabled,
-        )
-        for item in payload
-    ]
-    rows = await service.upsert_many(db, prefs)
+    rows = await service.upsert_many(db, payload)
     return [_to_response(item) for item in rows]

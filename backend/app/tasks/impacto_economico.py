@@ -50,10 +50,7 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
     from app.db.base import AsyncSessionLocal
     from app.db.models.economic_impact_analysis import EconomicImpactAnalysis
     from app.schemas.impacto_economico import EconomicImpactAnalysisCreateRequest
-    from app.services.impacto_economico.analysis_service import (
-        AnalysisService,
-        AnalysisNotFoundError,
-    )
+    from app.services.impacto_economico.analysis_service import AnalysisService
 
     _analysis_id = uuid.UUID(analysis_id)
     _tenant_id = uuid.UUID(tenant_id)
@@ -92,6 +89,16 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
             )
             analysis.mark_failed(f"Parâmetros inválidos: {exc}")
             await db.commit()
+            try:
+                from app.tasks.notifications import notify_analysis_complete
+
+                notify_analysis_complete.delay(analysis_id, tenant_id)
+            except Exception as exc:
+                logger.exception(
+                    "Falha ao enfileirar notificação da análise %s: %s",
+                    analysis_id,
+                    exc,
+                )
             return
 
         # 4. Executar pipeline causal (marca running → success|failed internamente)

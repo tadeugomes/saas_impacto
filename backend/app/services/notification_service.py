@@ -8,6 +8,7 @@ from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.notification import NotificationPreferenceCreate
 from app.db.models.notification_preference import NotificationPreference
 
 
@@ -30,7 +31,7 @@ class NotificationService:
     async def upsert_many(
         self,
         db: AsyncSession,
-        payload: Iterable[NotificationPreference],
+        payload: Iterable[NotificationPreferenceCreate],
     ) -> list[NotificationPreference]:
         """Substitui as preferências do usuário e retorna o estado atual."""
         await db.execute(
@@ -40,22 +41,27 @@ class NotificationService:
             )
         )
 
-        new_rows: list[NotificationPreference] = []
-        seen_channels: set[str] = set()
+        # Última preferência enviada por canal vence (ex.: overwrite no front).
+        normalized_payload: dict[str, NotificationPreferenceCreate] = {}
         for item in payload:
             channel = item.channel.strip().lower()
-            if channel in seen_channels:
-                continue
-            seen_channels.add(channel)
-            row = NotificationPreference(
+            normalized_payload[channel] = NotificationPreferenceCreate(
+                channel=channel,
+                endpoint=item.endpoint.strip(),
+                enabled=item.enabled,
+            )
+
+        new_rows: list[NotificationPreference] = []
+        for channel, row in normalized_payload.items():
+            db_row = NotificationPreference(
                 tenant_id=self.tenant_id,
                 user_id=self.user_id,
                 channel=channel,
-                endpoint=(item.endpoint or "").strip(),
-                enabled=item.enabled,
+                endpoint=row.endpoint.strip(),
+                enabled=row.enabled,
             )
-            db.add(row)
-            new_rows.append(row)
+            db.add(db_row)
+            new_rows.append(db_row)
 
         await db.commit()
         return new_rows

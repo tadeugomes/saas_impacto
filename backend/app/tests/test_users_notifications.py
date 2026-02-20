@@ -111,3 +111,31 @@ class TestUsersNotifications:
             )
 
         assert response.status_code == 422
+
+    def test_update_notifications_validates_email_endpoint(self):
+        service = MagicMock()
+        app = _make_client()
+        import app.api.v1.users as router_module
+
+        with patch.object(router_module, "NotificationService", return_value=service):
+            client = make_sync_asgi_client(app)
+            response = client.put(
+                "/users/me/notifications",
+                json=[{"channel": "email", "endpoint": "nao-e-email", "enabled": True}],
+            )
+
+        assert response.status_code == 422
+
+    def test_update_notifications_validates_webhook_endpoint(self):
+        service = MagicMock()
+        app = _make_client()
+        import app.api.v1.users as router_module
+
+        with patch.object(router_module, "NotificationService", return_value=service):
+            client = make_sync_asgi_client(app)
+            response = client.put(
+                "/users/me/notifications",
+                json=[{"channel": "webhook", "endpoint": "meu-webhook", "enabled": True}],
+            )
+
+        assert response.status_code == 422
