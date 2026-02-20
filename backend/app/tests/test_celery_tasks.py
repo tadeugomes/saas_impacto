@@ -237,6 +237,10 @@ class TestExecuteAnalysisAsync:
         error_msg = analysis.mark_failed.call_args[0][0]
         assert "inválidos" in error_msg.lower() or "Parâmetros" in error_msg
 
+        # Não deve executar pipeline com parâmetros inválidos.
+        # A task apenas marca falha e persiste o estado.
+        assert mock_session.commit.call_count >= 1
+
     def test_valid_analysis_calls_service_execute(self):
         """Análise válida deve chamar AnalysisService._execute()."""
         from app.tasks.impacto_economico import _execute_analysis_async
@@ -256,6 +260,28 @@ class TestExecuteAnalysisAsync:
             self._run(_execute_analysis_async(ANALYSIS_ID, TENANT_ID))
 
         mock_service._execute.assert_called_once()
+
+    def test_analysis_completion_enqueues_notification_task(self):
+        """Conclusão da análise deve enviar notificação de finalização."""
+        from app.tasks.impacto_economico import _execute_analysis_async
+
+        analysis = self._mock_analysis()
+        mock_session = self._make_mock_session(analysis)
+        mock_service = MagicMock()
+        mock_service._execute = AsyncMock(return_value=analysis)
+
+        notify_task = MagicMock()
+        notify_task.delay = MagicMock()
+
+        with patch("app.db.base.AsyncSessionLocal", return_value=mock_session), \
+             patch(
+                 "app.services.impacto_economico.analysis_service.AnalysisService",
+                 return_value=mock_service,
+             ), \
+            patch("app.tasks.notifications.notify_analysis_complete", notify_task):
+            self._run(_execute_analysis_async(ANALYSIS_ID, TENANT_ID))
+
+        notify_task.delay.assert_called_once_with(ANALYSIS_ID, TENANT_ID)
 
     def test_rls_context_set_before_query(self):
         """SET LOCAL deve ser executado antes do SELECT (mín. 2 execute calls)."""

@@ -41,17 +41,17 @@ class NotificationService:
         )
 
         new_rows: list[NotificationPreference] = []
+        seen_channels: set[str] = set()
         for item in payload:
-            if item.channel not in {"email", "webhook"}:
+            channel = item.channel.strip().lower()
+            if channel in seen_channels:
                 continue
-            if item.channel == "webhook" and not item.endpoint:
-                # mantém endpoint nulo só para e-mail, webhook exige alvo
-                continue
+            seen_channels.add(channel)
             row = NotificationPreference(
                 tenant_id=self.tenant_id,
                 user_id=self.user_id,
-                channel=item.channel,
-                endpoint=(item.endpoint or "").strip() or None,
+                channel=channel,
+                endpoint=(item.endpoint or "").strip(),
                 enabled=item.enabled,
             )
             db.add(row)

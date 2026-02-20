@@ -656,6 +656,49 @@ class TestRouter:
         assert "get" in result_path
         report_path = paths[f"{self.PREFIX}/analises/{{analysis_id}}/report"]
         assert "get" in report_path
+        matching_path = paths[f"{self.PREFIX}/matching"]
+        assert "post" in matching_path
+
+    def test_get_matching_controls_returns_200(self):
+        svc = MagicMock()
+        matching_payload = {
+            "treated_ids": ["2100055", "2111300"],
+            "treatment_year": 2015,
+            "scope": "state",
+            "ano_inicio": 2010,
+            "ano_fim": 2023,
+            "n_controls": 2,
+            "features": ["pib_log", "n_vinculos_log"],
+        }
+        expected_result = {
+            "suggested_controls": [
+                {
+                    "id_municipio": "3304557",
+                    "similarity_score": 0.91,
+                    "distance": 0.09,
+                    "is_treated": False,
+                }
+            ],
+            "balance_table": {"n_samples": 1},
+            "scope": "state",
+            "treatment_year": 2015,
+            "n_treated": 2,
+            "n_candidates": 1,
+            "features": ["pib_log", "n_vinculos_log"],
+        }
+
+        with patch(
+            "app.services.impacto_economico.causal.matching.suggest_control_matches",
+            new=AsyncMock(return_value=expected_result),
+        ) as mock_matching:
+            client = self._make_client(svc)
+            resp = client.post(f"{self.PREFIX}/matching", json=matching_payload)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["n_candidates"] == 1
+        assert body["suggested_controls"][0]["id_municipio"] == "3304557"
+        mock_matching.assert_called_once()
 
     def test_get_analysis_report_not_found(self):
         from app.services.impacto_economico.analysis_service import AnalysisNotFoundError
@@ -667,6 +710,20 @@ class TestRouter:
         resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/report")
 
         assert resp.status_code == 404
+
+    def test_get_analysis_report_returns_409_when_not_success(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        detail = EconomicImpactAnalysisDetailResponse(**self._mock_detail(status="running"))
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        client = self._make_client(svc)
+        resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/report")
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert "sucesso" in body["detail"]
 
     def test_router_openapi_tag_present_in_operations(self):
         """Verifica que as operações têm a tag correta."""

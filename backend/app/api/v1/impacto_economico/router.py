@@ -334,6 +334,7 @@ O relatório inclui:
     responses={
         200: {"description": "Relatório DOCX gerado com sucesso."},
         404: {"description": "Análise não encontrada ou pertence a outro tenant."},
+        409: {"description": "Relatório disponível apenas para análises com status=success."},
         500: {"description": "Falha ao gerar o relatório."},
     },
 )
@@ -354,6 +355,15 @@ async def get_analysis_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao carregar análise: {exc}",
+        )
+
+    if detail.status != "success":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Relatório disponível apenas para análises concluídas com sucesso. "
+                f"Status atual: {detail.status}"
+            ),
         )
 
     try:

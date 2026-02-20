@@ -98,6 +98,33 @@ export type AnalysisMethod =
 
 export type AnalysisScope = 'state' | 'municipal';
 
+export interface MatchingCandidate {
+  id_municipio: string;
+  similarity_score: number | null;
+  distance: number | null;
+  is_treated: boolean;
+}
+
+export interface MatchingRequest {
+  treated_ids: string[];
+  treatment_year: number;
+  scope?: AnalysisScope;
+  n_controls?: number;
+  ano_inicio?: number;
+  ano_fim?: number;
+  features?: string[] | null;
+}
+
+export interface MatchingResponse {
+  suggested_controls: MatchingCandidate[];
+  balance_table: Record<string, unknown>;
+  scope: AnalysisScope;
+  treatment_year: number;
+  n_treated: number;
+  n_candidates: number;
+  features: string[];
+}
+
 export interface AnalysisCreateRequest {
   method: AnalysisMethod;
   treated_ids: string[];

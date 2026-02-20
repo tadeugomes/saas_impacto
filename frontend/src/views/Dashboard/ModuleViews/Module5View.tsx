@@ -24,6 +24,7 @@ import type {
   AnalysisMethod,
   AnalysisScope,
   AnalysisResponse,
+  MatchingResponse,
   IndicatorMetadata,
   IndicatorResponse,
 } from '../../../types/api';
@@ -365,6 +366,8 @@ export function Module5View() {
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResponse[]>([]);
   const [analysesLoading, setAnalysesLoading] = useState(false);
   const [analysesError, setAnalysesError] = useState<string | null>(null);
+  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
+  const [isMatchingControls, setIsMatchingControls] = useState(false);
 
   const {
     analysis: polledAnalysis,
@@ -527,6 +530,44 @@ export function Module5View() {
     }
   };
 
+  const handleSuggestControls = async () => {
+    const treatedIds = toSafeArray(analysisTreated);
+    if (treatedIds.length === 0) {
+      setAnalysisError('Informe ao menos um município tratado para sugerir controles.');
+      return;
+    }
+
+    const treatmentYear = parseNumeric(String(analysisEndYear));
+    const anoInicio = parseNumeric(String(analysisStartYear));
+    const anoFim = parseNumeric(String(analysisEndYear));
+    if (treatmentYear === null || anoInicio === null || anoFim === null) {
+      setAnalysisError('Informe períodos válidos para executar o matching.');
+      return;
+    }
+
+    setAnalysisError(null);
+    setIsMatchingControls(true);
+
+    try {
+      const payload = {
+        treated_ids: treatedIds,
+        treatment_year: treatmentYear,
+        scope: analysisScope,
+        ano_inicio: anoInicio,
+        ano_fim: anoFim,
+      };
+      const response: MatchingResponse = await impactoEconomicoService.suggestMatchingControls(payload);
+      const matchedIds = response.suggested_controls.map((control) => control.id_municipio);
+      setAnalysisControls(matchedIds.join(', '));
+    } catch (err: unknown) {
+      const errorResponse = err as ApiErrorLike;
+      const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao sugerir controles.';
+      setAnalysisError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao sugerir controles.');
+    } finally {
+      setIsMatchingControls(false);
+    }
+  };
+
   const analysisMainRows = useMemo<CoeffTableRow[]>(() => {
     if (!analysisToDisplay?.result_full || analysisToDisplay.status !== 'success') {
       return [];
@@ -595,6 +636,37 @@ export function Module5View() {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadDocx = async () => {
+    if (!analysisToDisplay) {
+      return;
+    }
+
+    setAnalysisError(null);
+    setIsDownloadingDocx(true);
+
+    try {
+      const { blob, filename } = await impactoEconomicoService.getAnalysisReport(analysisToDisplay.id);
+      const url = window.URL.createObjectURL(
+        new Blob([blob], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+      );
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const errorResponse = err as ApiErrorLike;
+      const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao exportar relatório DOCX.';
+      setAnalysisError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao exportar relatório DOCX.');
+    } finally {
+      setIsDownloadingDocx(false);
+    }
   };
 
   const shouldRenderIndicators = indicators && Object.keys(indicators).length > 0;
@@ -673,12 +745,24 @@ export function Module5View() {
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Controle (opcional)</label>
-            <input
-              value={analysisControls}
-              onChange={(event) => setAnalysisControls(event.target.value)}
-              placeholder="3304557, 3548500"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                value={analysisControls}
+                onChange={(event) => setAnalysisControls(event.target.value)}
+                placeholder="3304557, 3548500"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSuggestControls();
+                }}
+                disabled={isMatchingControls}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isMatchingControls ? 'Sugerindo...' : 'Sugerir controles'}
+              </button>
+            </div>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Outcomes</label>
@@ -782,6 +866,15 @@ export function Module5View() {
                 >
                   <Download className="h-4 w-4" />
                   Baixar coeficientes CSV
+                </button>
+                <button
+                  onClick={handleDownloadDocx}
+                  disabled={isDownloadingDocx || analysisToDisplay?.status !== 'success'}
+                  title={analysisToDisplay?.status !== 'success' ? 'Disponível após a conclusão da análise' : undefined}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="h-4 w-4" />
+                  {isDownloadingDocx ? 'Gerando relatório...' : 'Exportar relatório DOCX'}
                 </button>
               </div>
             )}
