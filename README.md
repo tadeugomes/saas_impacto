@@ -177,3 +177,4 @@ saas_impacto/
 - [Especificação Técnica](planejamento/docs/INDICADORES_ESPECIFICACAO_TECNICA.md)
 - [Padrões SQL ANTAQ](planejamento/docs/role_sql_antaq_bigquery/INSTRUCOES_UNIFICADAS_SQL_ANTAQ.md)
 - [Plano de Implementação](.claude/plans/gentle-questing-llama.md)
+- [Guia de Interpretação — Módulo 5](docs/guia_interpretacao_modulo5.md)
