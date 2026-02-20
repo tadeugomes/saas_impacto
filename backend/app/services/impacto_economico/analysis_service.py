@@ -256,10 +256,10 @@ class AnalysisService:
         await self._db.refresh(analysis)
 
         logger.info(
-            "Análise criada: id=%s method=%s tenant=%s",
-            analysis.id,
-            analysis.method,
-            self._tenant_id,
+            "analysis_created",
+            analysis_id=str(analysis.id),
+            method=analysis.method,
+            tenant_id=str(self._tenant_id),
         )
         return analysis
 
@@ -287,9 +287,12 @@ class AnalysisService:
                     artifact_path=None,  # PR-06 implementa upload GCS
                 )
                 logger.warning(
-                    "Resultado grande (%d bytes); result_full omitido inline. "
-                    "artifact_path será preenchido pelo worker GCS no PR-06.",
-                    payload_size,
+                    "analysis_result_truncated",
+                    payload_bytes=payload_size,
+                    reason=(
+                        "result_full omitido inline; artifact_path"
+                        " será preenchido pelo worker GCS"
+                    ),
                 )
             else:
                 analysis.mark_success(
@@ -299,7 +302,11 @@ class AnalysisService:
 
         except Exception as exc:
             error_msg = f"{type(exc).__name__}: {exc}"
-            logger.exception("Falha na análise %s: %s", analysis.id, error_msg)
+            logger.exception(
+                "analysis_failed",
+                analysis_id=str(analysis.id),
+                error=error_msg,
+            )
             analysis.mark_failed(error_msg)
 
         await self._set_rls_context()

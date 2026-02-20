@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+import json
+import re
 from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 
 from app.tests.http_test_client import make_sync_asgi_client
+
+
+def _extract_log_payload(message: str) -> dict:
+    regexes = {
+        "request_id": re.compile(r"request_id=\'?\"?([^'\" ]+)\"?\'?"),
+        "tenant_id": re.compile(r"tenant_id=\'?\"?([^'\" ]+)\"?\'?"),
+    }
+
+    try:
+        return json.loads(message)
+    except Exception:
+        payload: dict[str, str] = {}
+        for key, pattern in regexes.items():
+            match = pattern.search(message)
+            if match:
+                payload[key] = match.group(1)
+        return payload
 
 
 def _build_client_with_health_checks(monkeypatched_checks) -> FastAPI:
@@ -113,3 +132,35 @@ def test_request_timing_preserves_header_request_id():
 
     assert resp.status_code == 200
     assert resp.headers["X-Request-Id"] == "test-req-1"
+
+
+def test_request_timing_logs_request_context_in_json_payload(caplog):
+    app_main = _build_client_with_health_checks(
+        {
+            "postgres": {"status": "connected"},
+            "redis": {"status": "connected"},
+            "bigquery": {"status": "connected"},
+        }
+    )
+
+    client = make_sync_asgi_client(app_main)
+    with caplog.at_level("INFO"):
+        resp = client.get(
+            "/health",
+            headers={
+                "X-Request-Id": "test-req-2",
+                "X-Tenant-ID": "00000000-0000-0000-0000-000000000001",
+            },
+        )
+
+    assert resp.status_code == 200
+    records = [
+        record
+        for record in caplog.records
+        if "http_request_complete" in record.getMessage()
+    ]
+    assert records, "esperado log de request com contexto"
+
+    payload = _extract_log_payload(records[-1].getMessage())
+    assert payload.get("request_id") == "test-req-2"
+    assert payload.get("tenant_id") == "00000000-0000-0000-0000-000000000001"

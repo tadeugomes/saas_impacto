@@ -57,6 +57,9 @@ jobs:
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="prefix=terraform/state"
 
+      - name: Terraform validate
+        run: terraform validate
+
       - name: Terraform plan
         run: terraform plan -no-color -input=false -out=tfplan
 
@@ -125,18 +128,20 @@ jobs:
       - name: Terraform init
         run: terraform init -reconfigure -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=terraform/state"
 
+      - name: Terraform validate
+        run: terraform validate
+
       - name: Terraform apply
         run: terraform apply -auto-approve
 
-  apply-production:
+  apply-manual:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply_environment == 'production'
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       id-token: write
-    defaults:
-      run:
-        working-directory: infra/terraform/environments/production
+    env:
+      TERRAFORM_WORKDIR: infra/terraform/environments/${{ github.event.inputs.apply_environment }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -152,7 +157,16 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/gcp-key.json" >> "${GITHUB_ENV}"
 
       - name: Terraform init
-        run: terraform init -reconfigure -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=terraform/state"
+        run: |
+          cd "${TERRAFORM_WORKDIR}"
+          terraform init -reconfigure -backend-config="bucket=${TF_STATE_BUCKET}" -backend-config="prefix=terraform/state"
+
+      - name: Terraform validate
+        run: |
+          cd "${TERRAFORM_WORKDIR}"
+          terraform validate
 
       - name: Terraform apply
-        run: terraform apply -auto-approve
+        run: |
+          cd "${TERRAFORM_WORKDIR}"
+          terraform apply -auto-approve

@@ -103,6 +103,13 @@ class TestCeleryApp:
             f"Task não encontrada. Registradas: {registered}"
         )
 
+    def test_maintenance_task_is_in_beat_schedule(self):
+        app = self._get_app()
+        schedule = app.conf.beat_schedule or {}
+        assert "purge-expired-audit-logs" in schedule
+        entry = schedule["purge-expired-audit-logs"]
+        assert entry["task"] == "app.tasks.maintenance.purge_expired_audit_logs"
+
 
 # ---------------------------------------------------------------------------
 # TestRunEconomicTask

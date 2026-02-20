@@ -72,7 +72,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     },
                 )
         except Exception:
-            logger.debug("Falha ao registrar auditoria", exc_info=True)
+            logger.debug("audit_write_failed", exc_info=True)
 
         return response
 

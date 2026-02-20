@@ -65,4 +65,4 @@ terraform apply
 
 - PR: `terraform plan` em `staging` com comentário automático no PR
 - Merge em `main`: `terraform apply` automático em `staging`
-- Manual: `workflow_dispatch` para `production` (ou `staging` caso necessário)
+- Manual: `workflow_dispatch` para `production` ou `staging` via input `apply_environment`

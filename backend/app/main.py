@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
-from app.core.logging import configure_structlog, get_logger
+from app.core.logging import bind_request_context, configure_structlog, get_logger
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -57,8 +57,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info(
-        "startup_started",
-        event="app_start",
+        "app_startup_started",
         app_name=settings.app_name,
         app_version=settings.app_version,
         environment=settings.environment,
@@ -68,7 +67,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("shutdown", event="app_shutdown")
+    logger.info("app_shutdown")
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -80,26 +79,45 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
         ) or str(uuid4())
         request.state.request_id = request_id
         start = perf_counter()
+        tenant_id = request.state.tenant_id if hasattr(request.state, "tenant_id") else None
+        if tenant_id is None:
+            tenant_id = request.headers.get("X-Tenant-ID")
+        user_id = self._extract_user_id(request)
 
-        response = await call_next(request)
+        with bind_request_context(
+            request_id=request_id,
+            tenant_id=str(tenant_id) if tenant_id is not None else None,
+            user_id=user_id,
+        ):
+            response = await call_next(request)
 
         elapsed_ms = (perf_counter() - start) * 1000
         response.headers["X-Request-Id"] = request_id
         response.headers["X-Request-Duration-Ms"] = f"{elapsed_ms:.2f}"
 
         logger.info(
-            "request_completed",
-            event="http_request",
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": getattr(response, "status_code", None),
-                "duration_ms": round(elapsed_ms, 2),
-                "tenant_id": str(getattr(request.state, "tenant_id", "")),
-            },
+            "http_request_complete",
+            method=request.method,
+            path=request.url.path,
+            status_code=getattr(response, "status_code", None),
+            request_id=request_id,
+            duration_ms=round(elapsed_ms, 2),
+            tenant_id=str(tenant_id) if tenant_id else None,
         )
         return response
+
+    @staticmethod
+    def _extract_user_id(request: Request) -> str | None:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return None
+
+        from app.core.security import decode_access_token
+
+        payload = decode_access_token(auth_header.removeprefix("Bearer "))
+        if not payload:
+            return None
+        return payload.get("sub")
 
 
 class DocsProtectionMiddleware(BaseHTTPMiddleware):

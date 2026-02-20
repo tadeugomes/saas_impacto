@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import asyncio
 
 from fastapi import FastAPI
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.api.deps import get_current_user
 from app.api.v1 import admin as admin_router_module
 from app.api.v1.admin import router as admin_router
+import app.api.v1.admin as admin_router_module_sync
 from app.db.base import get_db
 from app.core.tenant import get_tenant_id
 from app.services.audit_service import AuditService
@@ -174,3 +176,42 @@ def test_record_action_is_tolerant_to_invalid_tenant():
 
     assert result is None
     db.rollback.assert_awaited_once()
+
+
+def test_admin_purge_audit_logs_runs_sync_removal():
+    tenant_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    service = _FakeAuditService([], 0)
+    service.purge_expired = AsyncMock(return_value=7)  # type: ignore[attr-defined]
+
+    app = _build_admin_app(
+        tenant_id=tenant_id,
+        audit_service=service,
+        user=_mock_user(is_admin=True),
+    )
+    client = make_sync_asgi_client(app)
+
+    resp = client.post("/api/v1/admin/audit-logs/purge")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["removed"] == 7
+    assert payload["status"] == "ok"
+
+
+def test_admin_purge_audit_logs_task_queues_celery_job():
+    tenant_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    service = _FakeAuditService([], 0)
+
+    app = _build_admin_app(
+        tenant_id=tenant_id,
+        audit_service=service,
+        user=_mock_user(is_admin=True),
+    )
+    client = make_sync_asgi_client(app)
+
+    with patch.object(
+        admin_router_module_sync, "purge_expired_audit_logs"
+    ) as mock_task:
+        mock_task.delay = MagicMock()
+        client.post("/api/v1/admin/audit-logs/purge-task")
+        mock_task.delay.assert_called_once_with()

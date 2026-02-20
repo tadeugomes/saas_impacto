@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from app.core.logging import get_logger
+from app.core.logging import bind_request_context, get_logger
 
 from celery import Task
 from sqlalchemy import select, text
@@ -72,9 +72,9 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
 
         if analysis is None:
             logger.error(
-                "Análise %s não encontrada para tenant %s — task abortada.",
-                analysis_id,
-                tenant_id,
+                "analysis_not_found",
+                analysis_id=analysis_id,
+                tenant_id=tenant_id,
             )
             return  # Não há o que fazer; sem retry (seria idempotente)
 
@@ -83,9 +83,9 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
             request = EconomicImpactAnalysisCreateRequest(**analysis.request_params)
         except Exception as exc:
             logger.error(
-                "Parâmetros inválidos para análise %s: %s — marcando como failed.",
-                analysis_id,
-                exc,
+                "analysis_request_payload_invalid",
+                analysis_id=analysis_id,
+                error=str(exc),
             )
             analysis.mark_failed(f"Parâmetros inválidos: {exc}")
             await db.commit()
@@ -95,9 +95,9 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
                 notify_analysis_complete.delay(analysis_id, tenant_id)
             except Exception as exc:
                 logger.exception(
-                    "Falha ao enfileirar notificação da análise %s: %s",
-                    analysis_id,
-                    exc,
+                    "notify_dispatch_failed",
+                    analysis_id=analysis_id,
+                    error=str(exc),
                 )
             return
 
@@ -110,12 +110,16 @@ async def _execute_analysis_async(analysis_id: str, tenant_id: str) -> None:
             notify_analysis_complete.delay(analysis_id, tenant_id)
         except Exception as exc:
             logger.exception(
-                "Falha ao enfileirar notificação da análise %s: %s",
-                analysis_id,
-                exc,
+                "notify_dispatch_failed",
+                analysis_id=analysis_id,
+                error=str(exc),
             )
 
-        logger.info("Análise %s concluída com status='%s'.", analysis_id, analysis.status)
+        logger.info(
+            "analysis_completed",
+            analysis_id=analysis_id,
+            status=analysis.status,
+        )
 
 
 # ── Task Celery ────────────────────────────────────────────────────────────
@@ -158,25 +162,31 @@ def run_economic_impact_analysis(
         task é reenfileirada com backoff exponencial (60 s × 2^retry).
     """
     logger.info(
-        "Worker iniciando análise %s (tenant=%s, tentativa=%d/%d)",
-        analysis_id,
-        tenant_id,
-        self.request.retries + 1,
-        self.max_retries + 1,
+        "analysis_task_started",
+        analysis_id=analysis_id,
+        tenant_id=tenant_id,
+        attempt=self.request.retries + 1,
+        max_attempts=self.max_retries + 1,
     )
 
     try:
-        asyncio.run(_execute_analysis_async(analysis_id, tenant_id))
-        logger.info("Task concluída para análise %s.", analysis_id)
+        with bind_request_context(
+            task_id=self.request.id,
+            request_id=getattr(self.request, "id", None),
+            tenant_id=tenant_id,
+        ):
+            asyncio.run(_execute_analysis_async(analysis_id, tenant_id))
+            logger.info("analysis_task_finished", analysis_id=analysis_id)
         return {"analysis_id": analysis_id, "status": "done"}
 
     except Exception as exc:
         # Backoff exponencial: 60 s, 120 s, 240 s
         countdown = 60 * (2 ** self.request.retries)
         logger.exception(
-            "Erro inesperado na análise %s (retry em %ds): %s",
-            analysis_id,
-            countdown,
-            exc,
+            "analysis_task_error",
+            analysis_id=analysis_id,
+            tenant_id=tenant_id,
+            retry_countdown_seconds=countdown,
+            error=str(exc),
         )
         raise self.retry(exc=exc, countdown=countdown)
