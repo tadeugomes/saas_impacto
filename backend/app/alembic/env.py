@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
 from app.db.models.dashboard_view import DashboardView
+from app.db.models.economic_impact_analysis import EconomicImpactAnalysis  # noqa: F401
 
 # Importar configurações
 from app.config import get_settings
