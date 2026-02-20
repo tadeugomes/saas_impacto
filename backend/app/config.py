@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
     jwt_secret_key: str
+    password_reset_token_ttl_seconds: int = 3600
 
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
