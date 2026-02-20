@@ -16,8 +16,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 
 import pytest
+from .http_test_client import make_sync_asgi_client
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -380,7 +382,6 @@ class TestRouterReturns501:
 
     def _make_client(self, mock_service: MagicMock):
         from fastapi import FastAPI
-        from fastapi.testclient import TestClient
         import app.api.v1.impacto_economico.router as router_module
         from app.api.deps import get_current_user
         from app.core.tenant import get_tenant_id
@@ -389,8 +390,12 @@ class TestRouterReturns501:
         test_app = FastAPI()
         test_app.include_router(router_module.router)
 
-        mock_user = MagicMock()
-        mock_user.id = USER_ID
+        mock_user = SimpleNamespace(
+            id=USER_ID,
+            tenant_id=TENANT_ID,
+            roles=["analyst"],
+            tenant=SimpleNamespace(plano="enterprise"),
+        )
 
         async def _mock_db():
             yield AsyncMock()
@@ -404,13 +409,24 @@ class TestRouterReturns501:
         def _mock_service_factory():
             return mock_service
 
+        async def _mock_permission_service():
+            class _PermissionService:
+                async def list_permissions_by_roles(self, _db, _tenant_id, _roles):
+                    return {}
+
+            return _PermissionService()
+
         test_app.dependency_overrides[get_db] = _mock_db
         test_app.dependency_overrides[get_tenant_id] = _mock_tenant
         test_app.dependency_overrides[get_current_user] = _mock_user
+        from app.api.deps import get_tenant_permission_service
+        test_app.dependency_overrides[get_tenant_permission_service] = (
+            _mock_permission_service
+        )
         test_app.dependency_overrides[router_module._get_analysis_service] = (
             _mock_service_factory
         )
-        return TestClient(test_app, raise_server_exceptions=False)
+        return make_sync_asgi_client(test_app)
 
     def test_scm_returns_501_when_flag_disabled(self):
         """POST /analises com method=scm retorna 501 Not Implemented."""

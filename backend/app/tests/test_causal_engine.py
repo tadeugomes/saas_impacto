@@ -208,9 +208,23 @@ class TestDiD:
             post_window=4,
         )
         assert isinstance(result["coefficients"], list)
+        assert "C(id_municipio)" in result["formula"]
+        assert "C(ano)" in result["formula"]
         if result["coefficients"]:
             ref = next(c for c in result["coefficients"] if c["rel_time"] == -1)
             assert ref["coef"] == 0.0
+
+    def test_run_event_study_marks_pre_post_periods(self, synthetic_panel):
+        result = run_event_study(
+            df=synthetic_panel,
+            outcome="pib_log",
+            treatment_year=TREATMENT_YEAR,
+            pre_window=3,
+            post_window=3,
+        )
+        coeffs = result["coefficients"]
+        assert any(c["period"] == "pre" for c in coeffs if c["rel_time"] < 0)
+        assert any(c["period"] == "post" for c in coeffs if c["rel_time"] >= 0)
 
     def test_run_did_with_diagnostics_structure(self, synthetic_panel):
         result = run_did_with_diagnostics(

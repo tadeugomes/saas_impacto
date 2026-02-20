@@ -21,6 +21,7 @@ from app.schemas.indicators import (
     IndicatorMetadata,
     AllIndicatorsResponse,
 )
+from app.services.indicator_query_cache import IndicatorQueryCache
 
 
 logger = logging.getLogger(__name__)
@@ -1046,9 +1047,14 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
 class GenericIndicatorService:
     """Serviço genérico para consulta de qualquer indicador."""
 
-    def __init__(self, bq_client: Optional[BigQueryClient] = None):
+    def __init__(
+        self,
+        bq_client: Optional[BigQueryClient] = None,
+        query_cache: Optional[IndicatorQueryCache] = None,
+    ):
         """Inicializa o serviço."""
         self.bq_client = bq_client or get_bigquery_client()
+        self._query_cache = query_cache if query_cache is not None else IndicatorQueryCache()
 
     async def execute_indicator(
         self,
@@ -1056,6 +1062,7 @@ class GenericIndicatorService:
         tenant_policy: Optional[Dict[str, Any]] = None,
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        audit_context: Optional[Dict[str, Any]] = None,
     ) -> GenericIndicatorResponse:
         """
         Executa a query de um indicador específico.
@@ -1097,12 +1104,74 @@ class GenericIndicatorService:
         if request.mes:
             raw_params["mes"] = request.mes
 
+        request_cache_key = self._build_request_cache_key(
+            modulo=module_num,
+            codigo=codigo,
+            tenant_id=tenant_id,
+            request=request,
+            extra_params=raw_params,
+        )
+
         # Controle E5: allowlist por municipio direto
         self._enforce_municipio_access(
             codigo=codigo,
             id_municipio=request.id_municipio,
             tenant_policy=tenant_policy,
         )
+
+        can_use_cache = self._query_cache is not None and tenant_id is not None
+        if can_use_cache:
+            cached = await self._query_cache.get(request_cache_key)
+            if cached is not None:
+                if isinstance(cached, dict):
+                    cached_data = cached.get("data", [])
+                    cached_warnings_payload = cached.get("warnings", [])
+                    if not isinstance(cached_data, list):
+                        cached_data = []
+                    if not isinstance(cached_warnings_payload, list):
+                        cached_warnings_payload = []
+                else:
+                    cached_data = cached if isinstance(cached, list) else []
+                    cached_warnings_payload = []
+
+                cached_warnings: List[DataQualityWarning] = []
+                for item in cached_warnings_payload:
+                    if isinstance(item, DataQualityWarning):
+                        cached_warnings.append(item)
+                    elif isinstance(item, dict):
+                        try:
+                            cached_warnings.append(DataQualityWarning(**item))
+                        except Exception:
+                            continue
+
+                if (
+                    request.id_instalacao
+                    and not request.id_municipio
+                    and request.include_breakdown
+                    and all(w.tipo != "area_influencia_agregada" for w in cached_warnings)
+                ):
+                    self._append_warning(
+                        cached_warnings,
+                        codigo,
+                        "area_influencia_agregada",
+                        "Resultado agregado por area de influência com breakdown municipal.",
+                        campo="area_influencia",
+                    )
+                response = GenericIndicatorResponse(
+                    codigo_indicador=meta["codigo"],
+                    nome=meta["nome"],
+                    unidade=meta["unidade"],
+                    unctad=meta["unctad"],
+                    modulo=meta["modulo"],
+                    data=cached_data,
+                    warnings=cached_warnings if cached_warnings else self._validate_module5_quality(codigo, cached_data),
+                    cache_hit=True,
+                )
+                if audit_context is not None:
+                    audit_context["bytes_processed"] = None
+                    audit_context["cache_hit"] = True
+                    audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+                return response
 
         # Filtra apenas os parâmetros aceitos pela função de query
         sig = inspect.signature(query_func)
@@ -1133,7 +1202,7 @@ class GenericIndicatorService:
                 if len(area) == 1:
                     params["id_municipio"] = area[0]["id_municipio"]
                 else:
-                    results = await self._execute_area_influencia_module5(
+                    results, bytes_processed = await self._execute_area_influencia_module5(
                         codigo=codigo,
                         query_func=query_func,
                         request=request,
@@ -1149,6 +1218,14 @@ class GenericIndicatorService:
                             "Resultado agregado por area de influencia com breakdown municipal.",
                             campo="area_influencia",
                         )
+                    if can_use_cache:
+                        await self._query_cache.set(
+                            request_cache_key,
+                            {
+                                "data": results,
+                                "warnings": [w.model_dump(mode="json") for w in warnings],
+                            },
+                        )
                     self._log_query_audit(
                         tenant_id=tenant_id,
                         user_id=user_id,
@@ -1157,7 +1234,7 @@ class GenericIndicatorService:
                         duration_ms=(time.perf_counter() - started_at) * 1000.0,
                         bytes_processed=None,
                     )
-                    return GenericIndicatorResponse(
+                    response = GenericIndicatorResponse(
                         codigo_indicador=meta["codigo"],
                         nome=meta["nome"],
                         unidade=meta["unidade"],
@@ -1165,7 +1242,13 @@ class GenericIndicatorService:
                         modulo=meta["modulo"],
                         data=results,
                         warnings=warnings,
+                        cache_hit=False,
                     )
+                    if audit_context is not None:
+                        audit_context["bytes_processed"] = bytes_processed
+                        audit_context["cache_hit"] = False
+                        audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+                    return response
 
         # Caso especial legado: se for indicador municipal (3,4,5,6) e recebemos id_instalacao,
         # traduzimos para id_municipio via mapa fixo.
@@ -1191,6 +1274,18 @@ class GenericIndicatorService:
         )
         results = await self.bq_client.execute_query(query)
         warnings = self._validate_module5_quality(codigo, results)
+        if can_use_cache:
+            await self._query_cache.set(
+                request_cache_key,
+                {
+                    "data": results,
+                    "warnings": [w.model_dump(mode="json") for w in warnings],
+                },
+            )
+        if audit_context is not None:
+            audit_context["bytes_processed"] = bytes_estimated
+            audit_context["cache_hit"] = False
+            audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
         self._log_query_audit(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -1208,6 +1303,7 @@ class GenericIndicatorService:
             modulo=meta["modulo"],
             data=results,
             warnings=warnings,
+            cache_hit=False,
         )
 
     @staticmethod
@@ -1242,6 +1338,35 @@ class GenericIndicatorService:
             return [{"id_municipio": fallback_municipio, "peso": 1.0}]
 
         return []
+
+    @staticmethod
+    def _build_request_cache_key(
+        modulo: int,
+        codigo: str,
+        tenant_id: Optional[str],
+        request: GenericIndicatorRequest,
+        extra_params: Dict[str, Any],
+    ) -> str:
+        """Constrói chave canônica para cache de consulta genérica."""
+        payload = {
+            "codigo_indicador": codigo.upper(),
+            "modulo": modulo,
+            "tenant_id": tenant_id or "public",
+            "id_instalacao": request.id_instalacao,
+            "id_municipio": request.id_municipio,
+            "ano": request.ano,
+            "ano_inicio": request.ano_inicio,
+            "ano_fim": request.ano_fim,
+            "mes": request.mes,
+            "include_breakdown": request.include_breakdown,
+            "extra_params": extra_params,
+        }
+        return IndicatorQueryCache.make_key(
+            module=modulo,
+            codigo=codigo.upper(),
+            tenant_id=tenant_id,
+            payload=payload,
+        )
 
     @staticmethod
     def _enforce_municipio_access(
@@ -1333,7 +1458,7 @@ class GenericIndicatorService:
         request: GenericIndicatorRequest,
         area: List[Dict[str, Any]],
         tenant_policy: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], Optional[int]]:
         """
         Executa agregacao por area de influencia (E4) para indicadores do modulo 5.
 
@@ -1343,6 +1468,7 @@ class GenericIndicatorService:
         """
         signature = inspect.signature(query_func)
         all_rows: List[Dict[str, Any]] = []
+        total_bytes_processed: Optional[int] = None
         breakdown_map: Dict[str, List[Dict[str, Any]]] = {}
 
         for item in area:
@@ -1362,6 +1488,10 @@ class GenericIndicatorService:
                 all_rows.append(row_copy)
             if request.include_breakdown:
                 breakdown_map[id_municipio] = rows
+            if bytes_estimated is not None:
+                if total_bytes_processed is None:
+                    total_bytes_processed = 0
+                total_bytes_processed += bytes_estimated
 
         return self._aggregate_area_rows(
             codigo=codigo,
@@ -1369,7 +1499,7 @@ class GenericIndicatorService:
             id_instalacao=request.id_instalacao,
             include_breakdown=request.include_breakdown,
             breakdown_map=breakdown_map,
-        )
+        ), total_bytes_processed
 
     @staticmethod
     def _build_params_for_signature(
@@ -1428,7 +1558,7 @@ class GenericIndicatorService:
                 if value is None:
                     continue
                 weight = cls._to_float(row.get("_peso_area")) or 1.0
-                values_sum += value * weight
+                values_sum += value
                 value_weighted_sum += value * weight
                 weight_sum += weight
                 n_values += 1

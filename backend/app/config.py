@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: str | None = None
     redis_cache_ttl: int = 3600
+    bq_cache_ttl_seconds: int = 3600
+    bq_cache_enabled: bool = True
 
     @property
     def redis_url(self) -> str:
@@ -101,9 +103,22 @@ class Settings(BaseSettings):
     otel_service_name: str = "saas-impacto-backend"
     otel_sampling_ratio: float = 1.0
 
+    # Rate limiting
+    rate_limiting_enabled: bool = True
+    rate_limit_window_seconds: int = 60
+    rate_limit_basic_rpm: int = 100
+    rate_limit_pro_rpm: int = 500
+    rate_limit_enterprise_rpm: int = 2000
+    rate_limit_basic_analyses_per_hour: int = 5
+    rate_limit_pro_analyses_per_hour: int = 20
+    rate_limit_enterprise_analyses_per_hour: int = 100
+
     # Reports
     quarto_path: str = "/usr/bin/quarto"
     reports_output_path: str = "/tmp/reports"
+
+    # Audit logs
+    audit_log_retention_days: int = 90
 
     # Feature Flags — Métodos Causais Experimentais
     # ──────────────────────────────────────────────

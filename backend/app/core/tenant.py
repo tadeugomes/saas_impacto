@@ -17,6 +17,8 @@ from app.core.security import decode_access_token
 PUBLIC_PATHS = {
     "/",
     "/health",
+    "/health/ready",
+    "/health/live",
     "/docs",
     "/redoc",
     "/openapi.json",

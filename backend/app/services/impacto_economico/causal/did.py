@@ -15,6 +15,10 @@ import pandas as pd
 import statsmodels.formula.api as smf
 from scipy import stats  # noqa: F401  (disponível para uso futuro pelos callers)
 
+from app.services.impacto_economico.causal.event_study import (
+    run_event_study as run_event_study_twfe,
+)
+
 
 # ---------------------------------------------------------------------------
 # Diagnóstico: tendências paralelas
@@ -170,100 +174,19 @@ def run_event_study(
     post_window: int = 5,
     cluster_col: str | None = None,
 ) -> dict:
-    """Event study: coeficientes por período relativo ao tratamento.
-
-    Período t=-1 é omitido como referência.
-
-    Returns
-    -------
-    dict com chaves:
-        coefficients (list[dict] com rel_time/coef/se/t_stat/pvalue/ci_lower/ci_upper),
-        n_obs, formula, reference_period
-    """
-    controls = list(controls or [])
-    data = df.copy()
-    data["rel_time"] = data[time_col] - treatment_year
-    data = data[
-        (data["rel_time"] >= -pre_window) & (data["rel_time"] <= post_window)
-    ].copy()
-
-    if len(data) == 0:
-        return {
-            "coefficients": [],
-            "n_obs": 0,
-            "formula": "",
-            "reference_period": -1,
-        }
-
-    rel_times = sorted(data["rel_time"].unique())
-    rel_times_to_include = [t for t in rel_times if t != -1]
-
-    for t in rel_times_to_include:
-        data[f"rel_time_{t}"] = (data["rel_time"] == t).astype(int)
-        data[f"treat_x_rel_time_{t}"] = data[treat_col] * data[f"rel_time_{t}"]
-
-    interaction_terms = [f"treat_x_rel_time_{t}" for t in rel_times_to_include]
-    time_dummies = [f"rel_time_{t}" for t in rel_times_to_include]
-    formula_parts = [treat_col] + time_dummies + interaction_terms
-    if controls:
-        formula_parts.extend(controls)
-
-    formula = f"{outcome} ~ " + " + ".join(formula_parts) + f" + C({unit_col})"
-    cols_to_check = [outcome, unit_col, time_col, treat_col] + controls
-    data = data.dropna(subset=cols_to_check).copy()
-    cluster = cluster_col or unit_col
-
-    try:
-        model = smf.ols(formula, data=data).fit(
-            cov_type="cluster", cov_kwds={"groups": data[cluster]}
-        )
-    except Exception as exc:
-        return {
-            "coefficients": [],
-            "n_obs": len(data),
-            "formula": formula,
-            "reference_period": -1,
-            "error": str(exc),
-        }
-
-    # referência t=-1
-    coef_data: list[dict] = [
-        {
-            "rel_time": -1,
-            "coef": 0.0,
-            "se": 0.0,
-            "t_stat": 0.0,
-            "pvalue": 1.0,
-            "ci_lower": 0.0,
-            "ci_upper": 0.0,
-        }
-    ]
-
-    for t in rel_times_to_include:
-        term = f"treat_x_rel_time_{t}"
-        if term in model.params:
-            coef = float(model.params[term])
-            se = float(model.bse[term])
-            coef_data.append(
-                {
-                    "rel_time": int(t),
-                    "coef": coef,
-                    "se": se,
-                    "t_stat": float(model.tvalues[term]),
-                    "pvalue": float(model.pvalues[term]),
-                    "ci_lower": coef - 1.96 * se,
-                    "ci_upper": coef + 1.96 * se,
-                }
-            )
-
-    coef_data.sort(key=lambda r: r["rel_time"])
-
-    return {
-        "coefficients": coef_data,
-        "n_obs": int(model.nobs),
-        "formula": formula,
-        "reference_period": -1,
-    }
+    """Wrapper de compatibilidade para o módulo dedicado `event_study.py`."""
+    return run_event_study_twfe(
+        df=df,
+        outcome=outcome,
+        unit_col=unit_col,
+        time_col=time_col,
+        treat_col=treat_col,
+        treatment_year=treatment_year,
+        controls=controls,
+        pre_window=pre_window,
+        post_window=post_window,
+        cluster_col=cluster_col,
+    )
 
 
 # ---------------------------------------------------------------------------

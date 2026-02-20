@@ -348,7 +348,7 @@ class AnalysisService:
                 scope=request.scope,
             )
 
-            if request.method in ("did", "event_study"):
+            if request.method == "did":
                 from app.services.impacto_economico.causal.did import (
                     run_did_with_diagnostics,
                 )
@@ -356,6 +356,21 @@ class AnalysisService:
                 outcome_results = {}
                 for outcome in request.outcomes:
                     outcome_results[outcome] = run_did_with_diagnostics(
+                        df=df,
+                        outcome=outcome,
+                        treatment_year=request.treatment_year,
+                        controls=request.controls,
+                    )
+                results = outcome_results
+
+            elif request.method == "event_study":
+                from app.services.impacto_economico.causal.event_study import (
+                    run_event_study,
+                )
+
+                outcome_results = {}
+                for outcome in request.outcomes:
+                    outcome_results[outcome] = run_event_study(
                         df=df,
                         outcome=outcome,
                         treatment_year=request.treatment_year,
@@ -507,13 +522,47 @@ def _extract_summary(
 
         main = outcome_data.get("main_result", outcome_data)
         summary["outcome"] = first_outcome
-        summary["coef"] = main.get("coef") or main.get("att")
+        summary["coef"] = _first_not_none(main.get("coef"), main.get("att"))
         summary["std_err"] = main.get("std_err")
         summary["p_value"] = main.get("p_value")
         summary["ci_lower"] = main.get("ci_lower")
         summary["ci_upper"] = main.get("ci_upper")
         summary["n_obs"] = main.get("n_obs")
         summary["r2"] = main.get("r2")
+
+        # Event study puro: derive resumo do período rel_time=0
+        coefficients = outcome_data.get("coefficients")
+        if isinstance(coefficients, list) and coefficients:
+            at_treatment = next(
+                (c for c in coefficients if c.get("rel_time") == 0),
+                None,
+            )
+            if at_treatment:
+                summary["coef"] = _first_not_none(
+                    summary.get("coef"),
+                    at_treatment.get("coef"),
+                )
+                summary["std_err"] = _first_not_none(
+                    summary.get("std_err"),
+                    at_treatment.get("se"),
+                )
+                summary["p_value"] = _first_not_none(
+                    summary.get("p_value"),
+                    at_treatment.get("pvalue"),
+                )
+                summary["ci_lower"] = _first_not_none(
+                    summary.get("ci_lower"),
+                    at_treatment.get("ci_lower"),
+                )
+                summary["ci_upper"] = _first_not_none(
+                    summary.get("ci_upper"),
+                    at_treatment.get("ci_upper"),
+                )
+
+            summary["n_obs"] = _first_not_none(
+                summary.get("n_obs"),
+                outcome_data.get("n_obs"),
+            )
 
         # Agrega warnings de todas as chaves relevantes
         warnings: list[str] = []
@@ -526,6 +575,14 @@ def _extract_summary(
         summary["warnings"] = warnings
 
     return {k: v for k, v in summary.items() if v is not None}
+
+
+def _first_not_none(*values: Any) -> Any:
+    """Retorna o primeiro valor diferente de None (preserva zero)."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 # ── Dependency factory ────────────────────────────────────────────────────────

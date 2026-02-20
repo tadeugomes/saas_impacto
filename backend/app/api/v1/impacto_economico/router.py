@@ -29,11 +29,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
-from app.core.security import decode_access_token
+from app.api.deps import require_module_permission
 from app.core.tenant import get_tenant_id
 from app.db.base import get_db
 from app.db.models.user import User
@@ -48,6 +48,8 @@ from app.services.impacto_economico.analysis_service import (
     AnalysisService,
     MethodNotAvailableError,
 )
+from app.services.audit_service import AuditService, get_audit_service
+from app.reports import ReportService
 from app.tasks.impacto_economico import run_economic_impact_analysis
 
 router = APIRouter(
@@ -64,19 +66,6 @@ def _get_analysis_service(
 ) -> AnalysisService:
     """Injeta AnalysisService com db + tenant_id do request."""
     return AnalysisService(db=db, tenant_id=tenant_id)
-
-
-def _extract_user_id(request: Request) -> uuid.UUID | None:
-    """Extrai user_id do JWT, sem falhar se ausente."""
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        payload = decode_access_token(auth_header[7:])
-        if payload and payload.get("sub"):
-            try:
-                return uuid.UUID(str(payload["sub"]))
-            except (ValueError, AttributeError):
-                pass
-    return None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -120,9 +109,10 @@ Consulte o progresso via `GET /analises/{id}` e o resultado via
 )
 async def create_analysis(
     body: EconomicImpactAnalysisCreateRequest,
-    http_request: Request,
     service: AnalysisService = Depends(_get_analysis_service),
-    current_user: User = Depends(get_current_user),
+    audit_service: AuditService = Depends(get_audit_service),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_module_permission(5, "execute")),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
 ) -> EconomicImpactAnalysisResponse:
     """
@@ -131,12 +121,23 @@ async def create_analysis(
     Retorna imediatamente com `status: queued` e o `id` da análise para
     polling posterior via GET /analises/{id}.
     """
-    user_id = _extract_user_id(http_request)
-
     try:
         analysis = await service.create_queued(
             request=body,
-            user_id=user_id or (current_user.id if current_user else None),
+            user_id=current_user.id,
+        )
+        await audit_service.record_action(
+            db=db,
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            action="create_analysis",
+            resource="/api/v1/impacto-economico/analises",
+            status_code=202,
+            details={
+                "method": body.method,
+                "analysis_id": str(analysis.id),
+                "tenant_id": str(tenant_id),
+            },
         )
     except MethodNotAvailableError as exc:
         # Método experimental com feature flag desabilitada → 501 Not Implemented
@@ -196,7 +197,7 @@ async def list_analyses(
         ),
     ] = None,
     service: AnalysisService = Depends(_get_analysis_service),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_module_permission(5, "read")),
 ) -> EconomicImpactAnalysisListResponse:
     """Lista análises do tenant com paginação e filtros opcionais."""
     return await service.list_analyses(
@@ -226,7 +227,7 @@ Retorna o status atual e metadados de uma análise.
 async def get_analysis_status(
     analysis_id: uuid.UUID,
     service: AnalysisService = Depends(_get_analysis_service),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_module_permission(5, "read")),
 ) -> EconomicImpactAnalysisResponse:
     """Retorna status e metadados básicos da análise (sem resultado completo)."""
     try:
@@ -262,7 +263,7 @@ Retorna a análise completa incluindo:
 async def get_analysis_result(
     analysis_id: uuid.UUID,
     service: AnalysisService = Depends(_get_analysis_service),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_module_permission(5, "read")),
 ) -> EconomicImpactAnalysisDetailResponse:
     """Retorna análise completa com resultado do engine causal."""
     try:
@@ -283,3 +284,62 @@ async def get_analysis_result(
         )
 
     return detail
+
+
+@router.get(
+    "/analises/{analysis_id}/report",
+    summary="Gerar Relatório DOCX da Análise",
+    description="""
+Gera e retorna um relatório DOCX consolidado para uma análise causal.
+
+O relatório inclui:
+- Metadados da análise (método, status, período, escopo)
+- Resultado principal e detalhamento por outcome
+- Diagnósticos principais (parallel trends, first-stage, comparação metodológica)
+""",
+    responses={
+        200: {"description": "Relatório DOCX gerado com sucesso."},
+        404: {"description": "Análise não encontrada ou pertence a outro tenant."},
+        500: {"description": "Falha ao gerar o relatório."},
+    },
+)
+async def get_analysis_report(
+    analysis_id: uuid.UUID,
+    service: AnalysisService = Depends(_get_analysis_service),
+    _: User = Depends(require_module_permission(5, "read")),
+) -> StreamingResponse:
+    """Gera e retorna o relatório DOCX de uma análise causal."""
+    try:
+        detail = await service.get_detail(analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao carregar análise: {exc}",
+        )
+
+    try:
+        report_service = ReportService()
+        report_bytes, filename = report_service.generate_impact_analysis_report(detail)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Não foi possível gerar relatório: {exc}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao gerar relatório: {exc}",
+        )
+
+    return StreamingResponse(
+        content=iter([report_bytes.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )

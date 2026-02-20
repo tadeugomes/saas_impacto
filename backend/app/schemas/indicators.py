@@ -317,6 +317,33 @@ class GenericIndicatorRequest(BaseModel):
     )
 
 
+class TenantModulePermissionItem(BaseModel):
+    """Linha de permissão por módulo/ação para um role/tenant."""
+
+    module_number: int = Field(..., ge=1, le=7)
+    action: Literal["read", "execute", "write"]
+    allowed: bool = True
+
+
+class TenantModulePermissionsRequest(BaseModel):
+    """Payload para definir permissões de um role em um tenant."""
+
+    permissions: list[TenantModulePermissionItem] = Field(
+        default_factory=list,
+        description="Lista de combinações módulo/ação",
+    )
+
+
+class TenantModulePermissionsResponse(BaseModel):
+    """Permissões retornadas por role (tenant)."""
+
+    role: str = Field(..., description="Role alvo")
+    permissions: list[TenantModulePermissionItem] = Field(
+        default_factory=list,
+        description="Permissões permitidas no escopo do role",
+    )
+
+
 class AreaInfluenceMunicipio(BaseModel):
     """Municipio pertencente a uma area de influencia."""
 
@@ -371,6 +398,10 @@ class GenericIndicatorResponse(BaseModel):
     warnings: List[DataQualityWarning] = Field(
         default_factory=list,
         description="Advertências de qualidade de dados"
+    )
+    cache_hit: bool = Field(
+        default=False,
+        description="Indica se o resultado veio do cache de consulta",
     )
     data_referencia: datetime = Field(
         default_factory=datetime.utcnow,

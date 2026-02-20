@@ -177,7 +177,7 @@ class TestExecuteAnalysisAsync:
     """Testa o helper async _execute_analysis_async com mocks de DB."""
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def _mock_analysis(self, request_params: dict | None = None):
         """Cria mock de EconomicImpactAnalysis."""

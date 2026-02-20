@@ -29,12 +29,14 @@ from app.services.impacto_economico.causal.prep import (
 )
 from app.services.impacto_economico.causal.did import (
     test_parallel_trends,
-    run_event_study,
     run_did,
     run_placebo_tests,
     donor_sensitivity_analysis,
     run_did_specifications,
     run_did_with_diagnostics,
+)
+from app.services.impacto_economico.causal.event_study import (
+    run_event_study,
 )
 from app.services.impacto_economico.causal.iv import (
     run_iv_2sls,

@@ -7,10 +7,11 @@ para consultar qualquer indicador de qualquer módulo (1-7).
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from typing import Any
 from app.services.generic_indicator_service import (
     GenericIndicatorService,
     get_generic_indicator_service,
@@ -18,19 +19,26 @@ from app.services.generic_indicator_service import (
     IndicatorAccessError,
     IndicatorQuotaError,
 )
+from app.services.audit_service import AuditService, get_audit_service
 from app.services.tenant_policy_service import get_tenant_policy_service, TenantPolicyService
+from app.services.tenant_permission_service import (
+    TenantPermissionService,
+    get_tenant_permission_service,
+)
 from app.schemas.indicators import (
     GenericIndicatorRequest,
     GenericIndicatorResponse,
     IndicatorMetadata,
     AllIndicatorsResponse,
+    TenantModulePermissionsRequest,
+    TenantModulePermissionsResponse,
+    TenantModulePermissionItem,
     AreaInfluenceUpsertRequest,
     AllowlistPolicyUpdateRequest,
 )
-from app.core.security import decode_access_token
 from app.core.tenant import get_tenant_id
 from app.db.base import get_db
-from app.api.deps import require_admin
+from app.api.deps import require_admin, require_indicator_permission
 from app.db.models.user import User
 
 
@@ -67,9 +75,11 @@ async def query_indicator(
     request: GenericIndicatorRequest,
     service: GenericIndicatorService = Depends(get_generic_indicator_service),
     policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+    audit_service: AuditService = Depends(get_audit_service),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_db),
-    http_request: Request = None,
+    current_user: User = Depends(require_indicator_permission("read")),
+    http_response: Response = None,
 ) -> GenericIndicatorResponse:
     """
     Endpoint universal para consulta de qualquer indicador.
@@ -85,20 +95,40 @@ async def query_indicator(
     **Retorna:** Dados do indicador com metadados
     """
     try:
-        token_payload = None
-        auth_header = http_request.headers.get("Authorization") if http_request else None
-        if auth_header and auth_header.startswith("Bearer "):
-            token_payload = decode_access_token(auth_header[7:])
-
         policy = await policy_service.get_policy(db, tenant_id)
-        user_id = str(token_payload.get("sub")) if token_payload and token_payload.get("sub") else None
+        user_id = str(current_user.id) if current_user else None
+        audit_context: dict[str, Any] = {}
 
-        return await service.execute_indicator(
+        result = await service.execute_indicator(
             request,
             tenant_policy=policy,
             tenant_id=str(tenant_id),
             user_id=user_id,
+            audit_context=audit_context,
         )
+        await audit_service.record_action(
+            db=db,
+            tenant_id=tenant_id,
+            user_id=current_user.id if current_user else None,
+            action="query_indicator",
+            resource="/api/v1/indicators/query",
+            status_code=200,
+            duration_ms=audit_context.get("duration_ms"),
+            bytes_processed=audit_context.get("bytes_processed"),
+            details={
+                "codigo_indicador": request.codigo_indicador,
+                "id_municipio": request.id_municipio,
+                "id_instalacao": request.id_instalacao,
+                "ano": request.ano,
+                "ano_inicio": request.ano_inicio,
+                "ano_fim": request.ano_fim,
+                "cache_hit": audit_context.get("cache_hit", False),
+            },
+            request_id=None,
+        )
+        if http_response is not None:
+            http_response.headers["X-Cache-Hit"] = "true" if result.cache_hit else "false"
+        return result
     except IndicatorAccessError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -141,6 +171,81 @@ async def get_tenant_policies(
             "max_bytes_per_query": policy.get("max_bytes_per_query"),
         }
     )
+
+
+def _normalize_role(role: str) -> str:
+    return role.strip().lower()
+
+
+@router.get(
+    "/permissions/{role}",
+    response_model=TenantModulePermissionsResponse,
+    summary="Listar permissões de role do tenant",
+    description="Lista permissões explícitas configuradas para um role no tenant atual.",
+)
+async def get_tenant_role_permissions(
+    role: str,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    permission_service: TenantPermissionService = Depends(get_tenant_permission_service),
+) -> TenantModulePermissionsResponse:
+    role = _normalize_role(role)
+    permissions = await permission_service.list_permissions(
+        db=db,
+        tenant_id=tenant_id,
+        role=role,
+    )
+    items = [
+        TenantModulePermissionItem(
+            module_number=permission["module_number"],
+            action=permission["action"],
+            allowed=True,
+        )
+        for permission in permissions
+    ]
+    return TenantModulePermissionsResponse(role=role, permissions=items)
+
+
+@router.put(
+    "/permissions/{role}",
+    response_model=TenantModulePermissionsResponse,
+    summary="Configurar permissões de role do tenant",
+    description=(
+        "Substitui o conjunto explícito de permissões (módulo/ação) para o role."
+    ),
+)
+async def replace_tenant_role_permissions(
+    role: str,
+    payload: TenantModulePermissionsRequest,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    permission_service: TenantPermissionService = Depends(get_tenant_permission_service),
+) -> TenantModulePermissionsResponse:
+    role = _normalize_role(role)
+    try:
+        permissions = await permission_service.set_permissions_for_role(
+            db=db,
+            tenant_id=tenant_id,
+            role=role,
+            permissions=[
+                (item.module_number, item.action, item.allowed)
+                for item in payload.permissions
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    items = [
+        TenantModulePermissionItem(
+            module_number=permission["module_number"],
+            action=permission["action"],
+            allowed=True,
+        )
+        for permission in permissions
+    ]
+    return TenantModulePermissionsResponse(role=role, permissions=items)
 
 
 @router.put(

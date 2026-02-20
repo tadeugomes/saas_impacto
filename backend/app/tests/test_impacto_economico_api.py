@@ -3,17 +3,22 @@
 Cobertura:
   TestSchemas          — validação Pydantic (casos feliz + erros esperados)
   TestAnalysisService  — service com DB mockado (AsyncMock)
-  TestRouter           — endpoints via TestClient (ASGI) com mocks de dependência
+  TestRouter           — endpoints via cliente síncrono ASGI com mocks de dependência
 """
 from __future__ import annotations
 
+from io import BytesIO
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 
+from docx import Document
 import pytest
 from pydantic import ValidationError
+
+from .http_test_client import make_sync_asgi_client
 
 # ---------------------------------------------------------------------------
 # Fixtures compartilhados
@@ -326,13 +331,71 @@ class TestAnalysisService:
 
         assert isinstance(result, EconomicImpactAnalysisDetailResponse)
 
+    @pytest.mark.asyncio
+    async def test_run_causal_pipeline_event_study_uses_dedicated_engine(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisCreateRequest
+
+        service = self._make_service()
+        req = EconomicImpactAnalysisCreateRequest(
+            **{**BASE_REQUEST, "method": "event_study"}
+        )
+
+        builder = MagicMock()
+        builder.build_did_panel = AsyncMock(return_value=object())
+
+        with patch(
+            "app.services.impacto_economico.panel_builder.EconomicImpactPanelBuilder",
+            return_value=builder,
+        ), patch(
+            "app.services.impacto_economico.causal.event_study.run_event_study",
+            return_value={"coefficients": [], "n_obs": 10, "formula": "f"},
+        ) as es_mock, patch(
+            "app.services.impacto_economico.causal.did.run_did_with_diagnostics",
+            return_value={"main_result": {"coef": 1.0}},
+        ) as did_mock:
+            result = await service._run_causal_pipeline(req)
+
+        assert "pib_log" in result
+        es_mock.assert_called_once()
+        did_mock.assert_not_called()
+
+    def test_extract_summary_event_study_uses_rel_time_zero(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisCreateRequest
+        from app.services.impacto_economico.analysis_service import _extract_summary
+
+        req = EconomicImpactAnalysisCreateRequest(
+            **{**BASE_REQUEST, "method": "event_study"}
+        )
+        result_full = {
+            "pib_log": {
+                "coefficients": [
+                    {"rel_time": -1, "coef": 0.0, "se": 0.0, "pvalue": 1.0},
+                    {
+                        "rel_time": 0,
+                        "coef": 0.0,
+                        "se": 0.2,
+                        "pvalue": 0.8,
+                        "ci_lower": -0.4,
+                        "ci_upper": 0.4,
+                    },
+                ],
+                "n_obs": 42,
+            }
+        }
+
+        summary = _extract_summary(result_full=result_full, request=req)
+        assert summary["coef"] == 0.0
+        assert summary["std_err"] == 0.2
+        assert summary["p_value"] == 0.8
+        assert summary["n_obs"] == 42
+
 
 # ---------------------------------------------------------------------------
 # TestRouter
 # ---------------------------------------------------------------------------
 
 class TestRouter:
-    """Testa os endpoints via httpx / TestClient com mocks de dependências.
+    """Testa os endpoints via cliente síncrono ASGI com mocks de dependências.
 
     Estratégia:
       - Monta uma FastAPI mínima com apenas o router de impacto_economico.
@@ -369,20 +432,21 @@ class TestRouter:
         }
 
     def _make_client(self, mock_service: MagicMock):
-        """Cria TestClient com `_get_analysis_service` substituído."""
         from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-
         import app.api.v1.impacto_economico.router as router_module
-        from app.api.deps import get_current_user
+        from app.api.deps import get_current_user, get_tenant_permission_service
         from app.core.tenant import get_tenant_id
         from app.db.base import get_db
 
         test_app = FastAPI()
         test_app.include_router(router_module.router)
 
-        mock_user = MagicMock()
-        mock_user.id = USER_ID
+        mock_user = SimpleNamespace(
+            id=USER_ID,
+            tenant_id=TENANT_ID,
+            roles=["analyst"],
+            tenant=SimpleNamespace(plano="enterprise"),
+        )
 
         # Substituir todas as dependências por mocks
         async def _mock_db():
@@ -397,14 +461,23 @@ class TestRouter:
         def _mock_service_factory():
             return mock_service
 
+        async def _mock_permission_service():
+            class _PermissionService:
+                async def list_permissions_by_roles(self, _db, _tenant_id, _roles):
+                    return {}
+
+            return _PermissionService()
+
         test_app.dependency_overrides[get_db] = _mock_db
         test_app.dependency_overrides[get_tenant_id] = _mock_tenant
         test_app.dependency_overrides[get_current_user] = _mock_user
+        test_app.dependency_overrides[get_tenant_permission_service] = (
+            _mock_permission_service
+        )
         test_app.dependency_overrides[router_module._get_analysis_service] = (
             _mock_service_factory
         )
-
-        return TestClient(test_app, raise_server_exceptions=False)
+        return make_sync_asgi_client(test_app)
 
     def test_post_analises_returns_202_queued(self):
         """POST /analises deve retornar 202 com status=queued (PR-06: async)."""
@@ -531,6 +604,23 @@ class TestRouter:
 
         assert resp.status_code == 404
 
+    def test_get_analysis_report_returns_docx(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+        from app.reports import ReportService
+
+        detail = EconomicImpactAnalysisDetailResponse(**self._mock_detail(status="success"))
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        with patch.object(ReportService, "generate_impact_analysis_report") as mock_generate:
+            mock_generate.return_value = (BytesIO(b"report-payload"), "analise.docx")
+            client = self._make_client(svc)
+            resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/report")
+
+        assert resp.status_code == 200
+        assert "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in resp.headers["content-type"]
+        assert "attachment; filename=\"analise.docx\"" in resp.headers["content-disposition"]
+
     def test_router_openapi_has_analises_paths(self):
         """Verifica que o OpenAPI expõe os paths com o prefixo correto."""
         svc = MagicMock()
@@ -545,6 +635,7 @@ class TestRouter:
         )
         assert f"{self.PREFIX}/analises/{{analysis_id}}" in paths
         assert f"{self.PREFIX}/analises/{{analysis_id}}/result" in paths
+        assert f"{self.PREFIX}/analises/{{analysis_id}}/report" in paths
 
     def test_router_openapi_methods_correct(self):
         """Verifica que POST e GET estão registrados nos paths corretos."""
@@ -563,6 +654,19 @@ class TestRouter:
 
         result_path = paths[f"{self.PREFIX}/analises/{{analysis_id}}/result"]
         assert "get" in result_path
+        report_path = paths[f"{self.PREFIX}/analises/{{analysis_id}}/report"]
+        assert "get" in report_path
+
+    def test_get_analysis_report_not_found(self):
+        from app.services.impacto_economico.analysis_service import AnalysisNotFoundError
+
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(side_effect=AnalysisNotFoundError("not found"))
+
+        client = self._make_client(svc)
+        resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/report")
+
+        assert resp.status_code == 404
 
     def test_router_openapi_tag_present_in_operations(self):
         """Verifica que as operações têm a tag correta."""
@@ -577,3 +681,183 @@ class TestRouter:
         assert any("Impacto" in t or "Módulo 5" in t for t in tags), (
             f"Tag esperada não encontrada. Tags: {tags}"
         )
+
+
+class TestImpactReportService:
+    """Testa a geração de DOCX para análises causais no ReportService."""
+
+    def test_generate_impact_analysis_report_for_did(self):
+        from app.reports import ReportService
+
+        analysis = {
+            "id": str(uuid.uuid4()),
+            "status": "success",
+            "method": "did",
+            "request_params": {
+                "treatment_year": 2015,
+                "ano_inicio": 2010,
+                "ano_fim": 2023,
+                "scope": "state",
+                "treated_ids": ["2100055"],
+                "control_ids": ["2100204"],
+                "outcomes": ["pib_log"],
+            },
+            "result_summary": {
+                "outcome": "pib_log",
+                "coef": 0.1234,
+                "std_err": 0.0456,
+                "p_value": 0.02,
+                "n_obs": 120,
+                "ci_lower": 0.03,
+                "ci_upper": 0.22,
+            },
+            "result_full": {
+                "pib_log": {
+                    "main_result": {
+                        "coef": 0.1234,
+                        "std_err": 0.0456,
+                        "p_value": 0.02,
+                        "ci_lower": 0.03,
+                        "ci_upper": 0.22,
+                        "n_obs": 120,
+                    },
+                    "parallel_trends": {
+                        "interpretation": "PASS"
+                    },
+                }
+            },
+        }
+
+        report_service = ReportService()
+        docx_buffer, filename = report_service.generate_impact_analysis_report(analysis)
+
+        assert filename.endswith(".docx")
+        assert hasattr(docx_buffer, "getvalue")
+        assert len(docx_buffer.getvalue()) > 0
+
+    def _extract_docx_text(self, docx_buffer: BytesIO) -> str:
+        document = Document(docx_buffer)
+        return "\n".join(para.text for para in document.paragraphs)
+
+    def test_generate_impact_analysis_report_for_event_study(self):
+        from app.reports import ReportService
+
+        analysis = {
+            "id": str(uuid.uuid4()),
+            "status": "success",
+            "method": "event_study",
+            "request_params": {
+                "treatment_year": 2016,
+                "ano_inicio": 2012,
+                "ano_fim": 2024,
+                "scope": "municipal",
+                "treated_ids": ["2100055"],
+                "control_ids": ["2200202", "2300303"],
+                "outcomes": ["pib_log"],
+            },
+            "result_summary": {
+                "outcome": "pib_log",
+                "coef": 0.02,
+                "std_err": 0.015,
+                "p_value": 0.18,
+                "n_obs": 45,
+            },
+            "result_full": {
+                "pib_log": {
+                    "coefficients": [
+                        {
+                            "rel_time": -1,
+                            "coef": 0.0,
+                            "pvalue": 1.0,
+                            "se": 0.2,
+                            "ci_lower": 0.0,
+                            "ci_upper": 0.0,
+                            "significant_10pct": False,
+                        },
+                        {
+                            "rel_time": 0,
+                            "coef": 0.02,
+                            "pvalue": 0.18,
+                            "se": 0.015,
+                            "ci_lower": -0.01,
+                            "ci_upper": 0.05,
+                            "significant_10pct": True,
+                        },
+                    ],
+                    "model_info": {"formula": "pib_log ~ rel_time"},
+                    "event_study": {"n_obs": 45},
+                }
+            },
+        }
+
+        report_service = ReportService()
+        docx_buffer, filename = report_service.generate_impact_analysis_report(analysis)
+        text = self._extract_docx_text(docx_buffer)
+
+        assert filename.endswith(".docx")
+        assert "Metodologia" in text
+        assert "Limitações e Interpretação" in text
+        assert "Qualidade e Validação" in text
+
+    def test_generate_impact_analysis_report_for_compare(self):
+        from app.reports import ReportService
+
+        analysis = {
+            "id": str(uuid.uuid4()),
+            "status": "success",
+            "method": "compare",
+            "request_params": {
+                "treatment_year": 2014,
+                "ano_inicio": 2010,
+                "ano_fim": 2022,
+                "scope": "state",
+                "treated_ids": ["2100055", "2100105"],
+                "control_ids": ["2100204"],
+                "outcomes": ["pib_log", "toneladas_antaq_log"],
+                "use_mart": True,
+            },
+            "result_summary": {
+                "outcome": "pib_log",
+                "coef": 0.03,
+                "std_err": 0.01,
+                "p_value": 0.04,
+                "n_obs": 120,
+            },
+            "result_full": {
+                "did": {
+                    "pib_log": {"coef": 0.03},
+                },
+                "comparison": {
+                    "pib_log": {
+                        "recommended_estimate": 0.029,
+                        "comparison_table": [
+                            {
+                                "Method": "DiD",
+                                "Estimate": 0.03,
+                                "SE": 0.01,
+                                "CI_Lower": 0.01,
+                                "CI_Upper": 0.05,
+                                "P_Value": 0.04,
+                            }
+                        ],
+                        "consistency_assessment": {
+                            "status": "high",
+                        },
+                    },
+                    "toneladas_antaq_log": {
+                        "comparison_table": [],
+                        "recommended_estimate": 0.01,
+                        "consistency_assessment": {"status": "low"},
+                    },
+                },
+            },
+        }
+
+        report_service = ReportService()
+        docx_buffer, filename = report_service.generate_impact_analysis_report(analysis)
+        text = self._extract_docx_text(docx_buffer)
+
+        assert filename.endswith(".docx")
+        assert "Resultado Principal" in text
+        assert "Comparação entre estimativas de múltiplos métodos" in text
+        assert "Qualidade e Validação" in text
