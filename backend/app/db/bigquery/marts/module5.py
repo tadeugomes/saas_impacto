@@ -2,14 +2,20 @@
 
 from datetime import datetime
 
-# Estrutura padrão: projeto padrão da conta + dataset do projeto de marts + schema lógico
-MARTS_DATASET = "marts_impacto"
-MART_IMPACTO_DATASET = "impacto_economico"
-DIMENSIONS_DATASET = "dims"
+from app.config import get_settings
 
-MART_IMPACTO_ECONOMICO = f"{MARTS_DATASET}.{MART_IMPACTO_DATASET}.mart_impacto_economico"
-MART_M5_METADATA_TABLE = f"{MARTS_DATASET}.{MART_IMPACTO_DATASET}.m5_metadata"
-DIM_MUNICIPIO_ANTAQ = f"{MARTS_DATASET}.{DIMENSIONS_DATASET}.dim_municipio_antaq"
+# Estrutura padrão: projeto padrão da conta + dataset do projeto de marts + schema lógico
+_SETTINGS = get_settings()
+
+MARTS_PROJECT = _SETTINGS.gcp_project_id
+MARTS_DATASET = "marts_impacto"
+MART_IMPACTO_TABLE = "mart_impacto_economico"
+MART_M5_METADATA_TABLE_NAME = "m5_metadata"
+DIM_MUNICIPIO_ANTAQ_TABLE = "dim_municipio_antaq"
+
+MART_IMPACTO_ECONOMICO = f"{MARTS_PROJECT}.{MARTS_DATASET}.{MART_IMPACTO_TABLE}"
+MART_M5_METADATA_TABLE = f"{MARTS_PROJECT}.{MARTS_DATASET}.{MART_M5_METADATA_TABLE_NAME}"
+DIM_MUNICIPIO_ANTAQ = f"{MARTS_PROJECT}.{MARTS_DATASET}.{DIM_MUNICIPIO_ANTAQ_TABLE}"
 
 MART_IMPACTO_ECONOMICO_FQTN = f"`{MART_IMPACTO_ECONOMICO}`"
 MART_M5_METADATA_TABLE_FQTN = f"`{MART_M5_METADATA_TABLE}`"
@@ -20,8 +26,8 @@ MART_IMPACTO_ECONOMICO_COLUMNS = [
     "ano",
     "pib",
     "populacao",
-    "vab_servicos",
-    "vab_industria",
+    "va_servicos",
+    "va_industria",
     "id_microrregiao",
     "sigla_uf",
     "tonelagem_antaq_oficial",
@@ -78,14 +84,16 @@ def _normalize_name_expr(field: str) -> str:
     """
     Normaliza string para matching entre nomes de município.
 
-    Remove acentuação e excesso de espaço, usando a normalização Unicode.
+    Remove acentuação (mapeamento Unicode/ASCII compatível com BigQuery Standard SQL)
+    e excesso de espaço.
     """
-    # Mantido simples para compatibilidade com BigQuery Standard SQL.
-    # A função NORMALIZE é suportada em ambientes atuais do BQ.
     return (
         "LOWER(TRIM(REGEXP_REPLACE("
-        f"REGEXP_REPLACE(NORMALIZE({field}, NFD), r'\\\\p{{M}}', ''"
-        "), r'[^a-z0-9 ]', ''))"
+        f"TRANSLATE("
+        f"LOWER(TRIM({field})),"
+        "'àáâãäèéêëìíîïòóôõöùúûüç',"
+        "'aaaaaeeeiiiiooooouuuuc'),"
+        " '[^a-z0-9 ]', '')))"
     )
 
 
@@ -93,7 +101,7 @@ def build_dim_municipio_antaq_sql() -> str:
     """Retorna SQL de criação do crosswalk ANTAQ -> id_municipio IBGE."""
     return f"""
     CREATE OR REPLACE TABLE {DIM_MUNICIPIO_ANTAQ_FQTN}
-    PARTITION BY DATE(data_execucao)
+    PARTITION BY data_execucao
     AS
     WITH municipios_antaq AS (
         SELECT DISTINCT
@@ -172,7 +180,10 @@ def build_impacto_economico_mart_sql(versao_pipeline: str = "v1.0.0") -> str:
     """Retorna SQL de criação da versão completa do mart do Módulo 5."""
     return f"""
     CREATE OR REPLACE TABLE {MART_IMPACTO_ECONOMICO_FQTN}
-    PARTITION BY ano
+    PARTITION BY RANGE_BUCKET(
+        ano,
+        GENERATE_ARRAY(1900, 2100, 1)
+    )
     CLUSTER BY id_municipio
     AS
     WITH pib_base AS (
@@ -180,12 +191,17 @@ def build_impacto_economico_mart_sql(versao_pipeline: str = "v1.0.0") -> str:
             CAST(p.id_municipio AS STRING) AS id_municipio,
             CAST(p.ano AS INT64) AS ano,
             p.pib,
-            CAST(p.populacao AS INT64) AS populacao,
-            p.vab_servicos,
-            p.vab_industria,
-            p.id_microrregiao,
-            p.sigla_uf
+            CAST(pop.populacao AS INT64) AS populacao,
+            p.va_servicos,
+            p.va_industria,
+            d.id_microrregiao,
+            d.sigla_uf
         FROM {BD_DADOS_PIB} p
+        INNER JOIN {BD_DADOS_POPULACAO} pop
+            ON CAST(pop.id_municipio AS STRING) = CAST(p.id_municipio AS STRING)
+            AND CAST(pop.ano AS INT64) = CAST(p.ano AS INT64)
+        INNER JOIN {BD_DADOS_DIRETORIO_MUNICIPIO} d
+            ON p.id_municipio = d.id_municipio
         WHERE p.pib IS NOT NULL
     ),
     antaq_base AS (
@@ -263,8 +279,13 @@ def build_impacto_economico_mart_sql(versao_pipeline: str = "v1.0.0") -> str:
         SELECT
             CAST(r.id_municipio AS STRING) AS id_municipio,
             r.ano,
-            SUM(CASE WHEN r.cnae_2_subclasse IN ({", ".join(repr(cnae) for cnae in CNAES_PORTUARIOS)}
-                THEN r.valor_remuneracao_media * 12 ELSE 0 END) AS massa_salarial_portuaria,
+            SUM(
+                CASE
+                    WHEN r.cnae_2_subclasse IN ({", ".join(repr(cnae) for cnae in CNAES_PORTUARIOS)})
+                    THEN r.valor_remuneracao_media * 12
+                    ELSE 0
+                END
+            ) AS massa_salarial_portuaria,
             SUM(r.valor_remuneracao_media * 12) AS massa_salarial_total
         FROM {BD_DADOS_RAIS} r
         WHERE r.valor_remuneracao_media IS NOT NULL
@@ -277,8 +298,8 @@ def build_impacto_economico_mart_sql(versao_pipeline: str = "v1.0.0") -> str:
         COALESCE(m.ano, a.ano, c.ano, ep.ano, et.ano, ms.ano) AS ano,
         m.pib,
         m.populacao,
-        m.vab_servicos,
-        m.vab_industria,
+        m.va_servicos,
+        m.va_industria,
         m.id_microrregiao,
         m.sigla_uf,
         a.tonelagem_antaq_oficial,
@@ -335,5 +356,5 @@ def build_indicator_metadata_sql() -> str:
         CAST(NULL AS STRING) AS descricao,
         '{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}' AS versao_pipeline,
         CURRENT_TIMESTAMP() AS data_atualizacao
-    WHERE FALSE
+    LIMIT 0
     """

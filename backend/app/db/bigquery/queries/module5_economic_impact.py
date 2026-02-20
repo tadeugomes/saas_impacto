@@ -9,7 +9,10 @@ NOTA: Usa view oficial ANTAQ v_carga_metodologia_oficial para dados de carga.
 
 from typing import Optional
 
-from app.db.bigquery.marts.module5 import MART_IMPACTO_ECONOMICO_FQTN
+from app.db.bigquery.marts.module5 import (
+    MART_IMPACTO_ECONOMICO_FQTN,
+    BD_DADOS_DIRETORIO_MUNICIPIO,
+)
 
 
 # ============================================================================
@@ -202,13 +205,13 @@ def query_pib_setorial_servicos(
         p.id_municipio,
         dir.nome AS nome_municipio,
         p.ano,
-        ROUND(p.vab_servicos * 100.0 / NULLIF(p.pib, 0), 2) AS pib_servicos_percentual
+        ROUND(p.va_servicos * 100.0 / NULLIF(p.pib, 0), 2) AS pib_servicos_percentual
     FROM
         `{BD_DADOS_PIB}` p
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON p.id_municipio = dir.id_municipio
     WHERE
-        p.vab_servicos IS NOT NULL
+        p.va_servicos IS NOT NULL
         AND p.pib IS NOT NULL
         AND p.pib > 0
         {f"AND {where_sql}" if where_sql else ""}
@@ -246,13 +249,13 @@ def query_pib_setorial_industria(
         p.id_municipio,
         dir.nome AS nome_municipio,
         p.ano,
-        ROUND(p.vab_industria * 100.0 / NULLIF(p.pib, 0), 2) AS pib_industria_percentual
+        ROUND(p.va_industria * 100.0 / NULLIF(p.pib, 0), 2) AS pib_industria_percentual
     FROM
         `{BD_DADOS_PIB}` p
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON p.id_municipio = dir.id_municipio
     WHERE
-        p.vab_industria IS NOT NULL
+        p.va_industria IS NOT NULL
         AND p.pib IS NOT NULL
         AND p.pib > 0
         {f"AND {where_sql}" if where_sql else ""}
@@ -671,7 +674,8 @@ def query_crescimento_comercio_exterior(
     if id_municipio:
         where_exp.append(f"e.id_municipio = '{id_municipio}'")
         where_imp.append(f"i.id_municipio = '{id_municipio}'")
-    where_ano = f"AND e.ano <= {ano}" if ano else ""
+    where_ano_exp = f"AND e.ano <= {ano}" if ano else ""
+    where_ano_imp = f"AND i.ano <= {ano}" if ano else ""
 
     where_exp_sql = "\n        AND ".join(where_exp) if where_exp else ""
     where_imp_sql = "\n        AND ".join(where_imp) if where_imp else ""
@@ -688,7 +692,7 @@ def query_crescimento_comercio_exterior(
         WHERE
             e.valor_fob_dolar IS NOT NULL
             {f"AND {where_exp_sql}" if where_exp_sql else ""}
-            {where_ano}
+            {where_ano_exp}
         GROUP BY
             e.id_municipio,
             e.ano
@@ -703,7 +707,7 @@ def query_crescimento_comercio_exterior(
         WHERE
             i.valor_fob_dolar IS NOT NULL
             {f"AND {where_imp_sql}" if where_imp_sql else ""}
-            {where_ano}
+            {where_ano_imp}
         GROUP BY
             i.id_municipio,
             i.ano
@@ -793,23 +797,25 @@ def query_participacao_pib_regional(
     Granularidade: Município/Ano
     """
     where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
-    where_ano = f"AND m.ano = {ano}" if ano else ""
+    where_ano = f"AND p.ano = {ano}" if ano else ""
     order_by = "m.ano DESC" if id_municipio else "participacao_pib_regional_pct DESC"
 
     return f"""
     WITH pib_municipios AS (
         SELECT
-            id_microrregiao,
-            ano,
-            SUM(pib) AS pib_regiao
+            d.id_microrregiao,
+            p.ano,
+            SUM(p.pib) AS pib_regiao
         FROM
-            `{BD_DADOS_PIB}`
+            `{BD_DADOS_PIB}` p
+        INNER JOIN
+            `{BD_DADOS_DIRETORIO_MUNICIPIO}` d USING (id_municipio)
         WHERE
-            id_microrregiao IS NOT NULL
+            d.id_microrregiao IS NOT NULL
             {where_ano}
         GROUP BY
-            id_microrregiao,
-            ano
+            d.id_microrregiao,
+            p.ano
     )
     SELECT
         m.id_municipio,
@@ -819,7 +825,9 @@ def query_participacao_pib_regional(
     FROM
         `{BD_DADOS_PIB}` m
     INNER JOIN
-        pib_municipios r ON m.id_microrregiao = r.id_microrregiao AND m.ano = r.ano
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` d USING (id_municipio)
+    INNER JOIN
+        pib_municipios r ON d.id_microrregiao = r.id_microrregiao AND m.ano = r.ano
     LEFT JOIN
         `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON m.id_municipio = dir.id_municipio
     WHERE
@@ -842,6 +850,7 @@ def query_correlacao_tonelagem_empregos(
     Granularidade: Município
     """
     where_clause = f"AND m.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_clause_r = f"AND r.id_municipio = '{id_municipio}'" if id_municipio else ""
 
     return f"""
     WITH dados_completos AS (
@@ -861,7 +870,7 @@ def query_correlacao_tonelagem_empregos(
             WHERE
                 cnae_2_subclasse IN {CNAES_CLAUSE}
                 AND vinculo_ativo_3112 = '1'
-                {where_clause}
+                {where_clause_r}
             GROUP BY
                 id_municipio,
                 ano
@@ -904,7 +913,8 @@ def query_correlacao_comercio_pib(
     Unidade: Coeficiente (-1 a +1)
     Granularidade: Município
     """
-    where_clause = f"AND e.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_clause_exp = f"AND e.id_municipio = '{id_municipio}'" if id_municipio else ""
+    where_clause_imp = f"AND i.id_municipio = '{id_municipio}'" if id_municipio else ""
 
     return f"""
     WITH exportacoes AS (
@@ -916,7 +926,7 @@ def query_correlacao_comercio_pib(
             `basedosdados.br_me_comex_stat.municipio_exportacao` e
         WHERE
             e.valor_fob_dolar IS NOT NULL
-            {where_clause}
+            {where_clause_exp}
         GROUP BY
             e.id_municipio,
             e.ano
@@ -930,7 +940,7 @@ def query_correlacao_comercio_pib(
             `basedosdados.br_me_comex_stat.municipio_importacao` i
         WHERE
             i.valor_fob_dolar IS NOT NULL
-            {where_clause}
+            {where_clause_imp}
         GROUP BY
             i.id_municipio,
             i.ano
@@ -1074,11 +1084,13 @@ def query_crescimento_relativo_uf(
     WITH pib_municipal AS (
         SELECT
             p.id_municipio,
-            p.sigla_uf,
+            d.sigla_uf,
             p.ano,
             p.pib
         FROM
             `{BD_DADOS_PIB}` p
+        INNER JOIN
+            `{BD_DADOS_DIRETORIO_MUNICIPIO}` d USING (id_municipio)
         WHERE
             p.pib IS NOT NULL
             {where_mun}
@@ -1101,10 +1113,7 @@ def query_crescimento_relativo_uf(
             ano,
             SUM(pib) AS pib_estadual
         FROM
-            `{BD_DADOS_PIB}`
-        WHERE
-            pib IS NOT NULL
-            {where_ano}
+            pib_municipal
         GROUP BY
             sigla_uf,
             ano
@@ -1241,7 +1250,16 @@ def query_indice_concentracao_portuaria_m5(
     order_by = "n.ano DESC" if id_municipio else "indice_concentracao_portuaria DESC"
 
     return f"""
-    WITH emprego_concentracao AS (
+    WITH pib_base AS (
+        SELECT
+            p.id_municipio,
+            p.ano,
+            p.pib,
+            d.id_microrregiao
+        FROM `{BD_DADOS_PIB}` p
+        INNER JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` d USING (id_municipio)
+    ),
+    emprego_concentracao AS (
         SELECT
             p.id_municipio,
             p.ano,
@@ -1281,10 +1299,10 @@ def query_indice_concentracao_portuaria_m5(
             m.id_municipio,
             m.ano,
             m.pib * 100.0 / NULLIF(r.pib_regiao, 0) AS participacao_pib_regional
-        FROM `{BD_DADOS_PIB}` m
+        FROM pib_base m
         JOIN (
             SELECT id_microrregiao, ano, SUM(pib) AS pib_regiao
-            FROM `{BD_DADOS_PIB}`
+            FROM pib_base
             WHERE id_microrregiao IS NOT NULL {f"AND ano = {ano}" if ano else ""}
             GROUP BY id_microrregiao, ano
         ) r ON m.id_microrregiao = r.id_microrregiao AND m.ano = r.ano

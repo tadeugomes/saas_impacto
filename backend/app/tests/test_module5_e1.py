@@ -23,7 +23,7 @@ def test_module5_e1_mart_queries_reference_crosswalk_and_mart():
     assert "status" in dim_sql
     assert marts_module5.DIM_MUNICIPIO_ANTAQ_FQTN == DIM_MUNICIPIO_ANTAQ_FQTN
     assert "marts_impacto" in mart_sql
-    assert "PARTITION BY ano" in mart_sql
+    assert "PARTITION BY ano" in mart_sql or "PARTITION BY RANGE_BUCKET" in mart_sql
     assert "CLUSTER BY id_municipio" in mart_sql
     assert "tonelagem_antaq_oficial" in mart_sql
 
