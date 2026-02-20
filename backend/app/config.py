@@ -101,7 +101,6 @@ class Settings(BaseSettings):
 
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
-    otel_service_name: str = "saas-impacto-backend"
     otel_sampling_ratio: float = 1.0
 
     # Notificações
@@ -138,6 +137,15 @@ class Settings(BaseSettings):
     #   ENABLE_AUGMENTED_SCM=true
     enable_scm: bool = False
     enable_augmented_scm: bool = False
+
+    # Observabilidade / exposição
+    otel_enabled: bool = False
+    otel_exporter: str = "console"
+    metrics_enabled: bool = True
+    docs_access_token: str | None = None
+
+    # Internacionalização backend
+    default_language: str = "pt-BR"
 
 
 @lru_cache()

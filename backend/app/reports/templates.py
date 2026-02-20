@@ -156,6 +156,25 @@ def get_indicator_info(module_code: str, indicator_code: str) -> Optional[Dict]:
     return None
 
 
+def get_indicators_by_module(module_code: str) -> list[str]:
+    """Retorna os códigos dos indicadores vinculados ao módulo."""
+    normalized = module_code.upper()
+    if normalized.startswith("IND-"):
+        normalized = normalized.replace("IND-", "IND-", 1)
+        normalized = normalized.replace("IND-", "", 1)
+
+    if "." in normalized:
+        normalized = normalized.split(".")[0]
+
+    normalized = normalized.lstrip("0")
+    candidate_key = f"IND-{normalized}"
+    template = get_module_template(candidate_key)
+    if not template:
+        return []
+
+    return [indicator["code"] for indicator in template.get("indicators", [])]
+
+
 def format_value(value: Any, unit: str = "") -> str:
     """Formata um valor para exibição no relatório."""
     if value is None or value == "":

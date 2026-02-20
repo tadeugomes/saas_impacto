@@ -10,6 +10,7 @@ interface ExportButtonProps {
   variant?: 'primary' | 'secondary';
   className?: string;
   disabled?: boolean;
+  includeFormats?: Array<'docx' | 'pdf' | 'xlsx'>;
 }
 
 export function ExportButton({
@@ -19,9 +20,11 @@ export function ExportButton({
   variant = 'secondary',
   className = '',
   disabled = false,
+  includeFormats = ['docx', 'pdf', 'xlsx'],
 }: ExportButtonProps) {
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [isExporting, setIsExporting] = useState(false);
+  const [format, setFormat] = useState<'docx' | 'pdf' | 'xlsx'>('docx');
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -31,12 +34,14 @@ export function ExportButton({
           indicatorCode,
           id_instalacao: selectedInstallation || undefined,
           ano: selectedYear || undefined,
+          format,
         });
       } else {
         await reportsService.exportModule({
           moduleCode,
           id_instalacao: selectedInstallation || undefined,
           ano: selectedYear || undefined,
+          format,
         });
       }
     } catch (error) {
@@ -53,23 +58,40 @@ export function ExportButton({
     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50';
 
   return (
-    <button
-      onClick={handleExport}
-      disabled={disabled || isExporting}
-      className={`${baseStyles} ${variantStyles} ${className}`}
-      title="Exportar para DOCX"
-    >
-      {isExporting ? (
-        <>
-          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          Gerando...
-        </>
-      ) : (
-        <>
-          {variant === 'primary' ? <FileText className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-          {label}
-        </>
-      )}
-    </button>
+    <div className="inline-flex items-stretch gap-2">
+      <select
+        value={format}
+        onChange={(event) =>
+          setFormat(event.target.value as 'docx' | 'pdf' | 'xlsx')
+        }
+        disabled={disabled || isExporting}
+        className="rounded-lg border border-gray-300 bg-white px-2 text-sm"
+        aria-label="Formato de exportação"
+      >
+        {includeFormats.map((option) => (
+          <option key={option} value={option}>
+            {option.toUpperCase()}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={handleExport}
+        disabled={disabled || isExporting}
+        className={`${baseStyles} ${variantStyles} ${className}`}
+        title="Exportar relatório"
+      >
+        {isExporting ? (
+          <>
+            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            Gerando...
+          </>
+        ) : (
+          <>
+            {variant === 'primary' ? <FileText className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+            {label}
+          </>
+        )}
+      </button>
+    </div>
   );
 }

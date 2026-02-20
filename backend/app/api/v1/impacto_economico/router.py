@@ -27,7 +27,7 @@ Autenticação:
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -52,6 +52,7 @@ from app.services.impacto_economico.analysis_service import (
 )
 from app.services.audit_service import AuditService, get_audit_service
 from app.reports import ReportService
+from app.reports import PDFGenerator, XLSXGenerator
 from app.tasks.impacto_economico import run_economic_impact_analysis
 
 router = APIRouter(
@@ -342,6 +343,7 @@ async def get_analysis_report(
     analysis_id: uuid.UUID,
     service: AnalysisService = Depends(_get_analysis_service),
     _: User = Depends(require_module_permission(5, "read")),
+    format: Literal["docx", "pdf", "xlsx"] = Query(default="docx"),
 ) -> StreamingResponse:
     """Gera e retorna o relatório DOCX de uma análise causal."""
     try:
@@ -367,8 +369,34 @@ async def get_analysis_report(
         )
 
     try:
-        report_service = ReportService()
-        report_bytes, filename = report_service.generate_impact_analysis_report(detail)
+        if format == "docx":
+            report_service = ReportService()
+            report_bytes, filename = report_service.generate_impact_analysis_report(detail)
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif format == "pdf":
+            impact_data: list[dict[str, Any]] = _normalize_impact_rows(detail)
+            report_bytes, filename = PDFGenerator().build(
+                title=f"Relatório de Impacto Econômico - {analysis_id}",
+                subtitle=f"Método: {detail.method}",
+                rows=impact_data,
+                output_name=f"relatorio_impacto_{analysis_id}.pdf",
+            )
+            media_type = "application/pdf"
+        elif format == "xlsx":
+            impact_data: list[dict[str, Any]] = _normalize_impact_rows(detail)
+            report_bytes, filename = XLSXGenerator().build_single_indicator(
+                code=f"impacto_economico_{detail.method}",
+                rows=impact_data,
+                output_name=f"relatorio_impacto_{analysis_id}.xlsx",
+            )
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Formato inválido: {format}",
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -382,8 +410,35 @@ async def get_analysis_report(
 
     return StreamingResponse(
         content=iter([report_bytes.getvalue()]),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+def _normalize_impact_rows(detail: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+
+    summary = getattr(detail, "result_summary", None) or {}
+    if summary:
+        rows.append(
+            {
+                "outcome": summary.get("outcome", "N/A"),
+                "coef": summary.get("coef"),
+                "std_err": summary.get("std_err"),
+                "p_value": summary.get("p_value"),
+                "n_obs": summary.get("n_obs"),
+                "metodo": detail.method,
+            }
+        )
+
+    if summary.get("outcome") is None:
+        rows.append(
+            {
+                "metodo": detail.method,
+                "status": detail.status,
+            }
+        )
+
+    return rows

@@ -31,6 +31,12 @@ const Module6View = lazy(() =>
 const Module7View = lazy(() =>
   import('../views/Dashboard/ModuleViews/Module7View').then((m) => ({ default: m.Module7View }))
 );
+const RegisterView = lazy(() =>
+  import('../views/Login/RegisterView').then((m) => ({ default: m.RegisterView }))
+);
+const AdminDashboard = lazy(() =>
+  import('../views/Admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+);
 
 export type AppRoute = {
   path?: string;
@@ -43,6 +49,11 @@ export const APP_ROUTES: AppRoute[] = [
   {
     path: '/login',
     element: <LoginView />,
+    requiresAuth: false,
+  },
+  {
+    path: '/register',
+    element: <RegisterView />,
     requiresAuth: false,
   },
   {
@@ -59,6 +70,7 @@ export const APP_ROUTES: AppRoute[] = [
       { path: 'dashboard/module5', element: <Module5View /> },
       { path: 'dashboard/module6', element: <Module6View /> },
       { path: 'dashboard/module7', element: <Module7View /> },
+      { path: 'admin', element: <AdminDashboard /> },
     ],
   },
 ];

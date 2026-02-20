@@ -20,6 +20,8 @@ class ApiClient {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
+        const locale = localStorage.getItem('saas-impacto-locale') || 'pt-BR';
+        config.headers['Accept-Language'] = locale;
         return config;
       },
       (error) => Promise.reject(error)

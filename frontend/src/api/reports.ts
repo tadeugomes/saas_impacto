@@ -8,6 +8,7 @@ export interface ReportExportParams {
   ano?: number;
   ano_inicio?: number;
   ano_fim?: number;
+  format?: 'docx' | 'pdf' | 'xlsx';
 }
 
 export const reportsService = {
@@ -37,7 +38,8 @@ export const reportsService = {
 
     // Extrai filename do header Content-Disposition
     const contentDisposition = response.headers['content-disposition'];
-    let filename = `relatorio_${moduleCode}.docx`;
+    const defaultExt = queryParams.format || 'docx';
+    let filename = `relatorio_${moduleCode}.${defaultExt}`;
     if (contentDisposition) {
       const matches = /filename="([^"]+)"/.exec(contentDisposition);
       if (matches && matches[1]) {
@@ -78,7 +80,8 @@ export const reportsService = {
 
     // Extrai filename do header Content-Disposition
     const contentDisposition = response.headers['content-disposition'];
-    let filename = `relatorio_${indicatorCode}.docx`;
+    const defaultExt = queryParams.format || 'docx';
+    let filename = `relatorio_${indicatorCode}.${defaultExt}`;
     if (contentDisposition) {
       const matches = /filename="([^"]+)"/.exec(contentDisposition);
       if (matches && matches[1]) {

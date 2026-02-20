@@ -125,6 +125,23 @@ export interface MatchingResponse {
   features: string[];
 }
 
+export interface AdminDashboardItem {
+  codigo: string;
+  nome: string;
+  acessos: number;
+}
+
+export interface TenantUsageResponse {
+  total_analises: number;
+  analises_sucesso: number;
+  analises_falha: number;
+  usuarios_ativos_7d: number;
+  usuarios_ativos_30d: number;
+  bq_bytes_last_30d: number;
+  taxa_rate_limit?: number | null;
+  top_indicadores: AdminDashboardItem[];
+}
+
 export interface AnalysisCreateRequest {
   method: AnalysisMethod;
   treated_ids: string[];

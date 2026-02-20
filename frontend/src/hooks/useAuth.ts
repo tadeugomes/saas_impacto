@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../api/auth';
-import type { LoginRequest, RegisterRequest } from '../types/auth';
+import type { LoginRequest, RegisterRequest, OnboardingCompanyRequest } from '../types/auth';
 
 export function useAuth() {
   const navigate = useNavigate();
@@ -45,6 +45,24 @@ export function useAuth() {
     }
   }, [login, setLoading]);
 
+  const registerCompany = useCallback(
+    async (data: OnboardingCompanyRequest) => {
+      setLoading(true);
+      try {
+        const registerResponse = await authService.registerCompany(data);
+        localStorage.setItem('access_token', registerResponse.access_token);
+        localStorage.setItem('refresh_token', registerResponse.refresh_token);
+
+        const user = await authService.getCurrentUser();
+        setAuth(user, registerResponse.access_token);
+        navigate('/');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [navigate, setAuth, setLoading],
+  );
+
   return {
     user,
     isAuthenticated,
@@ -52,5 +70,6 @@ export function useAuth() {
     login,
     logout,
     register,
+    registerCompany,
   };
 }

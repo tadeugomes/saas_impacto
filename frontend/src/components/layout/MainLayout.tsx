@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { useState } from 'react';
+import { OfflineBanner } from '../common/OfflineBanner';
 
 interface MainLayoutProps {
   requireAuth?: boolean;
@@ -13,6 +14,7 @@ export function MainLayout(_props: MainLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <OfflineBanner />
       <Header onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       <div className="flex">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
