@@ -13,7 +13,7 @@ from app.core.logging import (
 def test_configure_structlog_and_get_logger():
     configure_structlog()
     logger = get_logger("test")
-    logger.info("structlog smoke test", event="smoke")
+    logger.info("structlog smoke test", extra_field="smoke")
 
 
 def test_inject_request_context_populates_event_fields() -> None:

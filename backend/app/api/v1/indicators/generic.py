@@ -7,7 +7,7 @@ para consultar qualquer indicador de qualquer módulo (1-7).
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ from app.schemas.indicators import (
     TenantModulePermissionItem,
     AreaInfluenceUpsertRequest,
     AllowlistPolicyUpdateRequest,
+    MunicipioLookupResponse,
 )
 from app.core.tenant import get_tenant_id
 from app.db.base import get_db
@@ -170,6 +171,28 @@ async def get_tenant_policies(
             "area_influencia": policy.get("area_influencia", {}),
             "max_bytes_per_query": policy.get("max_bytes_per_query"),
         }
+    )
+
+
+@router.get(
+    "/municipios",
+    response_model=MunicipioLookupResponse,
+    summary="Busca nome de municípios por IDs IBGE",
+    description=(
+        "Consulta nomes de municípios em lote. Útil para exibir rótulos amigáveis no frontend."
+    ),
+)
+async def get_municipios_por_codigo(
+    ids: list[str] = Query(default=[]),
+    current_user: User = Depends(require_indicator_permission("read")),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    municipios_map = await policy_service.lookup_municipio_nomes(ids)
+    return MunicipioLookupResponse(
+        municipios=[
+            {"id_municipio": municipio_id, "nome_municipio": nome}
+            for municipio_id, nome in municipios_map.items()
+        ]
     )
 
 

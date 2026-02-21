@@ -216,18 +216,18 @@ export const INDICATOR_FORMATS: Record<string, ChartValueFormat> = {
   'IND-5.03': 'quantity',
   'IND-5.04': 'percent',
   'IND-5.05': 'percent',
-  'IND-5.06': 'number',
-  'IND-5.07': 'number',
+  'IND-5.06': 'decimal6',
+  'IND-5.07': 'decimal6',
   'IND-5.08': 'percent',
   'IND-5.09': 'percent',
   'IND-5.10': 'percent',
   'IND-5.11': 'percent',
   'IND-5.12': 'percent',
   'IND-5.13': 'percent',
-  'IND-5.14': 'number',       // correlação
-  'IND-5.15': 'number',
-  'IND-5.16': 'number',
-  'IND-5.17': 'number',       // elasticidade
+  'IND-5.14': 'decimal',       // correlação
+  'IND-5.15': 'decimal',
+  'IND-5.16': 'decimal',
+  'IND-5.17': 'decimal',       // elasticidade
   'IND-5.18': 'percent',
   'IND-5.19': 'number',
   'IND-5.20': 'number',
@@ -240,6 +240,11 @@ export const INDICATOR_FORMATS: Record<string, ChartValueFormat> = {
   'IND-6.04': 'currency-compact',
   'IND-6.05': 'percent',
   'IND-6.06': 'number',
+  'IND-6.07': 'currency-compact',
+  'IND-6.08': 'currency-compact',
+  'IND-6.09': 'number',
+  'IND-6.10': 'decimal',
+  'IND-6.11': 'decimal',
 
   // Módulo 7 - Índices Sintéticos
   'IND-7.01': 'number',

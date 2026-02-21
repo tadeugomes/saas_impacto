@@ -7,7 +7,7 @@ BASE_URL = "http://localhost:8000/api/v1"
 MODULES = {
     3: [f"IND-3.{i:02d}" for i in range(1, 13)],
     5: [f"IND-5.{i:02d}" for i in range(1, 22)],
-    6: [f"IND-6.{i:02d}" for i in range(1, 7)],
+    6: [f"IND-6.{i:02d}" for i in range(1, 12)],
 }
 
 def check_modules():

@@ -752,3 +752,54 @@ def get_query_module3(indicator_code: str) -> callable:
     if indicator_code not in QUERIES_MODULE_3:
         raise ValueError(f"Indicador {indicator_code} não encontrado no Módulo 3")
     return QUERIES_MODULE_3[indicator_code]
+
+
+# ============================================================================
+# Queries Auxiliares (fora do dicionário de indicadores)
+# ============================================================================
+
+def query_total_municipal_employment(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    Emprego total municipal — TODOS os setores (sem filtro CNAE).
+
+    Usada pelo serviço de multiplicadores para calcular empregos
+    indiretos via estimativa causal (outcome = emprego_total).
+
+    Unidade: Contagem
+    Granularidade: Município/Ano
+    """
+    where_clauses = [_where_vinculo_ativo("r")]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_clauses.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_sql = "\n        AND ".join(where_clauses)
+
+    return f"""
+    SELECT
+        {_as_string("r.id_municipio")} AS id_municipio,
+        dir.nome AS nome_municipio,
+        r.ano,
+        COUNT(*) AS empregos_totais
+    FROM
+        `{BD_DADOS_RAIS}` r
+    LEFT JOIN
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON {_as_string("r.id_municipio")} = {_as_string("dir.id_municipio")}
+    WHERE
+        {where_sql}
+    GROUP BY
+        id_municipio,
+        dir.nome,
+        r.ano
+    ORDER BY
+        r.ano DESC,
+        dir.nome
+    """

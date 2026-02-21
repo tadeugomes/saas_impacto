@@ -7,7 +7,7 @@ BASE_URL = "http://localhost:8000/api/v1"
 MODULES = {
     4: [f"IND-4.{i:02d}" for i in range(1, 11)],
     5: [f"IND-5.{i:02d}" for i in range(1, 22)],
-    6: [f"IND-6.{i:02d}" for i in range(1, 7)],
+    6: [f"IND-6.{i:02d}" for i in range(1, 12)],
     7: [f"IND-7.{i:02d}" for i in range(1, 8)],
 }
 

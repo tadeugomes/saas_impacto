@@ -42,6 +42,28 @@ export interface FilterParams {
   tipo_carga?: string;
 }
 
+export interface PolicyMunicipioItem {
+  id_municipio: string;
+  peso?: number;
+}
+
+export interface TenantPoliciesResponse {
+  tenant_id: string;
+  allowed_installations: string[];
+  allowed_municipios: string[];
+  area_influencia: Record<string, PolicyMunicipioItem[]>;
+  max_bytes_per_query?: number | null;
+}
+
+export interface MunicipioLookupItem {
+  id_municipio: string;
+  nome_municipio: string;
+}
+
+export interface MunicipioLookupResponse {
+  municipios: MunicipioLookupItem[];
+}
+
 export interface IndicatorRequest {
   codigo_indicador: string;
   params?: FilterParams;

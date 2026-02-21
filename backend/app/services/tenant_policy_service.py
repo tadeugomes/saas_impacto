@@ -237,6 +237,43 @@ class TenantPolicyService:
             cleaned.append(id_municipio)
         return cleaned
 
+    async def lookup_municipio_nomes(self, municipios: list[str]) -> dict[str, str]:
+        """
+        Retorna dicionário {id_municipio: nome_municipio} para os ids válidos.
+
+        IDs inválidos ou não encontrados são ignorados.
+        """
+        unique_ids = sorted(
+            {
+                str(item).strip()
+                for item in municipios or []
+                if str(item).strip().isdigit() and len(str(item).strip()) == 7
+            }
+        )
+        if not unique_ids:
+            return {}
+
+        ids_sql = ", ".join(f"'{item}'" for item in unique_ids)
+        query = f"""
+        SELECT
+            CAST(id_municipio AS STRING) AS id_municipio,
+            ANY_VALUE(nome) AS nome_municipio
+        FROM `{BD_DADOS_DIRETORIO_MUNICIPIO}`
+        WHERE CAST(id_municipio AS STRING) IN ({ids_sql})
+        GROUP BY id_municipio
+        """
+
+        rows = await self.bq_client.execute_query(query)
+        out = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            id_municipio = str(row.get("id_municipio", "")).strip()
+            nome = row.get("nome_municipio")
+            if id_municipio and nome:
+                out[id_municipio] = str(nome).strip()
+        return out
+
     async def _validate_municipios_exist_in_ibge(self, municipios: list[str]) -> None:
         """
         Valida que os municipios existem no diretorio IBGE.

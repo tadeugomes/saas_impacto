@@ -36,6 +36,7 @@ from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.admin_dashboard import router as admin_dashboard_router
 from app.api.v1.impacto_economico.router import router as impacto_economico_router
+from app.api.v1.employment import router as employment_router
 from app.db.base import engine
 from app.db.bigquery.client import BigQueryError, BigQueryClient, get_bigquery_client
 import redis.asyncio as aioredis
@@ -278,6 +279,7 @@ api_router.include_router(generic_router)
 api_router.include_router(reports_router)
 api_router.include_router(users_router)
 api_router.include_router(impacto_economico_router)
+api_router.include_router(employment_router)
 
 app.include_router(api_router)
 

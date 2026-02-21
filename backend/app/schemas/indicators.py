@@ -344,6 +344,22 @@ class TenantModulePermissionsResponse(BaseModel):
     )
 
 
+class MunicipioLookupItem(BaseModel):
+    """Item com identificador e nome de município."""
+
+    id_municipio: str = Field(..., description="ID IBGE do município")
+    nome_municipio: str = Field(..., description="Nome do município")
+
+
+class MunicipioLookupResponse(BaseModel):
+    """Resposta para consulta de nomes de municípios por código IBGE."""
+
+    municipios: list[MunicipioLookupItem] = Field(
+        default_factory=list,
+        description="Pares ID e nome encontrados",
+    )
+
+
 class AreaInfluenceMunicipio(BaseModel):
     """Municipio pertencente a uma area de influencia."""
 

@@ -154,7 +154,14 @@ export function formatDecimal(value: number, decimals: number = 2): string {
 /**
  * Tipos de formatação suportados pelos gráficos.
  */
-export type ChartValueFormat = 'number' | 'currency' | 'currency-compact' | 'percent' | 'quantity';
+export type ChartValueFormat =
+  | 'number'
+  | 'currency'
+  | 'currency-compact'
+  | 'percent'
+  | 'quantity'
+  | 'decimal'
+  | 'decimal6';
 
 /**
  * Formata um valor de acordo com o tipo especificado.
@@ -176,6 +183,10 @@ export function formatByType(value: number, format: ChartValueFormat): string {
       return formatPercent(value);
     case 'quantity':
       return formatQuantity(value);
+    case 'decimal':
+      return formatDecimal(value, 4);
+    case 'decimal6':
+      return formatDecimal(value, 6);
     case 'number':
     default:
       return formatCompact(value);

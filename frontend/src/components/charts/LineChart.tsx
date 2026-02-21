@@ -11,6 +11,7 @@ import {
   Filler,
 } from 'chart.js';
 import { useMemo } from 'react';
+import { createTooltipCallback, createTickCallback, type ChartValueFormat } from '../../utils/chartFormats';
 
 ChartJS.register(
   CategoryScale,
@@ -25,15 +26,15 @@ ChartJS.register(
 
 interface LineChartProps {
   labels: string[];
-  datasets: {
+  datasets: Array<{
     label: string;
-    data: number[];
-    borderColor?: string;
-    backgroundColor?: string;
-    fill?: boolean;
-  }[];
+    data: Array<number | null>;
+    [key: string]: unknown;
+  }>;
   title?: string;
   yAxisLabel?: string;
+  yAxisBeginAtZero?: boolean;
+  yAxisFormat?: ChartValueFormat;
 }
 
 const COLORS = {
@@ -46,7 +47,14 @@ const COLORS = {
   module7: '#6366f1',
 };
 
-export function LineChart({ labels, datasets, title, yAxisLabel }: LineChartProps) {
+export function LineChart({
+  labels,
+  datasets,
+  title,
+  yAxisLabel,
+  yAxisBeginAtZero = true,
+  yAxisFormat,
+}: LineChartProps) {
   const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
@@ -62,6 +70,9 @@ export function LineChart({ labels, datasets, title, yAxisLabel }: LineChartProp
       tooltip: {
         mode: 'index' as const,
         intersect: false,
+        callbacks: {
+          label: createTooltipCallback(yAxisFormat || 'number'),
+        },
       },
     },
     scales: {
@@ -71,7 +82,12 @@ export function LineChart({ labels, datasets, title, yAxisLabel }: LineChartProp
         },
       },
       y: {
-        beginAtZero: true,
+        beginAtZero: yAxisBeginAtZero,
+        ticks: yAxisFormat
+          ? {
+              callback: createTickCallback({ format: yAxisFormat }),
+            }
+          : undefined,
         title: {
           display: !!yAxisLabel,
           text: yAxisLabel,
@@ -86,7 +102,7 @@ export function LineChart({ labels, datasets, title, yAxisLabel }: LineChartProp
       axis: 'x' as const,
       intersect: false,
     },
-  }), [title, yAxisLabel]);
+  }), [title, yAxisLabel, yAxisBeginAtZero, yAxisFormat]);
 
   const chartData = useMemo(() => ({
     labels,

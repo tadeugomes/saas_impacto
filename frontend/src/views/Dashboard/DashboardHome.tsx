@@ -22,7 +22,7 @@ const MODULE_INFO = [
   { id: 3, name: 'Recursos Humanos', icon: Users, color: 'module3', path: '/dashboard/module3', indicators: 12 },
   { id: 4, name: 'Comércio Exterior', icon: Globe, color: 'module4', path: '/dashboard/module4', indicators: 10 },
   { id: 5, name: 'Impacto Econômico', icon: TrendingUp, color: 'module5', path: '/dashboard/module5', indicators: 21 },
-  { id: 6, name: 'Finanças Públicas', icon: Building, color: 'module6', path: '/dashboard/module6', indicators: 6 },
+  { id: 6, name: 'Finanças Públicas', icon: Building, color: 'module6', path: '/dashboard/module6', indicators: 11 },
   { id: 7, name: 'Índices Sintéticos', icon: LineChart, color: 'module7', path: '/dashboard/module7', indicators: 7 },
 ];
 

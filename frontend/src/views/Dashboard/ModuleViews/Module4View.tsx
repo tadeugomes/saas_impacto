@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
+import {
+  type MunicipioLabelMap,
+  isLikelyIdNameMismatch,
+  normalizeMunicipioId,
+  toMunicipioLabel,
+} from '../../../utils/municipioLabels';
 import { indicatorsService } from '../../../api/indicators';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
@@ -39,6 +45,10 @@ const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorR
   data: [],
 });
 
+function toIndicatorRows(response: ModuleIndicatorResponse): RawIndicatorRow[] {
+  return response.data.filter((item): item is RawIndicatorRow => item !== null && typeof item === 'object');
+}
+
 export function Module4View() {
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
@@ -46,6 +56,96 @@ export function Module4View() {
   const [error, setError] = useState<string | null>(null);
   const [tableSearch, setTableSearch] = useState('');
   const [selectedIndicator, setSelectedIndicator] = useState('all');
+  const [municipioLabelIndex, setMunicipioLabelIndex] = useState<MunicipioLabelMap>({});
+
+  const resolveMunicipioLabels = useCallback(
+    async (rawIds: string[]) => {
+      const ids = Array.from(
+        new Set(
+          rawIds
+            .map((id) => normalizeMunicipioId(id))
+            .filter((id) => id && id.length >= 2 && !municipioLabelIndex[id]),
+        ),
+      );
+
+      if (!ids.length) {
+        return;
+      }
+
+      try {
+        const response = await indicatorsService.getMunicipioLookup(ids);
+        const nextLabels: MunicipioLabelMap = {};
+        response.municipios.forEach((item) => {
+          const municipioId = normalizeMunicipioId(item.id_municipio);
+          const nomeMunicipio = item.nome_municipio?.trim();
+          if (municipioId && nomeMunicipio) {
+            nextLabels[municipioId] = nomeMunicipio;
+          }
+        });
+        if (Object.keys(nextLabels).length > 0) {
+          setMunicipioLabelIndex((current) => ({ ...current, ...nextLabels }));
+        }
+      } catch {
+        // Falha de lookup é não-bloqueante para manter a carga útil.
+      }
+    },
+    [municipioLabelIndex],
+  );
+
+  const municipioLabelsFromIndicators = useMemo(() => {
+    const lookup: MunicipioLabelMap = {};
+    Object.values(indicators).forEach((indicator) => {
+      toIndicatorRows(indicator).forEach((item) => {
+        const id = normalizeMunicipioId(item.id_municipio);
+        const nome = item.nome_municipio;
+        if (
+          id &&
+          typeof nome === 'string' &&
+          nome.trim() &&
+          !isLikelyIdNameMismatch(id, nome) &&
+          !normalizeMunicipioId(nome)
+        ) {
+          lookup[id] = nome.trim();
+        }
+      });
+    });
+    return lookup;
+  }, [indicators]);
+
+  const municipioLabels = useMemo(
+    () => ({ ...municipioLabelIndex, ...municipioLabelsFromIndicators }),
+    [municipioLabelIndex, municipioLabelsFromIndicators],
+  );
+
+  const municipioCatalogIds = useMemo(() => {
+    const ids = new Set<string>(Object.keys(municipioLabels));
+    Object.values(indicators).forEach((indicator) => {
+      toIndicatorRows(indicator).forEach((item) => {
+        const id = normalizeMunicipioId(item.id_municipio);
+        if (id) {
+          ids.add(id);
+        }
+      });
+    });
+    return Array.from(ids);
+  }, [indicators, municipioLabels]);
+
+  useEffect(() => {
+    void resolveMunicipioLabels(municipioCatalogIds);
+  }, [municipioCatalogIds, resolveMunicipioLabels]);
+
+  const getMunicipioLabel = useCallback(
+    (item: RawIndicatorRow) => {
+      const idMunicipio = normalizeMunicipioId(item.id_municipio);
+      if (idMunicipio) {
+        return toMunicipioLabel(idMunicipio, municipioLabels);
+      }
+      return typeof item.nome_municipio === 'string' && item.nome_municipio.trim()
+        ? item.nome_municipio.trim()
+        : 'N/A';
+    },
+    [municipioLabels],
+  );
 
   useEffect(() => {
     const fetchIndicators = async () => {
@@ -150,7 +250,7 @@ export function Module4View() {
             data={indicators[ind.code]}
             chartType={ind.chartType}
             valueField={ind.valueField}
-            labelField={ind.labelField}
+            labelAccessor={(item) => getMunicipioLabel(item)}
             filterText={tableSearch}
             indicatorCode={ind.code}
           />

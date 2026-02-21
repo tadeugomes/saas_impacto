@@ -6,6 +6,8 @@ import type {
   ModulesOverview,
   IndicatorMetadata,
   AllIndicatorsMetadataResponse,
+  MunicipioLookupResponse,
+  TenantPoliciesResponse,
 } from '../types/api';
 
 export const indicatorsService = {
@@ -18,6 +20,22 @@ export const indicatorsService = {
 
   async getMetadata(): Promise<AllIndicatorsMetadataResponse> {
     const response = await apiClient.get('/api/v1/indicators/metadata');
+    return response.data;
+  },
+
+  async getPolicies(): Promise<TenantPoliciesResponse> {
+    const response = await apiClient.get<TenantPoliciesResponse>('/api/v1/indicators/policies');
+    return response.data;
+  },
+
+  async getMunicipioLookup(ids: string[]): Promise<MunicipioLookupResponse> {
+    if (!ids.length) {
+      return { municipios: [] };
+    }
+
+    const response = await apiClient.get<MunicipioLookupResponse>('/api/v1/indicators/municipios', {
+      params: { ids },
+    });
     return response.data;
   },
 
