@@ -970,6 +970,56 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "FINBRA/STN + ANTAQ",
     },
+    "IND-6.07": {
+        "codigo": "IND-6.07",
+        "nome": "Receita Fiscal Total",
+        "modulo": 6,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Soma de ICMS + ISS arrecadados no município. Útil para medir a capacidade fiscal anual associada à atividade portuária.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + IBGE",
+    },
+    "IND-6.08": {
+        "codigo": "IND-6.08",
+        "nome": "Receita Fiscal per Capita",
+        "modulo": 6,
+        "unidade": "R$/hab",
+        "unctad": False,
+        "descricao": "Receita fiscal (ICMS + ISS) por habitante. Aproxima a base fiscal por pessoa no município.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + IBGE",
+    },
+    "IND-6.09": {
+        "codigo": "IND-6.09",
+        "nome": "Receita Fiscal por Tonelada",
+        "modulo": 6,
+        "unidade": "R$/ton",
+        "unctad": False,
+        "descricao": "Quociente entre receita fiscal (ICMS + ISS) e tonelagem movimentada. Mede eficiência fiscal da atividade portuária.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
+    },
+    "IND-6.10": {
+        "codigo": "IND-6.10",
+        "nome": "Correlação Tonelagem e Receita Fiscal",
+        "modulo": 6,
+        "unidade": "Coeficiente",
+        "unctad": False,
+        "descricao": "Correlação entre tonelagem movimentada e receita fiscal (ICMS+ISS). Trata-se de associação, não causalidade.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
+    },
+    "IND-6.11": {
+        "codigo": "IND-6.11",
+        "nome": "Elasticidade Tonelagem/Receita Fiscal",
+        "modulo": 6,
+        "unidade": "Elasticidade",
+        "unctad": False,
+        "descricao": "Sensibilidade histórica da tonelagem em relação à receita fiscal (log-log). Associação estatística, não causalidade inferencial.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
+    },
     # Module 7 - Synthetic Indices
     "IND-7.01": {
         "codigo": "IND-7.01",
@@ -1164,7 +1214,7 @@ class GenericIndicatorService:
                     unctad=meta["unctad"],
                     modulo=meta["modulo"],
                     data=cached_data,
-                    warnings=cached_warnings if cached_warnings else self._validate_module5_quality(codigo, cached_data),
+                    warnings=cached_warnings if cached_warnings else self._validate_indicator_quality(codigo, cached_data),
                     cache_hit=True,
                 )
                 if audit_context is not None:
@@ -1209,7 +1259,7 @@ class GenericIndicatorService:
                         area=area,
                         tenant_policy=tenant_policy,
                     )
-                    warnings = self._validate_module5_quality(codigo, results)
+                    warnings = self._validate_indicator_quality(codigo, results)
                     if request.include_breakdown:
                         self._append_warning(
                             warnings,
@@ -1273,7 +1323,7 @@ class GenericIndicatorService:
             tenant_policy=tenant_policy,
         )
         results = await self.bq_client.execute_query(query)
-        warnings = self._validate_module5_quality(codigo, results)
+        warnings = self._validate_indicator_quality(codigo, results)
         if can_use_cache:
             await self._query_cache.set(
                 request_cache_key,
@@ -1667,14 +1717,25 @@ class GenericIndicatorService:
         )
 
     @classmethod
+    def _validate_indicator_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Executa verificações mínimas de qualidade por módulo."""
+        if codigo.startswith("IND-5."):
+            return cls._validate_module5_quality(codigo, results)
+        if codigo.startswith("IND-6."):
+            return cls._validate_module6_quality(codigo, results)
+        return []
+
+    @classmethod
     def _validate_module5_quality(
         cls,
         codigo: str,
         results: List[Dict[str, Any]],
     ) -> List[DataQualityWarning]:
         """Executa verificações mínimas de qualidade para o Módulo 5."""
-        if not codigo.startswith("IND-5."):
-            return []
         if not results:
             return []
 
@@ -1757,6 +1818,106 @@ class GenericIndicatorService:
 
             if codigo == "IND-5.17":
                 for field in ("elasticidade", "elasticidade_tonelagem_pib"):
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value):
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "elasticidade_invalida",
+                            f"{field} inválida (NaN/Inf)",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+        return warnings
+
+    @classmethod
+    def _validate_module6_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Executa verificações mínimas de qualidade para o Módulo 6."""
+        if not results:
+            return []
+
+        warnings: List[DataQualityWarning] = []
+        non_negative_fields_by_code = {
+            "IND-6.01": {"arrecadacao_icms"},
+            "IND-6.02": {"arrecadacao_iss"},
+            "IND-6.03": {"receita_total"},
+            "IND-6.04": {"receita_per_capita"},
+            "IND-6.05": {"crescimento_receita_pct"},
+            "IND-6.06": {"icms_por_tonelada"},
+            "IND-6.07": {"receita_fiscal_total"},
+            "IND-6.08": {"receita_fiscal_per_capita"},
+            "IND-6.09": {"receita_fiscal_por_tonelada"},
+        }
+
+        percentage_fields_by_code = {
+            "IND-6.05": {"crescimento_receita_pct"},
+            "IND-6.10": {"correlacao", "correlacao_tonelagem_receita_fiscal"},
+        }
+
+        correlation_fields = {"IND-6.10"}
+        correlation_aliases = ("correlacao", "correlacao_tonelagem_receita_fiscal")
+
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+
+            if codigo in {"IND-6.05", "IND-6.06", "IND-6.09", "IND-6.10", "IND-6.11"}:
+                for field in percentage_fields_by_code.get(codigo, set()):
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if not (-1000 <= value <= 1000):
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "percentual_fora_intervalo_esperado",
+                            f"{field} fora do intervalo esperado de crescimento",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+            for field in non_negative_fields_by_code.get(codigo, set()):
+                value = cls._to_float(row.get(field))
+                if value is None:
+                    continue
+                if value < 0 and codigo in {"IND-6.01", "IND-6.02", "IND-6.03", "IND-6.04", "IND-6.07", "IND-6.08", "IND-6.09"}:
+                    cls._append_warning(
+                        warnings,
+                        codigo,
+                        "valor_negativo",
+                        f"{field} com valor negativo",
+                        campo=field,
+                        valor=value,
+                        row=row,
+                    )
+
+            if codigo in correlation_fields:
+                for field in correlation_aliases:
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value) or value < -1.0 or value > 1.0:
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "correlacao_fora_intervalo",
+                            f"{field} fora do intervalo [-1,1]",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+            if codigo == "IND-6.11":
+                for field in ("elasticidade", "elasticidade_tonelagem_receita_fiscal"):
                     value = cls._to_float(row.get(field))
                     if value is None:
                         continue
