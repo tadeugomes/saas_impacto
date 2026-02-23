@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from app.db.bigquery.sector_codes import CNAES_PORTUARIOS
 from app.config import get_settings
 
 # Estrutura padrão: projeto padrão da conta + dataset do projeto de marts + schema lógico
@@ -51,33 +52,6 @@ VIEW_CARGA_METODOLOGIA_OFICIAL = f"{ANTAQ_DATASET}.v_carga_metodologia_oficial"
 COMEX_EXPORT = "basedosdados.br_me_comex_stat.municipio_exportacao"
 COMEX_IMPORT = "basedosdados.br_me_comex_stat.municipio_importacao"
 BD_DADOS_DIRETORIO_MUNICIPIO = "basedosdados.br_bd_diretorios_brasil.municipio"
-
-CNAES_PORTUARIOS = [
-    "5231101",
-    "5231102",
-    "5231103",
-    "5011401",
-    "5011402",
-    "5012201",
-    "5012202",
-    "5021101",
-    "5021102",
-    "5022001",
-    "5022002",
-    "5030101",
-    "5030102",
-    "5030103",
-    "5091201",
-    "5091202",
-    "5099801",
-    "5099899",
-    "5232000",
-    "5239701",
-    "5239799",
-    "5250801",
-    "5250802",
-    "5250804",
-]
 
 
 def _normalize_name_expr(field: str) -> str:

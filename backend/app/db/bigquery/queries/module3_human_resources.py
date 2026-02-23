@@ -8,6 +8,7 @@ NOTA: IND-3.07 (Produtividade) usa view oficial ANTAQ v_carga_metodologia_oficia
 """
 
 from typing import Optional
+from app.db.bigquery.sector_codes import CNAES_PORTUARIOS
 
 
 # ============================================================================
@@ -22,15 +23,6 @@ BD_DADOS_DIRETORIO_MUNICIPIO = "basedosdados.br_bd_diretorios_brasil.municipio"
 # Dataset ANTAQ no BigQuery (para IND-3.07)
 ANTAQ_DATASET = "antaqdados.br_antaq_estatistico_aquaviario"
 VIEW_CARGA_METODOLOGIA_OFICIAL = f"{ANTAQ_DATASET}.v_carga_metodologia_oficial"
-
-# CNAEs do Setor Portuário
-CNAES_PORTUARIOS = [
-    '5231101', '5231102', '5231103', '5011401', '5011402',
-    '5012201', '5012202', '5021101', '5021102', '5022001',
-    '5022002', '5030101', '5030102', '5030103', '5091201',
-    '5091202', '5099801', '5099899', '5232000', '5239701',
-    '5239799', '5250801', '5250802', '5250804'
-]
 
 CNAES_CLAUSE = f"({', '.join(repr(c) for c in CNAES_PORTUARIOS)})"
 
