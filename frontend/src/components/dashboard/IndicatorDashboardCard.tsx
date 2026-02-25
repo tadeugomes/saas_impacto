@@ -30,8 +30,10 @@ interface IndicatorDashboardCardProps {
   valueAccessor?: (item: RawIndicatorRecord) => unknown;
   labelAccessor?: (item: RawIndicatorRecord) => unknown;
   indicatorCode: string;
+  warnings?: string[];
   topN?: number;
   tableRows?: number;
+  error?: string | null;
 }
 
 function parseNumber(value: unknown): number | null {
@@ -72,6 +74,8 @@ export function IndicatorDashboardCard({
   indicatorCode,
   topN = 10,
   tableRows = 5,
+  error,
+  warnings,
 }: IndicatorDashboardCardProps) {
   const rows = useMemo<IndicatorRow[]>(() => {
     const source: RawIndicatorRecord[] = data?.data ?? [];
@@ -108,7 +112,18 @@ export function IndicatorDashboardCard({
   const topTableRows = rows.slice(0, tableRows);
 
   const chartValueFormat = getIndicatorFormat(indicatorCode);
-  const noData = topChartRows.length === 0;
+
+  // Se há dados, warnings são informativos (mostrados como extraInfo).
+  // Se não há dados, warnings explicam o motivo (mostrados como erro bloqueante).
+  const hasData = topChartRows.length > 0;
+  const warningText = warnings && warnings.length > 0 ? warnings.join(' | ') : null;
+
+  const resolvedError: string | null = error
+    ?? (!hasData
+      ? (warningText ?? 'Sem dados para o filtro selecionado.')
+      : null);
+
+  const extraInfoText: string | undefined = hasData && warningText ? warningText : undefined;
 
   return (
     <ChartCard
@@ -116,7 +131,8 @@ export function IndicatorDashboardCard({
       description={description}
       unit={unit}
       isLoading={isLoading}
-      error={noData ? 'Sem dados para o filtro selecionado.' : undefined}
+      error={resolvedError ?? undefined}
+      extraInfo={extraInfoText}
     >
       {chartType === 'metric' ? (
         <div className="h-64 flex items-center justify-center">
@@ -150,7 +166,7 @@ export function IndicatorDashboardCard({
         />
       )}
 
-      {topTableRows.length > 0 ? (
+      {topChartRows.length > 0 && topTableRows.length > 0 ? (
         <div className="mt-4">
           <p className="text-xs font-semibold text-gray-600 mb-1">Top {topTableRows.length} em ranking</p>
           <div className="overflow-auto">

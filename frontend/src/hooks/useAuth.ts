@@ -5,6 +5,7 @@ import { authService } from '../api/auth';
 import type { LoginRequest, RegisterRequest, OnboardingCompanyRequest } from '../types/auth';
 
 export function useAuth() {
+  const bypassAuth = import.meta.env.VITE_DISABLE_AUTH === 'true';
   const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, setAuth, clearAuth, setLoading } = useAuthStore();
 
@@ -21,6 +22,14 @@ export function useAuth() {
   }, [navigate, setAuth, setLoading]);
 
   const logout = useCallback(async () => {
+    if (bypassAuth) {
+      clearAuth();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      navigate('/');
+      return;
+    }
+
     try {
       await authService.logout();
     } catch (error) {

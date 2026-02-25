@@ -20,8 +20,13 @@ function LoadingFallback() {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const skipAuth = import.meta.env.VITE_DISABLE_AUTH === 'true';
   const location = useLocation();
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
+
+  if (skipAuth) {
+    return <>{children}</>;
+  }
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

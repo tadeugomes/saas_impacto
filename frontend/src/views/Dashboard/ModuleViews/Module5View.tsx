@@ -36,7 +36,7 @@ import type {
   MatchingResponse,
   IndicatorMetadata,
   IndicatorResponse,
-  TenantPoliciesResponse,
+  PolicyMunicipioItem,
 } from '../../../types/api';
 
 type ImplementationStatus = 'implemented' | 'technical_debt';
@@ -1040,7 +1040,7 @@ export function Module5View() {
   const [municipioLabelIndex, setMunicipioLabelIndex] = useState<MunicipioLabelMap>({});
   const [policyMunicipioIds, setPolicyMunicipioIds] = useState<string[]>([]);
   const [policyAreaInfluence, setPolicyAreaInfluence] = useState<
-    TenantPoliciesResponse['area_influencia']
+    Record<string, PolicyMunicipioItem[]>
   >({});
   const [policyError, setPolicyError] = useState<string | null>(null);
 
@@ -1136,7 +1136,9 @@ export function Module5View() {
     try {
       const policies = await indicatorsService.getPolicies();
       const allowed = toMunicipioIdList(policies.allowed_municipios || []);
-      const areaInfluenceIds = Object.values(policies.area_influencia || {}).flatMap((municipios) =>
+      const municipioInfluenceIds = Object.values(
+        policies.municipio_influencia || policies.area_influencia || {},
+      ).flatMap((municipios) =>
         Array.isArray(municipios)
           ? toMunicipioIdList(
               municipios.map((entry) => normalizeMunicipioId(entry.id_municipio)),
@@ -1159,11 +1161,11 @@ export function Module5View() {
         return acc;
       }, {});
 
-      setPolicyMunicipioIds(Array.from(new Set([...allowed, ...areaInfluenceIds, ...fallbackIds])));
+      setPolicyMunicipioIds(Array.from(new Set([...allowed, ...municipioInfluenceIds, ...fallbackIds])));
       if (Object.keys(fallbackLabels).length > 0) {
         setMunicipioLabelIndex((current) => ({ ...fallbackLabels, ...current }));
       }
-      setPolicyAreaInfluence(policies.area_influencia || {});
+      setPolicyAreaInfluence(policies.municipio_influencia || policies.area_influencia || {});
       setPolicyError(null);
     } catch (error: unknown) {
       const errorResponse = error as ApiErrorLike;
@@ -1308,7 +1310,7 @@ export function Module5View() {
       return;
     }
 
-    const outcomes = toSafeArray(analysisOutcomes).filter((v) => !!v);
+    const outcomes = toSafeArray(analysisOutcomes).filter((v: string) => !!v);
     if (outcomes.length === 0) {
       setAnalysisError('Informe pelo menos um outcome.');
       return;
@@ -1509,7 +1511,7 @@ export function Module5View() {
   const selectedOutcomeArray = useMemo(() => toSafeArray(analysisOutcomes), [analysisOutcomes]);
   const toggleOutcome = (value: string) => {
     const current = toSafeArray(analysisOutcomes);
-    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    const next = current.includes(value) ? current.filter((v: string) => v !== value) : [...current, value];
     setAnalysisOutcomes(next.join(', '));
   };
 
@@ -1520,7 +1522,7 @@ export function Module5View() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Impacto Econômico do Porto</h1>
           <p className="text-gray-500 mt-1">
-            Avalie como a atividade portuária influencia a economia dos municípios da área de influência
+            Avalie como a atividade portuária influencia a economia do município sob análise
           </p>
         </div>
         <ExportButton moduleCode="5" />
@@ -1534,7 +1536,7 @@ export function Module5View() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Faça sua pergunta</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Como a atividade de um porto impactou a economia dos municípios ao redor?
+              Como a movimentação portuária alterou a economia do município selecionado?
             </p>
           </div>
           <button
@@ -1555,7 +1557,7 @@ export function Module5View() {
               <label className="text-sm font-medium text-gray-800">
                 Qual município recebe o impacto do porto?
               </label>
-              <p className="text-xs text-gray-500">Selecione o(s) município(s) na área de influência</p>
+              <p className="text-xs text-gray-500">Selecione o(s) município(s) do município de influência</p>
               <select
                 value={toSafeArray(analysisTreated)}
                 multiple
@@ -1570,7 +1572,7 @@ export function Module5View() {
               </select>
               {toSafeArray(analysisTreated).length > 0 && (
                 <p className="text-xs text-indigo-700 font-medium">
-                  ✓ {formatMunicipioLabelList(analysisTreated, municipioLabels)}
+                  ✓ {formatMunicipioLabelList(toSafeArray(analysisTreated), municipioLabels)}
                 </p>
               )}
             </div>
@@ -1605,7 +1607,7 @@ export function Module5View() {
               </div>
               {toSafeArray(analysisControls).length > 0 && (
                 <p className="text-xs text-gray-600">
-                  {formatMunicipioLabelList(analysisControls, municipioLabels)}
+                  {formatMunicipioLabelList(toSafeArray(analysisControls), municipioLabels)}
                 </p>
               )}
             </div>

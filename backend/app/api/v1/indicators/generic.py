@@ -155,7 +155,7 @@ async def query_indicator(
 @router.get(
     "/policies",
     summary="Políticas do Tenant para Indicadores",
-    description="Retorna configuração de area de influencia, allowlist e quota do tenant.",
+    description="Retorna configuração de município de influencia, allowlist e quota do tenant.",
 )
 async def get_tenant_policies(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -168,6 +168,7 @@ async def get_tenant_policies(
             "tenant_id": str(tenant_id),
             "allowed_installations": policy.get("allowed_installations", []),
             "allowed_municipios": policy.get("allowed_municipios", []),
+            "municipio_influencia": policy.get("municipio_influencia", {}),
             "area_influencia": policy.get("area_influencia", {}),
             "max_bytes_per_query": policy.get("max_bytes_per_query"),
         }
@@ -273,7 +274,11 @@ async def replace_tenant_role_permissions(
 
 @router.put(
     "/policies/area-influence/{id_instalacao}",
-    summary="Criar/Atualizar área de influência",
+    summary="Criar/Atualizar município de influência",
+)
+@router.put(
+    "/policies/municipio-influence/{id_instalacao}",
+    summary="Criar/Atualizar município de influência",
 )
 async def upsert_area_influence(
     id_instalacao: str,
@@ -290,7 +295,7 @@ async def upsert_area_influence(
             id_instalacao=id_instalacao,
             municipios=[item.model_dump() for item in payload.municipios],
         )
-        area = updated.get("area_influencia", {}).get(id_instalacao, [])
+        area = updated.get("municipio_influencia", {}).get(id_instalacao, [])
         return JSONResponse(
             content={
                 "tenant_id": str(tenant_id),
@@ -305,7 +310,11 @@ async def upsert_area_influence(
 
 @router.delete(
     "/policies/area-influence/{id_instalacao}",
-    summary="Remover área de influência",
+    summary="Remover município de influência",
+)
+@router.delete(
+    "/policies/municipio-influence/{id_instalacao}",
+    summary="Remover município de influência",
 )
 async def delete_area_influence(
     id_instalacao: str,
@@ -323,6 +332,7 @@ async def delete_area_influence(
         content={
             "tenant_id": str(tenant_id),
             "id_instalacao": id_instalacao,
+            "municipio_influencia": updated.get("municipio_influencia", {}),
             "area_influencia": updated.get("area_influencia", {}),
         }
     )

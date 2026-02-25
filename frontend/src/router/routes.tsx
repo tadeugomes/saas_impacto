@@ -40,6 +40,7 @@ const AdminDashboard = lazy(() =>
 
 export type AppRoute = {
   path?: string;
+  index?: true;
   element: ReactElement;
   requiresAuth?: boolean;
   children?: AppRoute[];
@@ -61,7 +62,7 @@ export const APP_ROUTES: AppRoute[] = [
     element: <MainLayout />,
     requiresAuth: true,
     children: [
-      { path: '', element: <DashboardHome /> },
+      { index: true, element: <DashboardHome /> },
       { path: 'dashboard', element: <Navigate to="/" replace /> },
       { path: 'dashboard/module1', element: <Module1View /> },
       { path: 'dashboard/module2', element: <Module2View /> },

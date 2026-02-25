@@ -2,7 +2,7 @@
 Servicos de politica por tenant (E4/E5).
 
 Centraliza leitura/escrita de configuracoes de:
-- area de influencia por instalacao
+- municipio de influencia por instalacao
 - allowlist de municipios
 - limite de bytes por consulta
 """
@@ -30,6 +30,8 @@ def _as_float(value: Any, default: float = 1.0) -> float:
 class TenantPolicyService:
     """Gerencia politica de acesso/configuracao por tenant."""
 
+    _INFLUENCE_MAP_KEYS = ("municipio_influencia", "area_influencia")
+
     def __init__(self, bq_client: Optional[BigQueryClient] = None):
         self.bq_client = bq_client or get_bigquery_client()
 
@@ -38,9 +40,62 @@ class TenantPolicyService:
         return {
             "allowed_installations": [],
             "allowed_municipios": [],
+            "municipio_influencia": {},
             "area_influencia": {},
             "max_bytes_per_query": None,
         }
+
+    @classmethod
+    def _normalize_influence_entry(cls, item: Any) -> Optional[dict[str, Any]]:
+        """Normaliza um municipio de influencia."""
+        if not isinstance(item, dict):
+            return None
+        id_municipio = str(item.get("id_municipio", "")).strip()
+        if not id_municipio:
+            return None
+        return {
+            "id_municipio": id_municipio,
+            "peso": _as_float(item.get("peso"), default=1.0),
+        }
+
+    @classmethod
+    def _normalize_influence_map(cls, raw_value: Any) -> dict[str, list[dict[str, Any]]]:
+        """Normaliza mapa {'instalacao': [{'id_municipio', ...}]}."""
+        if not isinstance(raw_value, dict):
+            return {}
+        normalized: dict[str, list[dict[str, Any]]] = {}
+        for instalacao, municipios in raw_value.items():
+            if not isinstance(municipios, list):
+                continue
+            cleaned = []
+            seen: set[str] = set()
+            for item in municipios:
+                normalized_item = cls._normalize_influence_entry(item)
+                if normalized_item is None:
+                    continue
+                id_municipio = normalized_item["id_municipio"]
+                if id_municipio in seen:
+                    continue
+                seen.add(id_municipio)
+                cleaned.append(normalized_item)
+            normalized[str(instalacao)] = cleaned
+        return normalized
+
+    @classmethod
+    def _read_influence_map(cls, payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        """Carrega municipio_de_influencia com fallback de area_influencia (legado)."""
+        merged: dict[str, list[dict[str, Any]]] = {}
+        for key in cls._INFLUENCE_MAP_KEYS:
+            raw_map = cls._normalize_influence_map(payload.get(key, {}))
+            for instalacao, municipios in raw_map.items():
+                merged.setdefault(str(instalacao), [])
+                existing_ids = {item["id_municipio"] for item in merged[str(instalacao)]}
+                for item in municipios:
+                    if item["id_municipio"] in existing_ids:
+                        continue
+                    merged[str(instalacao)].append(item)
+                    existing_ids.add(item["id_municipio"])
+        return merged
 
     @classmethod
     def parse_policy(cls, raw_value: Optional[str]) -> dict[str, Any]:
@@ -53,7 +108,7 @@ class TenantPolicyService:
           {
             "allowed_installations": [...],
             "allowed_municipios": [...],
-            "area_influencia": {
+            "municipio_influencia": {
               "Porto A": [{"id_municipio":"3550308","peso":1.0}]
             },
             "max_bytes_per_query": 1000000000
@@ -91,31 +146,9 @@ class TenantPolicyService:
             except (TypeError, ValueError):
                 policy["max_bytes_per_query"] = None
 
-        area_influencia_raw = payload.get("area_influencia", {})
-        area_influencia: dict[str, list[dict[str, Any]]] = {}
-        if isinstance(area_influencia_raw, dict):
-            for instalacao, municipios in area_influencia_raw.items():
-                if not isinstance(municipios, list):
-                    continue
-                cleaned = []
-                seen = set()
-                for item in municipios:
-                    if not isinstance(item, dict):
-                        continue
-                    id_municipio = str(item.get("id_municipio", "")).strip()
-                    if not id_municipio:
-                        continue
-                    if id_municipio in seen:
-                        continue
-                    seen.add(id_municipio)
-                    cleaned.append(
-                        {
-                            "id_municipio": id_municipio,
-                            "peso": _as_float(item.get("peso"), default=1.0),
-                        }
-                    )
-                area_influencia[str(instalacao)] = cleaned
-        policy["area_influencia"] = area_influencia
+        influence_map = cls._read_influence_map(payload)
+        policy["municipio_influencia"] = influence_map
+        policy["area_influencia"] = influence_map
         return policy
 
     @classmethod
@@ -124,7 +157,9 @@ class TenantPolicyService:
         normalized = cls._default_policy()
         normalized["allowed_installations"] = list(policy.get("allowed_installations", []))
         normalized["allowed_municipios"] = list(policy.get("allowed_municipios", []))
-        normalized["area_influencia"] = dict(policy.get("area_influencia", {}))
+        municipal_map = dict(policy.get("municipio_influencia", {}))
+        normalized["municipio_influencia"] = municipal_map
+        normalized["area_influencia"] = municipal_map
         normalized["max_bytes_per_query"] = policy.get("max_bytes_per_query")
         return json.dumps(normalized, ensure_ascii=False)
 
@@ -155,7 +190,7 @@ class TenantPolicyService:
         id_instalacao: str,
         municipios: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Cria/atualiza area de influencia para uma instalacao."""
+        """Cria/atualiza municipio de influencia para uma instalacao."""
         if not id_instalacao:
             raise ValueError("id_instalacao e obrigatorio")
         if not municipios:
@@ -172,7 +207,7 @@ class TenantPolicyService:
                     f"id_municipio invalido (esperado codigo IBGE de 7 digitos): {id_municipio}"
                 )
             if id_municipio in seen:
-                raise ValueError(f"municipio duplicado na area de influencia: {id_municipio}")
+                raise ValueError(f"municipio duplicado no municipio de influencia: {id_municipio}")
             seen.add(id_municipio)
             cleaned.append(
                 {
@@ -184,8 +219,9 @@ class TenantPolicyService:
         await self._validate_municipios_exist_in_ibge([item["id_municipio"] for item in cleaned])
 
         policy = await self.get_policy(db, tenant_id)
-        area = dict(policy.get("area_influencia", {}))
+        area = dict(policy.get("municipio_influencia", {}))
         area[id_instalacao] = cleaned
+        policy["municipio_influencia"] = area
         policy["area_influencia"] = area
         return await self.save_policy(db, tenant_id, policy)
 
@@ -195,10 +231,11 @@ class TenantPolicyService:
         tenant_id: UUID,
         id_instalacao: str,
     ) -> dict[str, Any]:
-        """Remove area de influencia de uma instalacao."""
+        """Remove municipio de influencia de uma instalacao."""
         policy = await self.get_policy(db, tenant_id)
-        area = dict(policy.get("area_influencia", {}))
+        area = dict(policy.get("municipio_influencia", {}))
         area.pop(id_instalacao, None)
+        policy["municipio_influencia"] = area
         policy["area_influencia"] = area
         return await self.save_policy(db, tenant_id, policy)
 

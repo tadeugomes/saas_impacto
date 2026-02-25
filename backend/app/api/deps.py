@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from collections.abc import Callable
 from typing import Annotated
+import os
 import uuid
 
 from app.schemas.indicators import GenericIndicatorRequest
@@ -18,6 +19,7 @@ from app.db.base import get_db
 from app.core.tenant import get_tenant_id
 from app.core.security import decode_access_token
 from app.db.models.user import User
+from app.config import get_settings
 from app.services.tenant_permission_service import (
     TenantPermissionService,
     get_tenant_permission_service,
@@ -25,7 +27,6 @@ from app.services.tenant_permission_service import (
 
 
 # Security schemes para autenticação (obrigatória/opcional).
-security = HTTPBearer()
 security_optional = HTTPBearer(auto_error=False)
 
 MODULE_PLAN_LIMITS = {
@@ -39,6 +40,31 @@ ROLE_PERMISSIONS = {
     "analyst": {"read", "execute"},
     "admin": {"read", "execute", "write"},
 }
+
+
+def _is_auth_disabled() -> bool:
+    """Retorna True quando a autenticação foi explicitamente desabilitada."""
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return False
+    return get_settings().skip_auth
+
+
+def _fallback_test_user(tenant_id: uuid.UUID) -> User:
+    """
+    Gera usuário sintético para fases de testes locais.
+
+    Mantém atributos mínimos esperados pela aplicação para evitar quebra em
+    validações de permissão e exibição de usuário.
+    """
+    return User(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        email="teste_local@impacto.local",
+        nome="Usuário de Teste",
+        hashed_password="",
+        ativo=True,
+        roles=["admin"],
+    )
 
 
 def _normalize_plan(plan: str | None) -> str:
@@ -180,12 +206,12 @@ async def _get_user_from_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
-        )
+    )
     return user
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_optional),
     db: AsyncSession = Depends(get_db),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
 ) -> User:
@@ -203,6 +229,29 @@ async def get_current_user(
     Raises:
         HTTPException: Se token inválido ou usuário não encontrado
     """
+    if _is_auth_disabled():
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.tenant))
+            .where(
+                User.tenant_id == tenant_id,
+                User.ativo == True,
+            )
+            .order_by(User.email.asc())
+            .limit(1)
+        )
+        existing_user = result.scalar_one_or_none()
+        if existing_user:
+            return existing_user
+        return _fallback_test_user(tenant_id)
+
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return await _get_user_from_token(credentials, db, tenant_id)
 
 
@@ -215,6 +264,19 @@ async def get_current_user_optional(
     Retorna o usuário autenticado quando houver token válido. Caso não haja token,
     retorna None.
     """
+    if _is_auth_disabled():
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.tenant))
+            .where(User.tenant_id == tenant_id, User.ativo == True)
+            .order_by(User.email.asc())
+            .limit(1)
+        )
+        existing_user = result.scalar_one_or_none()
+        if existing_user:
+            return existing_user
+        return _fallback_test_user(tenant_id)
+
     if not credentials:
         return None
     return await _get_user_from_token(credentials, db, tenant_id)
@@ -234,6 +296,9 @@ def require_permission(module_number: int | None, action: str) -> Callable:
             get_tenant_permission_service
         ),
     ) -> User:
+        if _is_auth_disabled():
+            return current_user
+
         if action not in {"read", "execute", "write"}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -274,6 +339,9 @@ def require_indicator_permission(
             get_tenant_permission_service
         ),
     ) -> User:
+        if _is_auth_disabled():
+            return current_user
+
         module_number = _indicator_module_from_code(request.codigo_indicador)
         if module_number is None:
             raise HTTPException(
@@ -317,6 +385,9 @@ def require_module_permission(
             get_tenant_permission_service
         ),
     ) -> User:
+        if _is_auth_disabled():
+            return current_user
+
         if not await _has_module_access(
             current_user=current_user,
             db=db,
@@ -348,6 +419,9 @@ async def require_admin(
     Raises:
         HTTPException: Se usuário não for admin
     """
+    if _is_auth_disabled():
+        return current_user
+
     if not current_user.is_admin():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

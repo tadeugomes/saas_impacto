@@ -63,10 +63,21 @@ function wrapRouteElements(routes: AppRoute[]) {
     const shouldProtect = route.requiresAuth ?? false;
     const routeElement = shouldProtect ? <ProtectedRoute>{route.element}</ProtectedRoute> : route.element;
 
+    if (route.index) {
+      return (
+        <Route
+          key="index-route"
+          {...({ index: true, element: routeElement } as any)}
+        >
+          {route.children ? wrapRouteElements(route.children) : null}
+        </Route>
+      );
+    }
+
     return (
       <Route
         key={route.path || 'route'}
-        path={route.path ?? ''}
+        path={route.path}
         element={routeElement}
       >
         {route.children ? wrapRouteElements(route.children) : null}

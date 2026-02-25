@@ -1,4 +1,4 @@
-"""Testes E4/E5 para Modulo 5: area de influencia, allowlist e quota."""
+"""Testes E4/E5 para Modulo 5: município de influencia, allowlist e quota."""
 
 import uuid
 import pytest
@@ -21,6 +21,22 @@ class _AreaBigQueryClient:
 
     async def execute_query(self, query: str, *_, **__):
         self.executed_queries += 1
+        if "arrecadacao_iss" in query:
+            if "id_municipio = '1111111'" in query:
+                return [{"id_municipio": "1111111", "ano": 2023, "arrecadacao_iss": 10.0}]
+            if "id_municipio = '2222222'" in query:
+                return [{"id_municipio": "2222222", "ano": 2023, "arrecadacao_iss": 20.0}]
+            if "id_municipio = '3304557'" in query:
+                return [{"id_municipio": "3304557", "ano": 2023, "arrecadacao_iss": 15.0}]
+            return []
+        if "arrecadacao_icms" in query:
+            if "id_municipio = '1111111'" in query:
+                return [{"id_municipio": "1111111", "ano": 2023, "arrecadacao_icms": 11.0}]
+            if "id_municipio = '2222222'" in query:
+                return [{"id_municipio": "2222222", "ano": 2023, "arrecadacao_icms": 22.0}]
+            if "id_municipio = '3304557'" in query:
+                return [{"id_municipio": "3304557", "ano": 2023, "arrecadacao_icms": 33.0}]
+            return []
         if "id_municipio = '1111111'" in query:
             return [{"id_municipio": "1111111", "ano": 2023, "pib_municipal": 100.0}]
         if "id_municipio = '2222222'" in query:
@@ -59,6 +75,7 @@ class _PolicyServiceNoDB(TenantPolicyService):
             "allowed_installations": [],
             "allowed_municipios": [],
             "area_influencia": {},
+            "municipio_influencia": {},
             "max_bytes_per_query": None,
         }
 
@@ -98,7 +115,48 @@ async def test_module5_e4_area_influence_aggregates_municipios_with_breakdown():
     assert response.data[0]["ano"] == 2023
     assert response.data[0]["municipios_agregados"] == 2
     assert "breakdown" in response.data[0]
-    assert any(w.tipo == "area_influencia_agregada" for w in response.warnings)
+    assert any(
+        w.tipo in {"area_influencia_agregada", "municipio_influencia_agregada"}
+        for w in response.warnings
+    )
+
+
+@pytest.mark.asyncio
+async def test_module6_e4_area_influence_aggregates_iss_with_breakdown():
+    service = GenericIndicatorService(bq_client=_AreaBigQueryClient(bytes_processed=10))
+    request = GenericIndicatorRequest(
+        codigo_indicador="IND-6.02",
+        id_instalacao="INST_TESTE",
+        ano=2023,
+        include_breakdown=True,
+    )
+    tenant_policy = {
+        "area_influencia": {
+            "INST_TESTE": [
+                {"id_municipio": "1111111", "peso": 1.0},
+                {"id_municipio": "2222222", "peso": 1.0},
+            ]
+        },
+        "allowed_municipios": ["1111111", "2222222"],
+        "max_bytes_per_query": 10_000,
+    }
+
+    response = await service.execute_indicator(
+        request,
+        tenant_policy=tenant_policy,
+        tenant_id="00000000-0000-0000-0000-000000000001",
+        user_id="00000000-0000-0000-0000-000000000002",
+    )
+
+    assert response.data
+    assert response.data[0]["arrecadacao_iss"] == 30.0
+    assert response.data[0]["ano"] == 2023
+    assert response.data[0]["municipios_agregados"] == 2
+    assert "breakdown" in response.data[0]
+    assert any(
+        w.tipo in {"area_influencia_agregada", "municipio_influencia_agregada"}
+        for w in response.warnings
+    )
 
 
 @pytest.mark.asyncio
@@ -139,6 +197,7 @@ def test_tenant_policy_service_parse_backward_compatible_formats():
     parsed_legacy = service.parse_policy('["Porto de Santos","Porto de Vitoria"]')
     assert parsed_legacy["allowed_installations"] == ["Porto de Santos", "Porto de Vitoria"]
     assert parsed_legacy["area_influencia"] == {}
+    assert parsed_legacy["municipio_influencia"] == {}
 
     parsed_v2 = service.parse_policy(
         """
@@ -146,18 +205,19 @@ def test_tenant_policy_service_parse_backward_compatible_formats():
           "allowed_installations": ["Porto de Santos"],
           "allowed_municipios": ["3548500"],
           "max_bytes_per_query": 2048,
-          "area_influencia": {
-            "Porto de Santos": [
-              {"id_municipio": "3548500", "peso": 1.2},
-              {"id_municipio": "3551009", "peso": 0.8}
-            ]
-          }
+            "municipio_influencia": {
+                "Porto de Santos": [
+                  {"id_municipio": "3548500", "peso": 1.2},
+                  {"id_municipio": "3551009", "peso": 0.8}
+                ]
+            }
         }
         """
     )
     assert parsed_v2["allowed_municipios"] == ["3548500"]
     assert parsed_v2["max_bytes_per_query"] == 2048
     assert len(parsed_v2["area_influencia"]["Porto de Santos"]) == 2
+    assert len(parsed_v2["municipio_influencia"]["Porto de Santos"]) == 2
 
 
 @pytest.mark.asyncio

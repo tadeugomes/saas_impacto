@@ -3,7 +3,11 @@ import { InstallationSelector } from './InstallationSelector';
 import { useFilterStore } from '../../store/filterStore';
 import { Filter, X } from 'lucide-react';
 
-export function FilterBar() {
+interface FilterBarProps {
+  showInstallation?: boolean;
+}
+
+export function FilterBar({ showInstallation = true }: FilterBarProps) {
   const { selectedYear, resetFilters } = useFilterStore();
 
   return (
@@ -11,10 +15,10 @@ export function FilterBar() {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-gray-600">
           <Filter className="w-5 h-5" />
-          <span className="font-medium">Filtros:</span>
+        <span className="font-medium">Filtros:</span>
         </div>
         <YearSelector />
-        <InstallationSelector />
+        {showInstallation && <InstallationSelector />}
         <span className="text-sm text-gray-500">
           {selectedYear}
         </span>

@@ -51,7 +51,8 @@ export interface TenantPoliciesResponse {
   tenant_id: string;
   allowed_installations: string[];
   allowed_municipios: string[];
-  area_influencia: Record<string, PolicyMunicipioItem[]>;
+  municipio_influencia?: Record<string, PolicyMunicipioItem[]>;
+  area_influencia?: Record<string, PolicyMunicipioItem[]>;
   max_bytes_per_query?: number | null;
 }
 

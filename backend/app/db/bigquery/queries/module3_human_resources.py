@@ -719,6 +719,47 @@ def query_participacao_emprego_local(
     """
 
 
+def query_rais_year_coverage_for_portuarios(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+) -> str:
+    """
+    Retorna cobertura temporal da RAIS para o indicador de empregos portuários.
+
+    Útil para diagnosticar ausência de dados em consultas que exigem ano/ano anterior.
+    """
+    where_clauses = [
+        _where_cnae_portuario("r"),
+        _where_vinculo_ativo("r"),
+    ]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano is not None:
+        where_clauses.append(f"CAST(r.ano AS INT64) BETWEEN {ano - 2} AND {ano}")
+
+    where_sql = "\n        AND ".join(where_clauses)
+
+    selected_year_expr = f"{ano} as ano_solicitado" if ano is not None else "NULL as ano_solicitado"
+    previous_year_expr = (
+        f"{ano - 1} as ano_anterior_solicitado" if ano is not None else "NULL as ano_anterior_solicitado"
+    )
+
+    return f"""
+    SELECT
+        MIN(CAST(r.ano AS INT64)) AS ano_min,
+        MAX(CAST(r.ano AS INT64)) AS ano_max,
+        COUNT(DISTINCT CAST(r.ano AS INT64)) AS anos_disponiveis,
+        SUM(IF(CAST(r.ano AS INT64) = {ano if ano is not None else "NULL"}, 1, 0)) AS linhas_ano_solicitado,
+        SUM(IF(CAST(r.ano AS INT64) = {ano - 1 if ano is not None else "NULL"}, 1, 0)) AS linhas_ano_anterior,
+        {selected_year_expr},
+        {previous_year_expr}
+    FROM
+        `{BD_DADOS_RAIS}` r
+    WHERE
+        {where_sql}
+    """
+
+
 # ============================================================================
 # Dicionário de Queries
 # ============================================================================

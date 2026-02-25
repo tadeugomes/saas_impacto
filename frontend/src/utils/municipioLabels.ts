@@ -79,6 +79,18 @@ export function resolveMunicipioLabel(
   return toMunicipioLabel(municipio, labels, options);
 }
 
+/**
+ * Converte uma string CSV (ou array) em array de IDs normalizados.
+ * Aceita "3548500, 4118204" → ["3548500","4118204"].
+ */
+export function toSafeMunicipioIdArray(
+  value: string | string[] | null | undefined,
+): string[] {
+  if (!value) return [];
+  const raw = typeof value === 'string' ? value.split(',') : value;
+  return raw.map((v) => normalizeMunicipioId(v)).filter((v) => v.length > 0);
+}
+
 export function formatMunicipioLabelList(
   municipios: string[] | null | undefined,
   labels: MunicipioLabelMap,

@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 
 from app.db.bigquery.client import BigQueryClient, get_bigquery_client
 from app.db.bigquery.queries import ALL_QUERIES, get_query
+from app.db.bigquery.queries.module3_human_resources import query_rais_year_coverage_for_portuarios
 from app.schemas.indicators import (
     GenericIndicatorRequest,
     GenericIndicatorResponse,
@@ -184,7 +185,8 @@ PORT_TO_IBGE_MAPPING = {
 }
 
 
-MODULE5_VALUE_FIELD_BY_CODE = {
+AREA_AGGREGATION_FIELD_BY_CODE = {
+    # Module 5 (econômico)
     "IND-5.01": "pib_municipal",
     "IND-5.02": "pib_per_capita",
     "IND-5.03": "populacao",
@@ -206,9 +208,43 @@ MODULE5_VALUE_FIELD_BY_CODE = {
     "IND-5.19": "crescimento_relativo_uf_pp",
     "IND-5.20": "razao_emprego_total_portuario",
     "IND-5.21": "indice_concentracao_portuaria",
+    # Module 6 (finanças públicas)
+    "IND-6.01": "arrecadacao_icms",
+    "IND-6.02": "arrecadacao_iss",
+    "IND-6.03": "receita_total",
+    "IND-6.04": "receita_per_capita",
+    "IND-6.05": "crescimento_receita_pct",
+    "IND-6.06": "icms_por_tonelada",
+    "IND-6.07": "receita_fiscal_total",
+    "IND-6.08": "receita_fiscal_per_capita",
+    "IND-6.09": "receita_fiscal_por_tonelada",
+    "IND-6.10": "correlacao",
+    "IND-6.11": "elasticidade",
 }
 
-MODULE5_SUM_CODES = {"IND-5.01", "IND-5.03"}
+AREA_AGGREGATION_SUM_CODES = {
+    "IND-5.01",
+    "IND-5.03",
+    "IND-6.01",
+    "IND-6.02",
+    "IND-6.03",
+    "IND-6.07",
+}
+
+MODULE3_INDICATORS_WITH_YEAR_COVERAGE = {
+    "IND-3.01",
+    "IND-3.02",
+    "IND-3.03",
+    "IND-3.04",
+    "IND-3.05",
+    "IND-3.06",
+    "IND-3.07",
+    "IND-3.08",
+    "IND-3.09",
+    "IND-3.10",
+    "IND-3.11",
+    "IND-3.12",
+}
 
 
 class IndicatorAccessError(Exception):
@@ -1198,14 +1234,23 @@ class GenericIndicatorService:
                     request.id_instalacao
                     and not request.id_municipio
                     and request.include_breakdown
-                    and all(w.tipo != "area_influencia_agregada" for w in cached_warnings)
+                    and all(w.tipo != "municipio_influencia_agregada" for w in cached_warnings)
                 ):
                     self._append_warning(
                         cached_warnings,
                         codigo,
-                        "area_influencia_agregada",
-                        "Resultado agregado por area de influência com breakdown municipal.",
-                        campo="area_influencia",
+                        "municipio_influencia_agregada",
+                        "Resultado agregado por município de influência com breakdown municipal.",
+                        campo="municipio_influencia",
+                    )
+                resolved_id_municipio = request.id_municipio
+                if not resolved_id_municipio and request.id_instalacao:
+                    resolved_id_municipio = PORT_TO_IBGE_MAPPING.get(request.id_instalacao, request.id_instalacao)
+                if not cached_warnings and not cached_data and codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
+                    cached_warnings = await self._append_no_data_warnings_module3(
+                        codigo=codigo,
+                        request=request,
+                        id_municipio=resolved_id_municipio,
                     )
                 response = GenericIndicatorResponse(
                     codigo_indicador=meta["codigo"],
@@ -1230,11 +1275,11 @@ class GenericIndicatorService:
             if k in sig.parameters
         }
 
-        # E4: area de influencia por instalacao para Modulo 5
+        # E4: municipio de influencia por instalacao (Módulo 5 e 6)
         if (
-            codigo.startswith("IND-5.")
-            and request.id_instalacao
+            request.id_instalacao
             and not request.id_municipio
+            and codigo in AREA_AGGREGATION_FIELD_BY_CODE
             and "id_municipio" in sig.parameters
         ):
             area = self._resolve_area_influencia(
@@ -1247,12 +1292,12 @@ class GenericIndicatorService:
                     blocked = [item["id_municipio"] for item in area if item["id_municipio"] not in allowed]
                     if blocked:
                         raise IndicatorAccessError(
-                            f"Municipios da area de influencia nao autorizados para o tenant: {', '.join(blocked)}"
+                            f"Municípios do município de influência não autorizados para o tenant: {', '.join(blocked)}"
                         )
                 if len(area) == 1:
                     params["id_municipio"] = area[0]["id_municipio"]
                 else:
-                    results, bytes_processed = await self._execute_area_influencia_module5(
+                    results, bytes_processed = await self._execute_area_influence(
                         codigo=codigo,
                         query_func=query_func,
                         request=request,
@@ -1264,9 +1309,9 @@ class GenericIndicatorService:
                         self._append_warning(
                             warnings,
                             codigo,
-                            "area_influencia_agregada",
-                            "Resultado agregado por area de influencia com breakdown municipal.",
-                            campo="area_influencia",
+                            "municipio_influencia_agregada",
+                            "Resultado agregado por município de influência com breakdown municipal.",
+                            campo="municipio_influencia",
                         )
                     if can_use_cache:
                         await self._query_cache.set(
@@ -1282,7 +1327,7 @@ class GenericIndicatorService:
                         codigo=codigo,
                         request=request,
                         duration_ms=(time.perf_counter() - started_at) * 1000.0,
-                        bytes_processed=None,
+                        bytes_processed=bytes_processed,
                     )
                     response = GenericIndicatorResponse(
                         codigo_indicador=meta["codigo"],
@@ -1299,7 +1344,6 @@ class GenericIndicatorService:
                         audit_context["cache_hit"] = False
                         audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
                     return response
-
         # Caso especial legado: se for indicador municipal (3,4,5,6) e recebemos id_instalacao,
         # traduzimos para id_municipio via mapa fixo.
         if (
@@ -1324,6 +1368,14 @@ class GenericIndicatorService:
         )
         results = await self.bq_client.execute_query(query)
         warnings = self._validate_indicator_quality(codigo, results)
+        if codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
+            warnings.extend(
+                await self._append_no_data_warnings_module3(
+                    codigo=codigo,
+                    request=request,
+                    id_municipio=params.get("id_municipio"),
+                )
+            )
         if can_use_cache:
             await self._query_cache.set(
                 request_cache_key,
@@ -1361,9 +1413,9 @@ class GenericIndicatorService:
         id_instalacao: str,
         tenant_policy: Optional[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Resolve lista de municipios para uma instalacao (E4)."""
+        """Resolve lista de municípios para uma instalação (E4)."""
         policy = tenant_policy or {}
-        area_map = policy.get("area_influencia") or {}
+        area_map = policy.get("municipio_influencia") or policy.get("area_influencia") or {}
         mapped = area_map.get(id_instalacao)
         if isinstance(mapped, list) and mapped:
             cleaned = []
@@ -1501,7 +1553,7 @@ class GenericIndicatorService:
             },
         )
 
-    async def _execute_area_influencia_module5(
+    async def _execute_area_influence(
         self,
         codigo: str,
         query_func: Any,
@@ -1510,7 +1562,7 @@ class GenericIndicatorService:
         tenant_policy: Optional[Dict[str, Any]],
     ) -> tuple[List[Dict[str, Any]], Optional[int]]:
         """
-        Executa agregacao por area de influencia (E4) para indicadores do modulo 5.
+        Executa agregação por município de influência (E4) para indicadores do módulo 5/6.
 
         Estrategia:
         - roda query por municipio da area
@@ -1580,15 +1632,15 @@ class GenericIndicatorService:
         include_breakdown: bool = False,
         breakdown_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Agrega resultados por area de influencia por ano ou em linha unica."""
+        """Agrega resultados por município de influência por ano ou em linha única."""
         if not rows:
             return []
 
-        value_field = MODULE5_VALUE_FIELD_BY_CODE.get(codigo)
+        value_field = AREA_AGGREGATION_FIELD_BY_CODE.get(codigo)
         if not value_field:
             return []
 
-        strategy = "sum" if codigo in MODULE5_SUM_CODES else "weighted_avg"
+        strategy = "sum" if codigo in AREA_AGGREGATION_SUM_CODES else "weighted_avg"
         has_year = any(isinstance(row, dict) and row.get("ano") is not None for row in rows)
         grouped: Dict[Any, List[Dict[str, Any]]] = {}
 
@@ -1715,6 +1767,125 @@ class GenericIndicatorService:
                 mensagem=mensagem,
             )
         )
+
+    async def _append_no_data_warnings_module3(
+        self,
+        codigo: str,
+        request: GenericIndicatorRequest,
+        id_municipio: Optional[str],
+    ) -> List[DataQualityWarning]:
+        """Adiciona warning de cobertura temporal quando não há resultados."""
+        if not id_municipio or not request.ano:
+            return []
+
+        coverage_query = query_rais_year_coverage_for_portuarios(
+            id_municipio=id_municipio,
+            ano=request.ano,
+        )
+
+        try:
+            coverage_rows = await self.bq_client.execute_query(coverage_query)
+        except Exception:
+            return []
+
+        if not coverage_rows:
+            warnings: List[DataQualityWarning] = []
+            self._append_warning(
+                warnings,
+                codigo,
+                "sem_cobertura_rais",
+                f"Sem dados de empregos portuários para o município {id_municipio}.",
+                campo="id_municipio",
+                row={"id_municipio": id_municipio},
+            )
+            return warnings
+
+        row = coverage_rows[0]
+        ano_min = row.get("ano_min")
+        ano_max = row.get("ano_max")
+        anos_disponiveis = row.get("anos_disponiveis") or 0
+        linhas_ano = row.get("linhas_ano_solicitado") or 0
+        linhas_ano_anterior = row.get("linhas_ano_anterior") or 0
+
+        ano_min_n = self._to_float(ano_min)
+        ano_max_n = self._to_float(ano_max)
+        anos_disponiveis_n = self._to_float(anos_disponiveis)
+        linhas_ano_n = self._to_float(linhas_ano)
+        linhas_ano_anterior_n = self._to_float(linhas_ano_anterior)
+        try:
+            ano_min_i = int(ano_min_n) if ano_min_n is not None else None
+            ano_max_i = int(ano_max_n) if ano_max_n is not None else None
+            linhas_ano_i = int(linhas_ano_n) if linhas_ano_n is not None else 0
+            linhas_ano_anterior_i = int(linhas_ano_anterior_n) if linhas_ano_anterior_n is not None else 0
+            anos_disponiveis_i = int(anos_disponiveis_n) if anos_disponiveis_n is not None else 0
+        except (TypeError, ValueError):
+            return []
+
+        warnings: List[DataQualityWarning] = []
+
+        if linhas_ano_i == 0:
+            if anos_disponiveis_i == 0:
+                self._append_warning(
+                    warnings,
+                    codigo,
+                    "sem_dados_municipio",
+                    f"Sem dados de empregos portuários para o município {id_municipio} no intervalo consultado.",
+                    campo="id_municipio",
+                    row={"id_municipio": id_municipio},
+                )
+                return warnings
+
+            if ano_min_i is not None and ano_max_i is not None:
+                if request.ano < ano_min_i:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "ano_antes_cobertura",
+                        (
+                            f"Sem dados para {request.ano}. Cobertura disponível: "
+                            f"de {ano_min_i} a {ano_max_i} ({anos_disponiveis_i} anos)."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+                elif request.ano > ano_max_i:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "ano_apos_cobertura",
+                        (
+                            f"Sem dados para {request.ano}. Último ano com dados: "
+                            f"{ano_max_i}."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+                else:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "sem_dados_ano",
+                        (
+                            f"Sem dados para o ano {request.ano} neste município. "
+                            f"Cobertura disponível: {ano_min_i}–{ano_max_i}."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+        elif codigo == "IND-3.11" and linhas_ano_anterior_i == 0:
+            self._append_warning(
+                warnings,
+                codigo,
+                "historico_insuficiente",
+                (
+                    f"Para {codigo}, não há dados do ano anterior ({request.ano - 1}) "
+                    "para calcular variação anual."
+                ),
+                campo="ano",
+                row={"id_municipio": id_municipio, "ano": request.ano},
+            )
+
+        return warnings
 
     @classmethod
     def _validate_indicator_quality(

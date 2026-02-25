@@ -313,7 +313,7 @@ class GenericIndicatorRequest(BaseModel):
     mes: Optional[int] = Field(None, description="Mês de referência (1-12)", ge=1, le=12)
     include_breakdown: bool = Field(
         default=False,
-        description="Inclui detalhamento por município quando aplicável (ex.: área de influência)",
+        description="Inclui detalhamento por município quando aplicável (ex.: município de influência).",
     )
 
 
@@ -361,14 +361,14 @@ class MunicipioLookupResponse(BaseModel):
 
 
 class AreaInfluenceMunicipio(BaseModel):
-    """Municipio pertencente a uma area de influencia."""
+    """Municipio pertencente ao município de influência."""
 
     id_municipio: str = Field(..., description="Codigo IBGE do municipio")
     peso: float = Field(1.0, description="Peso de agregacao", gt=0)
 
 
 class AreaInfluenceUpsertRequest(BaseModel):
-    """Payload para criar/atualizar area de influencia."""
+    """Payload para criar/atualizar município de influência."""
 
     municipios: List[AreaInfluenceMunicipio] = Field(..., min_length=1)
 

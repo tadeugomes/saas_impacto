@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     jwt_secret_key: str
     password_reset_token_ttl_seconds: int = 3600
 
+    # Auth bypass para ambiente de teste/local
+    # Quando True, os endpoints protegidos deixam de exigir JWT.
+    skip_auth: bool = False
+
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
