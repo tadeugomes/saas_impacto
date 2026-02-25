@@ -5,19 +5,42 @@ Este módulo fornece endpoints universais que podem ser usados
 para consultar qualquer indicador de qualquer módulo (1-7).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import JSONResponse
+from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from typing import Any
 from app.services.generic_indicator_service import (
     GenericIndicatorService,
     get_generic_indicator_service,
+    INDICATORS_METADATA,
+    IndicatorAccessError,
+    IndicatorQuotaError,
+)
+from app.services.audit_service import AuditService, get_audit_service
+from app.services.tenant_policy_service import get_tenant_policy_service, TenantPolicyService
+from app.services.tenant_permission_service import (
+    TenantPermissionService,
+    get_tenant_permission_service,
 )
 from app.schemas.indicators import (
     GenericIndicatorRequest,
     GenericIndicatorResponse,
     IndicatorMetadata,
     AllIndicatorsResponse,
+    TenantModulePermissionsRequest,
+    TenantModulePermissionsResponse,
+    TenantModulePermissionItem,
+    AreaInfluenceUpsertRequest,
+    AllowlistPolicyUpdateRequest,
+    MunicipioLookupResponse,
 )
+from app.core.tenant import get_tenant_id
+from app.db.base import get_db
+from app.api.deps import require_admin, require_indicator_permission
+from app.db.models.user import User
 
 
 router = APIRouter(
@@ -52,6 +75,12 @@ router = APIRouter(
 async def query_indicator(
     request: GenericIndicatorRequest,
     service: GenericIndicatorService = Depends(get_generic_indicator_service),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+    audit_service: AuditService = Depends(get_audit_service),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_indicator_permission("read")),
+    http_response: Response = None,
 ) -> GenericIndicatorResponse:
     """
     Endpoint universal para consulta de qualquer indicador.
@@ -67,7 +96,50 @@ async def query_indicator(
     **Retorna:** Dados do indicador com metadados
     """
     try:
-        return await service.execute_indicator(request)
+        policy = await policy_service.get_policy(db, tenant_id)
+        user_id = str(current_user.id) if current_user else None
+        audit_context: dict[str, Any] = {}
+
+        result = await service.execute_indicator(
+            request,
+            tenant_policy=policy,
+            tenant_id=str(tenant_id),
+            user_id=user_id,
+            audit_context=audit_context,
+        )
+        await audit_service.record_action(
+            db=db,
+            tenant_id=tenant_id,
+            user_id=current_user.id if current_user else None,
+            action="query_indicator",
+            resource="/api/v1/indicators/query",
+            status_code=200,
+            duration_ms=audit_context.get("duration_ms"),
+            bytes_processed=audit_context.get("bytes_processed"),
+            details={
+                "codigo_indicador": request.codigo_indicador,
+                "id_municipio": request.id_municipio,
+                "id_instalacao": request.id_instalacao,
+                "ano": request.ano,
+                "ano_inicio": request.ano_inicio,
+                "ano_fim": request.ano_fim,
+                "cache_hit": audit_context.get("cache_hit", False),
+            },
+            request_id=None,
+        )
+        if http_response is not None:
+            http_response.headers["X-Cache-Hit"] = "true" if result.cache_hit else "false"
+        return result
+    except IndicatorAccessError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        )
+    except IndicatorQuotaError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -81,10 +153,225 @@ async def query_indicator(
 
 
 @router.get(
+    "/policies",
+    summary="Políticas do Tenant para Indicadores",
+    description="Retorna configuração de município de influencia, allowlist e quota do tenant.",
+)
+async def get_tenant_policies(
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    policy = await policy_service.get_policy(db, tenant_id)
+    return JSONResponse(
+        content={
+            "tenant_id": str(tenant_id),
+            "allowed_installations": policy.get("allowed_installations", []),
+            "allowed_municipios": policy.get("allowed_municipios", []),
+            "municipio_influencia": policy.get("municipio_influencia", {}),
+            "area_influencia": policy.get("area_influencia", {}),
+            "max_bytes_per_query": policy.get("max_bytes_per_query"),
+        }
+    )
+
+
+@router.get(
+    "/municipios",
+    response_model=MunicipioLookupResponse,
+    summary="Busca nome de municípios por IDs IBGE",
+    description=(
+        "Consulta nomes de municípios em lote. Útil para exibir rótulos amigáveis no frontend."
+    ),
+)
+async def get_municipios_por_codigo(
+    ids: list[str] = Query(default=[]),
+    current_user: User = Depends(require_indicator_permission("read")),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    municipios_map = await policy_service.lookup_municipio_nomes(ids)
+    return MunicipioLookupResponse(
+        municipios=[
+            {"id_municipio": municipio_id, "nome_municipio": nome}
+            for municipio_id, nome in municipios_map.items()
+        ]
+    )
+
+
+def _normalize_role(role: str) -> str:
+    return role.strip().lower()
+
+
+@router.get(
+    "/permissions/{role}",
+    response_model=TenantModulePermissionsResponse,
+    summary="Listar permissões de role do tenant",
+    description="Lista permissões explícitas configuradas para um role no tenant atual.",
+)
+async def get_tenant_role_permissions(
+    role: str,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    permission_service: TenantPermissionService = Depends(get_tenant_permission_service),
+) -> TenantModulePermissionsResponse:
+    role = _normalize_role(role)
+    permissions = await permission_service.list_permissions(
+        db=db,
+        tenant_id=tenant_id,
+        role=role,
+    )
+    items = [
+        TenantModulePermissionItem(
+            module_number=permission["module_number"],
+            action=permission["action"],
+            allowed=True,
+        )
+        for permission in permissions
+    ]
+    return TenantModulePermissionsResponse(role=role, permissions=items)
+
+
+@router.put(
+    "/permissions/{role}",
+    response_model=TenantModulePermissionsResponse,
+    summary="Configurar permissões de role do tenant",
+    description=(
+        "Substitui o conjunto explícito de permissões (módulo/ação) para o role."
+    ),
+)
+async def replace_tenant_role_permissions(
+    role: str,
+    payload: TenantModulePermissionsRequest,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    permission_service: TenantPermissionService = Depends(get_tenant_permission_service),
+) -> TenantModulePermissionsResponse:
+    role = _normalize_role(role)
+    try:
+        permissions = await permission_service.set_permissions_for_role(
+            db=db,
+            tenant_id=tenant_id,
+            role=role,
+            permissions=[
+                (item.module_number, item.action, item.allowed)
+                for item in payload.permissions
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    items = [
+        TenantModulePermissionItem(
+            module_number=permission["module_number"],
+            action=permission["action"],
+            allowed=True,
+        )
+        for permission in permissions
+    ]
+    return TenantModulePermissionsResponse(role=role, permissions=items)
+
+
+@router.put(
+    "/policies/area-influence/{id_instalacao}",
+    summary="Criar/Atualizar município de influência",
+)
+@router.put(
+    "/policies/municipio-influence/{id_instalacao}",
+    summary="Criar/Atualizar município de influência",
+)
+async def upsert_area_influence(
+    id_instalacao: str,
+    payload: AreaInfluenceUpsertRequest,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    try:
+        updated = await policy_service.set_area_influencia(
+            db=db,
+            tenant_id=tenant_id,
+            id_instalacao=id_instalacao,
+            municipios=[item.model_dump() for item in payload.municipios],
+        )
+        area = updated.get("municipio_influencia", {}).get(id_instalacao, [])
+        return JSONResponse(
+            content={
+                "tenant_id": str(tenant_id),
+                "id_instalacao": id_instalacao,
+                "total_municipios": len(area),
+                "municipios": area,
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete(
+    "/policies/area-influence/{id_instalacao}",
+    summary="Remover município de influência",
+)
+@router.delete(
+    "/policies/municipio-influence/{id_instalacao}",
+    summary="Remover município de influência",
+)
+async def delete_area_influence(
+    id_instalacao: str,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    updated = await policy_service.delete_area_influencia(
+        db=db,
+        tenant_id=tenant_id,
+        id_instalacao=id_instalacao,
+    )
+    return JSONResponse(
+        content={
+            "tenant_id": str(tenant_id),
+            "id_instalacao": id_instalacao,
+            "municipio_influencia": updated.get("municipio_influencia", {}),
+            "area_influencia": updated.get("area_influencia", {}),
+        }
+    )
+
+
+@router.put(
+    "/policies/allowlist",
+    summary="Atualizar allowlist de municípios/quota",
+)
+async def update_allowlist(
+    payload: AllowlistPolicyUpdateRequest,
+    _: User = Depends(require_admin),
+    tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db),
+    policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
+):
+    try:
+        updated = await policy_service.set_allowlist_policy(
+            db=db,
+            tenant_id=tenant_id,
+            allowed_municipios=payload.allowed_municipios,
+            max_bytes_per_query=payload.max_bytes_per_query,
+        )
+        return JSONResponse(
+            content={
+                "tenant_id": str(tenant_id),
+                "allowed_municipios": updated.get("allowed_municipios", []),
+                "max_bytes_per_query": updated.get("max_bytes_per_query"),
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get(
     "/metadata",
     response_model=AllIndicatorsResponse,
     summary="Metadados de Todos os Indicadores",
-    description="Retorna informações sobre todos os 78 indicadores disponíveis.",
+    description="Retorna informações sobre todos os indicadores disponíveis no catálogo.",
 )
 async def get_all_metadata(
     service: GenericIndicatorService = Depends(get_generic_indicator_service),
@@ -144,64 +431,65 @@ async def get_modules_overview() -> JSONResponse:
     - Indicadores UNCTAD compliant
     - Fontes de dados
     """
-    modules = [
-        {
-            "modulo": 1,
+    module_metadata = {
+        1: {
             "nome": "Operações de Navios",
-            "total_indicadores": 12,
-            "unctad_compliant": 10,
             "fonte_principal": "ANTAQ",
             "descricao": "Indicadores de tempos, características e operações de navios",
         },
-        {
-            "modulo": 2,
+        2: {
             "nome": "Operações de Carga",
-            "total_indicadores": 13,
-            "unctad_compliant": 11,
             "fonte_principal": "ANTAQ",
             "descricao": "Volume, produtividade e utilização de carga",
         },
-        {
-            "modulo": 3,
+        3: {
             "nome": "Recursos Humanos",
-            "total_indicadores": 12,
-            "unctad_compliant": 8,
             "fonte_principal": "RAIS",
             "descricao": "Emprego, salários e perfil dos trabalhadores portuários",
         },
-        {
-            "modulo": 4,
+        4: {
             "nome": "Comércio Exterior",
-            "total_indicadores": 10,
-            "unctad_compliant": 0,
             "fonte_principal": "Comex Stat",
             "descricao": "Exportações, importações e balança comercial",
         },
-        {
-            "modulo": 5,
+        5: {
             "nome": "Impacto Econômico Regional",
-            "total_indicadores": 13,
-            "unctad_compliant": 0,
-            "fonte_principal": "IBGE + ANTAQ",
-            "descricao": "PIB, população e correlações econômicas",
+            "fonte_principal": "IBGE + ANTAQ + RAIS + Comex",
+            "descricao": "PIB, população e indicadores econômicos portuários",
         },
-        {
-            "modulo": 6,
+        6: {
             "nome": "Finanças Públicas",
-            "total_indicadores": 6,
-            "unctad_compliant": 0,
             "fonte_principal": "FINBRA/STN",
             "descricao": "Arrecadação municipal e receitas",
         },
-        {
-            "modulo": 7,
+        7: {
             "nome": "Índices Sintéticos",
-            "total_indicadores": 7,
-            "unctad_compliant": 0,
             "fonte_principal": "Múltiplas",
             "descricao": "Índices compostos e rankings",
         },
-    ]
+    }
+
+    module_counts = {}
+    for _code, meta in INDICATORS_METADATA.items():
+        modulo = meta.get("modulo")
+        if modulo not in module_counts:
+            module_counts[modulo] = {"total_indicadores": 0, "unctad_compliant": 0}
+        module_counts[modulo]["total_indicadores"] += 1
+        if meta.get("unctad"):
+            module_counts[modulo]["unctad_compliant"] += 1
+
+    modules = []
+    for modulo in range(1, 8):
+        info = module_metadata.get(modulo, {})
+        totals = module_counts.get(modulo, {"total_indicadores": 0, "unctad_compliant": 0})
+        modules.append({
+            "modulo": modulo,
+            "nome": info.get("nome", f"Módulo {modulo}"),
+            "total_indicadores": totals["total_indicadores"],
+            "unctad_compliant": totals["unctad_compliant"],
+            "fonte_principal": info.get("fonte_principal", "Não informada"),
+            "descricao": info.get("descricao", ""),
+        })
 
     total = sum(m["total_indicadores"] for m in modules)
     unctad = sum(m["unctad_compliant"] for m in modules)

@@ -9,73 +9,81 @@ import {
   TrendingUp,
   Building,
   LineChart,
+  Settings,
 } from 'lucide-react';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const navItems = [
-  {
-    path: '/dashboard',
-    icon: LayoutDashboard,
-    label: 'Dashboard',
-    description: 'Visão geral',
-  },
-  {
-    path: '/dashboard/module1',
-    icon: Anchor,
-    label: 'Módulo 1',
-    description: 'Operações de Navios (12)',
-    moduleColor: 'module1',
-  },
-  {
-    path: '/dashboard/module2',
-    icon: Package,
-    label: 'Módulo 2',
-    description: 'Operações de Carga (13)',
-    moduleColor: 'module2',
-  },
-  {
-    path: '/dashboard/module3',
-    icon: Users,
-    label: 'Módulo 3',
-    description: 'Recursos Humanos (12)',
-    moduleColor: 'module3',
-  },
-  {
-    path: '/dashboard/module4',
-    icon: Globe,
-    label: 'Módulo 4',
-    description: 'Comércio Exterior (10)',
-    moduleColor: 'module4',
-  },
-  {
-    path: '/dashboard/module5',
-    icon: TrendingUp,
-    label: 'Módulo 5',
-    description: 'Impacto Econômico (18)',
-    moduleColor: 'module5',
-  },
-  {
-    path: '/dashboard/module6',
-    icon: Building,
-    label: 'Módulo 6',
-    description: 'Finanças Públicas (6)',
-    moduleColor: 'module6',
-  },
-  {
-    path: '/dashboard/module7',
-    icon: LineChart,
-    label: 'Módulo 7',
-    description: 'Índices Sintéticos (7)',
-    moduleColor: 'module7',
-  },
-];
-
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
+  const { t } = useI18n();
+  const navItems = [
+    {
+      path: '/dashboard',
+      icon: LayoutDashboard,
+      label: t('navigation.dashboard'),
+      description: 'Visão geral',
+    },
+    {
+      path: '/dashboard/module1',
+      icon: Anchor,
+      label: t('navigation.module1'),
+      description: 'Operações de Navios (12)',
+      moduleColor: 'module1',
+    },
+    {
+      path: '/dashboard/module2',
+      icon: Package,
+      label: t('navigation.module2'),
+      description: 'Operações de Carga (13)',
+      moduleColor: 'module2',
+    },
+    {
+      path: '/dashboard/module3',
+      icon: Users,
+      label: t('navigation.module3'),
+      description: 'Recursos Humanos (12)',
+      moduleColor: 'module3',
+    },
+    {
+      path: '/dashboard/module4',
+      icon: Globe,
+      label: t('navigation.module4'),
+      description: 'Comércio Exterior (10)',
+      moduleColor: 'module4',
+    },
+    {
+      path: '/dashboard/module5',
+      icon: TrendingUp,
+      label: t('navigation.module5'),
+      description: 'Impacto Econômico (21)',
+      moduleColor: 'module5',
+    },
+    {
+      path: '/dashboard/module6',
+      icon: Building,
+      label: t('navigation.module6'),
+      description: 'Finanças Públicas (6)',
+      moduleColor: 'module6',
+    },
+    {
+      path: '/dashboard/module7',
+      icon: LineChart,
+      label: t('navigation.module7'),
+      description: 'Índices Sintéticos (7)',
+      moduleColor: 'module7',
+    },
+    {
+      path: '/admin',
+      icon: Settings,
+      label: 'Admin',
+      description: 'Painel do tenant',
+    },
+  ];
 
   return (
     <>

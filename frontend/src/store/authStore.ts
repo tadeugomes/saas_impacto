@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import type { User } from '../types/auth';
 
+const bypassAuth = import.meta.env.VITE_DISABLE_AUTH === 'true';
+
+const testUser: User = {
+  id: '00000000-0000-0000-0000-000000000001',
+  email: 'teste_local@impacto.local',
+  name: 'Usuário de Teste',
+  nome: 'Usuário de Teste',
+  tenant_id: '00000000-0000-0000-0000-000000000001',
+  roles: ['admin'],
+  ativo: true,
+};
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -33,6 +45,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     }),
   setLoading: (isLoading) => set({ isLoading }),
   checkAuth: () => {
+    if (bypassAuth) {
+      set({
+        user: testUser,
+        token: 'dev-token',
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      return;
+    }
+
     const token = localStorage.getItem('access_token');
     if (token) {
       set({

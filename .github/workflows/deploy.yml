@@ -1,0 +1,121 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  gcp-deploy:
+    name: GCP Deploy
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check deployment configuration
+        id: deploy_gate
+        run: |
+          if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" ] \
+             || [ -z "${{ secrets.GCP_REGION }}" ] \
+             || [ -z "${{ secrets.GCP_PROJECT_ID }}" ] \
+             || [ -z "${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}" ] \
+             || [ -z "${{ secrets.GCP_CLOUD_RUN_SERVICE_API }}" ] \
+             || [ -z "${{ secrets.GCP_CLOUD_RUN_SERVICE_WORKER }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.deploy_gate.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Setup gcloud CLI
+        if: steps.deploy_gate.outputs.ready == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Login to Artifact Registry
+        if: steps.deploy_gate.outputs.ready == 'true'
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Setup Buildx
+        if: steps.deploy_gate.outputs.ready == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        if: steps.deploy_gate.outputs.ready == 'true'
+        working-directory: backend
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_REPO}"
+          docker buildx build --platform linux/amd64 --target api -f Dockerfile \
+            -t "${IMAGE_BASE}/saas-impacto/api:${IMAGE_TAG}" \
+            --push .
+
+      - name: Build and push worker image
+        if: steps.deploy_gate.outputs.ready == 'true'
+        working-directory: backend
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_REPO}"
+          docker buildx build --platform linux/amd64 --target worker -f Dockerfile \
+            -t "${IMAGE_BASE}/saas-impacto/worker:${IMAGE_TAG}" \
+            --push .
+
+      - name: Deploy API to Cloud Run
+        if: steps.deploy_gate.outputs.ready == 'true'
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
+          SERVICE_NAME: ${{ secrets.GCP_CLOUD_RUN_SERVICE_API }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_REPO}"
+          gcloud run deploy "${SERVICE_NAME}" \
+            --image "${IMAGE_BASE}/saas-impacto/api:${IMAGE_TAG}" \
+            --region "${GCP_REGION}" \
+            --platform managed \
+            --allow-unauthenticated
+
+      - name: Deploy worker job to Cloud Run
+        if: steps.deploy_gate.outputs.ready == 'true'
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
+          SERVICE_NAME: ${{ secrets.GCP_CLOUD_RUN_SERVICE_WORKER }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_BASE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_REPO}"
+          gcloud run jobs deploy "${SERVICE_NAME}" \
+            --image "${IMAGE_BASE}/saas-impacto/worker:${IMAGE_TAG}" \
+            --region "${GCP_REGION}" \
+            --memory 4Gi \
+            --cpu 2 \
+            --max-retries 1 \
+            --parallelism 1 \
+            --tasks 1

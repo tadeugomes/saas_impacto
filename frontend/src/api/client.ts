@@ -4,8 +4,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 class ApiClient {
   private client: AxiosInstance;
+  private readonly disableAuth: boolean;
 
   constructor() {
+    this.disableAuth = import.meta.env.VITE_DISABLE_AUTH === 'true';
     this.client = axios.create({
       baseURL: API_URL,
       headers: {
@@ -20,6 +22,8 @@ class ApiClient {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
+        const locale = localStorage.getItem('saas-impacto-locale') || 'pt-BR';
+        config.headers['Accept-Language'] = locale;
         return config;
       },
       (error) => Promise.reject(error)
@@ -29,6 +33,10 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
+        if (this.disableAuth) {
+          return Promise.reject(error);
+        }
+
         // Se for 401, tenta fazer refresh token
         if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
           const refreshToken = localStorage.getItem('refresh_token');

@@ -13,7 +13,7 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 from google.cloud.bigquery import DatasetReference, TableReference
-from google.oauth2 import service_account
+import google.auth
 from google.api_core.exceptions import (
     GoogleAPIError,
     NotFound,
@@ -86,10 +86,8 @@ class BigQueryClient:
         """Cria uma instância do cliente BigQuery."""
         credentials = None
         if self._credentials_path:
-            with open(self._credentials_path, "r") as f:
-                credentials_info = json.load(f)
-            credentials = service_account.Credentials.from_service_account_info(
-                credentials_info,
+            credentials, _ = google.auth.load_credentials_from_file(
+                self._credentials_path,
                 scopes=["https://www.googleapis.com/auth/cloud-platform"],
             )
 

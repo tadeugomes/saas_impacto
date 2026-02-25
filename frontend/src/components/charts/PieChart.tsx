@@ -4,6 +4,7 @@ import {
   ArcElement,
   Tooltip,
   Legend,
+  type TooltipItem,
 } from 'chart.js';
 import { useMemo } from 'react';
 
@@ -49,9 +50,11 @@ export function PieChart({ labels, data, title, variant = 'pie' }: PieChartProps
       },
       tooltip: {
         callbacks: {
-          label: (context: any) => {
-            const value = context.raw || 0;
-            const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+          label: (context: TooltipItem<'pie' | 'doughnut'>) => {
+            const value = typeof context.raw === 'number' ? context.raw : 0;
+            const values = context.dataset.data;
+            const numericValues = values.filter((item): item is number => typeof item === 'number');
+            const total = numericValues.reduce((acc: number, current: number) => acc + current, 0);
             const percentage = ((value / total) * 100).toFixed(1);
             return `${context.label}: ${value} (${percentage}%)`;
           },

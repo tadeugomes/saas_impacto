@@ -5,9 +5,9 @@ import json
 BASE_URL = "http://localhost:8000/api/v1"
 
 MODULES = {
-    3: ['IND-3.01', 'IND-3.02', 'IND-3.03', 'IND-3.04', 'IND-3.05', 'IND-3.06', 'IND-3.07', 'IND-3.08', 'IND-3.09', 'IND-3.10'],
-    5: ['IND-5.01', 'IND-5.02', 'IND-5.03', 'IND-5.04', 'IND-5.05', 'IND-5.06', 'IND-5.07', 'IND-5.08', 'IND-5.09', 'IND-5.10'],
-    6: ['IND-6.01', 'IND-6.02', 'IND-6.03', 'IND-6.04', 'IND-6.05', 'IND-6.06', 'IND-6.07', 'IND-6.08', 'IND-6.09', 'IND-6.10'],
+    3: [f"IND-3.{i:02d}" for i in range(1, 13)],
+    5: [f"IND-5.{i:02d}" for i in range(1, 22)],
+    6: [f"IND-6.{i:02d}" for i in range(1, 12)],
 }
 
 def check_modules():
@@ -20,6 +20,10 @@ def check_modules():
                     json={"codigo_indicador": ind, "ano": 2023},
                     timeout=10
                 )
+                if resp.status_code != 200:
+                    error_msg = resp.json().get("detail", resp.text)
+                    print(f"  {ind}: ERROR - HTTP {resp.status_code}: {error_msg}")
+                    continue
                 data = resp.json()
                 count = len(data.get('data', []))
                 if count > 0:

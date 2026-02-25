@@ -1,6 +1,6 @@
 import { useState } from 'react';
 // import { useNavigate, Navigate } from 'react-router-dom';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Anchor } from 'lucide-react';
 
@@ -21,8 +21,9 @@ export function LoginView() {
 
     try {
       await login({ email, password });
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail;
+    } catch (err: unknown) {
+      const errorResponse = err as { response?: { data?: { detail?: unknown } } };
+      const errorMessage = errorResponse?.response?.data?.detail;
       setError(
         typeof errorMessage === 'string'
           ? errorMessage
@@ -93,6 +94,13 @@ export function LoginView() {
         <div className="mt-6 text-center text-sm text-gray-500">
           <p>Credenciais de teste:</p>
           <p className="font-mono text-xs mt-1">admin@example.com / admin123</p>
+        </div>
+
+        <div className="mt-4 text-center text-sm">
+          <p className="text-gray-500">Ainda não tem conta?</p>
+          <Link to="/register" className="text-primary font-semibold">
+            Criar conta
+          </Link>
         </div>
       </div>
     </div>

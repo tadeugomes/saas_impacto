@@ -17,12 +17,16 @@ from app.core.security import decode_access_token
 PUBLIC_PATHS = {
     "/",
     "/health",
+    "/health/ready",
+    "/health/live",
     "/docs",
     "/redoc",
     "/openapi.json",
     "/api/v1/auth/login",
     "/api/v1/auth/register",
     "/api/v1/auth/refresh",
+    "/api/v1/auth/password-reset/request",
+    "/api/v1/auth/password-reset/confirm",
 }
 
 

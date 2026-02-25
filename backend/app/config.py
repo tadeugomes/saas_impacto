@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: str | None = None
     redis_cache_ttl: int = 3600
+    bq_cache_ttl_seconds: int = 3600
+    bq_cache_enabled: bool = True
 
     @property
     def redis_url(self) -> str:
@@ -83,6 +85,11 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
     jwt_secret_key: str
+    password_reset_token_ttl_seconds: int = 3600
+
+    # Auth bypass para ambiente de teste/local
+    # Quando True, os endpoints protegidos deixam de exigir JWT.
+    skip_auth: bool = False
 
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
@@ -98,12 +105,51 @@ class Settings(BaseSettings):
 
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
-    otel_service_name: str = "saas-impacto-backend"
     otel_sampling_ratio: float = 1.0
+
+    # Notificações
+    notifications_enabled: bool = False
+    sendgrid_api_key: str | None = None
+    sendgrid_from_email: str = "noreply@saas-impacto.local"
+
+    # Rate limiting
+    rate_limiting_enabled: bool = True
+    rate_limit_window_seconds: int = 60
+    rate_limit_basic_rpm: int = 100
+    rate_limit_pro_rpm: int = 500
+    rate_limit_enterprise_rpm: int = 2000
+    rate_limit_basic_analyses_per_hour: int = 5
+    rate_limit_pro_analyses_per_hour: int = 20
+    rate_limit_enterprise_analyses_per_hour: int = 100
 
     # Reports
     quarto_path: str = "/usr/bin/quarto"
     reports_output_path: str = "/tmp/reports"
+
+    # Audit logs
+    audit_log_retention_days: int = 90
+
+    # Feature Flags — Métodos Causais Experimentais
+    # ──────────────────────────────────────────────
+    # Desabilitados por padrão até que os módulos correspondentes
+    # sejam portados do repositório new_impacto e validados.
+    #
+    # Para habilitar SCM quando synthetic_control.py estiver disponível:
+    #   ENABLE_SCM=true
+    #
+    # Para habilitar Augmented SCM quando synthetic_augmented.py estiver disponível:
+    #   ENABLE_AUGMENTED_SCM=true
+    enable_scm: bool = False
+    enable_augmented_scm: bool = False
+
+    # Observabilidade / exposição
+    otel_enabled: bool = False
+    otel_exporter: str = "console"
+    metrics_enabled: bool = True
+    docs_access_token: str | None = None
+
+    # Internacionalização backend
+    default_language: str = "pt-BR"
 
 
 @lru_cache()

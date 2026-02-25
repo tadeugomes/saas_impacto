@@ -127,6 +127,24 @@ Resposta:
 curl -X GET "http://localhost:8000/api/v1/auth/me" \
   -H "Authorization: Bearer eyr..." \
   -H "X-Tenant-ID: uuid-do-tenant"
+
+### Validação do Módulo 5 com dados reais (BigQuery)
+
+Fluxo recomendado para validar contratos e execução do Módulo 5 com dados reais:
+
+```bash
+cd /Users/tgt/Documents/GitHub/saas_impacto
+source venv/bin/activate
+
+# Atualiza marts (crosswalk, mart econômico, metadata)
+PYTHONPATH=/Users/tgt/Documents/GitHub/saas_impacto/backend \
+python -m scripts.build_module5_marts --versao-pipeline v1.0.2
+
+# Executa o script de validação ponta a ponta do Módulo 5
+python testar_modulo5_dados_reais.py
+```
+
+Observação: se rodar em outro workspace, troque os caminhos absolutos pelo seu caminho local.
 ```
 
 ## Estrutura do Projeto
@@ -159,3 +177,4 @@ saas_impacto/
 - [Especificação Técnica](planejamento/docs/INDICADORES_ESPECIFICACAO_TECNICA.md)
 - [Padrões SQL ANTAQ](planejamento/docs/role_sql_antaq_bigquery/INSTRUCOES_UNIFICADAS_SQL_ANTAQ.md)
 - [Plano de Implementação](.claude/plans/gentle-questing-llama.md)
+- [Guia de Interpretação — Módulo 5](docs/guia_interpretacao_modulo5.md)

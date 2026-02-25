@@ -53,3 +53,16 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PasswordResetRequest(BaseModel):
+    """Schema para solicitar recuperação de senha."""
+
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    """Schema para confirmar recuperação de senha."""
+
+    token: str = Field(..., min_length=32, max_length=64)
+    new_password: str = Field(..., min_length=6)

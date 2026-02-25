@@ -5,17 +5,24 @@ Este serviço fornece uma interface unificada para consultar
 qualquer indicador de qualquer módulo (1-7).
 """
 
-from typing import List, Dict, Any, Optional
 import logging
+import math
+import time
+import inspect
+from decimal import Decimal
+from typing import List, Dict, Any, Optional
 
 from app.db.bigquery.client import BigQueryClient, get_bigquery_client
 from app.db.bigquery.queries import ALL_QUERIES, get_query
+from app.db.bigquery.queries.module3_human_resources import query_rais_year_coverage_for_portuarios
 from app.schemas.indicators import (
     GenericIndicatorRequest,
     GenericIndicatorResponse,
+    DataQualityWarning,
     IndicatorMetadata,
     AllIndicatorsResponse,
 )
+from app.services.indicator_query_cache import IndicatorQueryCache
 
 
 logger = logging.getLogger(__name__)
@@ -176,6 +183,76 @@ PORT_TO_IBGE_MAPPING = {
     'Valec Vitória': '3205309',
     'ArcelorMittal Tubarão': '3205309',
 }
+
+
+AREA_AGGREGATION_FIELD_BY_CODE = {
+    # Module 5 (econômico)
+    "IND-5.01": "pib_municipal",
+    "IND-5.02": "pib_per_capita",
+    "IND-5.03": "populacao",
+    "IND-5.04": "pib_servicos_percentual",
+    "IND-5.05": "pib_industria_percentual",
+    "IND-5.06": "intensidade_portuaria",
+    "IND-5.07": "intensidade_comercial",
+    "IND-5.08": "concentracao_emprego_pct",
+    "IND-5.09": "concentracao_salarial_pct",
+    "IND-5.10": "crescimento_pib_percentual",
+    "IND-5.11": "crescimento_tonelagem_pct",
+    "IND-5.12": "crescimento_empregos_pct",
+    "IND-5.13": "crescimento_comercio_pct",
+    "IND-5.14": "correlacao",
+    "IND-5.15": "correlacao",
+    "IND-5.16": "correlacao",
+    "IND-5.17": "elasticidade",
+    "IND-5.18": "participacao_pib_regional_pct",
+    "IND-5.19": "crescimento_relativo_uf_pp",
+    "IND-5.20": "razao_emprego_total_portuario",
+    "IND-5.21": "indice_concentracao_portuaria",
+    # Module 6 (finanças públicas)
+    "IND-6.01": "arrecadacao_icms",
+    "IND-6.02": "arrecadacao_iss",
+    "IND-6.03": "receita_total",
+    "IND-6.04": "receita_per_capita",
+    "IND-6.05": "crescimento_receita_pct",
+    "IND-6.06": "icms_por_tonelada",
+    "IND-6.07": "receita_fiscal_total",
+    "IND-6.08": "receita_fiscal_per_capita",
+    "IND-6.09": "receita_fiscal_por_tonelada",
+    "IND-6.10": "correlacao",
+    "IND-6.11": "elasticidade",
+}
+
+AREA_AGGREGATION_SUM_CODES = {
+    "IND-5.01",
+    "IND-5.03",
+    "IND-6.01",
+    "IND-6.02",
+    "IND-6.03",
+    "IND-6.07",
+}
+
+MODULE3_INDICATORS_WITH_YEAR_COVERAGE = {
+    "IND-3.01",
+    "IND-3.02",
+    "IND-3.03",
+    "IND-3.04",
+    "IND-3.05",
+    "IND-3.06",
+    "IND-3.07",
+    "IND-3.08",
+    "IND-3.09",
+    "IND-3.10",
+    "IND-3.11",
+    "IND-3.12",
+}
+
+
+class IndicatorAccessError(Exception):
+    """Erro de autorizacao/regra de acesso para consulta de indicador."""
+
+
+class IndicatorQuotaError(Exception):
+    """Erro de quota/custo de consulta."""
 
 
 # ============================================================================
@@ -664,7 +741,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "R$",
         "unctad": False,
-        "descricao": "Produto Interno Bruto municipal",
+        "descricao": "Nível de PIB municipal em valores correntes: mede o tamanho econômico local no ano de referência.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - PIB municipal",
     },
@@ -674,9 +751,9 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "R$/habitante",
         "unctad": False,
-        "descricao": "PIB dividido pela população",
+        "descricao": "PIB per capita: PIB municipal dividido pela população residente, para comparar níveis econômicos entre municípios.",
         "granularidade": "Município/Ano",
-        "fonte_dados": "IBGE - PIB + População",
+        "fonte_dados": "IBGE - PIB municipal + IBGE - População municipal",
     },
     "IND-5.03": {
         "codigo": "IND-5.03",
@@ -684,7 +761,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "Habitantes",
         "unctad": False,
-        "descricao": "População residente no município",
+        "descricao": "População residente no município, usada como base para indicadores per capita.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - População municipal",
     },
@@ -694,7 +771,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Participação do setor serviços no PIB",
+        "descricao": "Participação do setor de serviços no PIB municipal; quanto maior, maior o peso do setor de serviços.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - PIB municipal",
     },
@@ -704,7 +781,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Participação do setor indústria no PIB",
+        "descricao": "Participação do setor industrial no PIB municipal; mede peso relativo da indústria local.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - PIB municipal",
     },
@@ -714,9 +791,9 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "Toneladas/R$",
         "unctad": False,
-        "descricao": "Tonelagem movimentada por unidade de PIB",
+        "descricao": "Razão entre tonelagem movimentada e PIB municipal: intensidade de atividade logística por unidade econômica.",
         "granularidade": "Município/Ano",
-        "fonte_dados": "ANTAQ + IBGE PIB",
+        "fonte_dados": "ANTAQ - v_carga_metodologia_oficial + IBGE - PIB municipal",
     },
     "IND-5.07": {
         "codigo": "IND-5.07",
@@ -724,9 +801,9 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "US$/R$",
         "unctad": False,
-        "descricao": "Comércio exterior por unidade de PIB",
+        "descricao": "Razão entre comércio exterior (exportação+importação) e PIB municipal: indica exposição do comércio no contexto econômico local.",
         "granularidade": "Município/Ano",
-        "fonte_dados": "Comex Stat + IBGE PIB",
+        "fonte_dados": "ComexStat + IBGE - PIB municipal",
     },
     "IND-5.08": {
         "codigo": "IND-5.08",
@@ -734,7 +811,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Participação do setor portuário no emprego",
+        "descricao": "Participação percentual dos empregos de CNAEs portuários sobre o total de empregos do município.",
         "granularidade": "Município/Ano",
         "fonte_dados": "RAIS - microdados_vinculos",
     },
@@ -744,7 +821,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Participação da massa salarial portuária",
+        "descricao": "Participação da massa salarial dos vínculos portuários sobre a massa salarial municipal total.",
         "granularidade": "Município/Ano",
         "fonte_dados": "RAIS - microdados_vinculos",
     },
@@ -754,7 +831,7 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Variação percentual anual do PIB",
+        "descricao": "Variação percentual anual do PIB municipal em relação ao ano anterior.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - PIB municipal",
     },
@@ -764,9 +841,29 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Variação percentual anual da tonelagem",
+        "descricao": "Variação percentual anual da tonelagem movimentada por município.",
         "granularidade": "Município/Ano",
-        "fonte_dados": "ANTAQ - v_carga_validada",
+        "fonte_dados": "ANTAQ - v_carga_metodologia_oficial",
+    },
+    "IND-5.12": {
+        "codigo": "IND-5.12",
+        "nome": "Crescimento de Empregos",
+        "modulo": 5,
+        "unidade": "%",
+        "unctad": False,
+        "descricao": "Variação percentual anual dos empregos portuários ativos do município.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-5.13": {
+        "codigo": "IND-5.13",
+        "nome": "Crescimento de Comércio Exterior",
+        "modulo": 5,
+        "unidade": "%",
+        "unctad": False,
+        "descricao": "Variação percentual anual do comércio exterior (exportação + importação) por município.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "ComexStat - municipio_exportacao/importacao",
     },
     "IND-5.14": {
         "codigo": "IND-5.14",
@@ -774,9 +871,39 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "Coeficiente",
         "unctad": False,
-        "descricao": "Coeficiente de correlação (mínimo 5 anos)",
+        "descricao": "Coeficiente de correlação entre evolução de tonelagem e PIB municipal (mínimo 5 anos úteis). Correlação não implica causalidade; trata-se apenas de associação.",
         "granularidade": "Município",
-        "fonte_dados": "ANTAQ + IBGE PIB",
+        "fonte_dados": "ANTAQ - v_carga_metodologia_oficial + IBGE - PIB municipal",
+    },
+    "IND-5.15": {
+        "codigo": "IND-5.15",
+        "nome": "Correlação Tonelagem × Empregos",
+        "modulo": 5,
+        "unidade": "Coeficiente",
+        "unctad": False,
+        "descricao": "Coeficiente de correlação entre tonelagem e empregos portuários (mínimo 5 anos úteis). Correlação não implica causalidade; trata-se apenas de associação.",
+        "granularidade": "Município",
+        "fonte_dados": "ANTAQ - v_carga_metodologia_oficial + RAIS - microdados_vinculos",
+    },
+    "IND-5.16": {
+        "codigo": "IND-5.16",
+        "nome": "Correlação Comércio × PIB",
+        "modulo": 5,
+        "unidade": "Coeficiente",
+        "unctad": False,
+        "descricao": "Coeficiente de correlação entre comércio exterior e PIB municipal (mínimo 5 anos úteis). Correlação não implica causalidade; trata-se apenas de associação.",
+        "granularidade": "Município",
+        "fonte_dados": "ComexStat + IBGE - PIB municipal",
+    },
+    "IND-5.17": {
+        "codigo": "IND-5.17",
+        "nome": "Elasticidade Tonelagem/PIB",
+        "modulo": 5,
+        "unidade": "Elasticidade",
+        "unctad": False,
+        "descricao": "Elasticidade da tonelagem em relação ao PIB municipal (regressão log-log). Não representa causalidade direta. Correlação não implica causalidade; trata-se apenas de associação.",
+        "granularidade": "Município",
+        "fonte_dados": "ANTAQ - v_carga_metodologia_oficial + IBGE - PIB municipal",
     },
     "IND-5.18": {
         "codigo": "IND-5.18",
@@ -784,9 +911,39 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "modulo": 5,
         "unidade": "%",
         "unctad": False,
-        "descricao": "Participação do município no PIB da microrregião",
+        "descricao": "Participação do município no PIB da sua microrregião no ano, para comparar concentração territorial.",
         "granularidade": "Município/Ano",
         "fonte_dados": "IBGE - PIB municipal",
+    },
+    "IND-5.19": {
+        "codigo": "IND-5.19",
+        "nome": "Crescimento Relativo ao Estado",
+        "modulo": 5,
+        "unidade": "Pontos percentuais",
+        "unctad": False,
+        "descricao": "Diferença entre crescimento do PIB municipal e crescimento médio do estado no mesmo ano.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "IBGE - PIB municipal + IBGE - PIB estadual",
+    },
+    "IND-5.20": {
+        "codigo": "IND-5.20",
+        "nome": "Razão Emprego Total/Portuário",
+        "modulo": 5,
+        "unidade": "Razão",
+        "unctad": False,
+        "descricao": "Relação entre empregos totais e empregos portuários; dimensão da dependência local do ciclo portuário.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-5.21": {
+        "codigo": "IND-5.21",
+        "nome": "Índice de Concentração Portuária",
+        "modulo": 5,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Índice composto da intensidade econômica portuária (emprego, tonelagem e participação no PIB regional).",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "RAIS - microdados_vinculos + ANTAQ - v_carga_metodologia_oficial + IBGE - PIB municipal",
     },
     # Module 6 - Public Finance
     "IND-6.01": {
@@ -848,6 +1005,56 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "descricao": "ICMS arrecadado por tonelada movimentada",
         "granularidade": "Município/Ano",
         "fonte_dados": "FINBRA/STN + ANTAQ",
+    },
+    "IND-6.07": {
+        "codigo": "IND-6.07",
+        "nome": "Receita Fiscal Total",
+        "modulo": 6,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Soma de ICMS + ISS arrecadados no município. Útil para medir a capacidade fiscal anual associada à atividade portuária.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + IBGE",
+    },
+    "IND-6.08": {
+        "codigo": "IND-6.08",
+        "nome": "Receita Fiscal per Capita",
+        "modulo": 6,
+        "unidade": "R$/hab",
+        "unctad": False,
+        "descricao": "Receita fiscal (ICMS + ISS) por habitante. Aproxima a base fiscal por pessoa no município.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + IBGE",
+    },
+    "IND-6.09": {
+        "codigo": "IND-6.09",
+        "nome": "Receita Fiscal por Tonelada",
+        "modulo": 6,
+        "unidade": "R$/ton",
+        "unctad": False,
+        "descricao": "Quociente entre receita fiscal (ICMS + ISS) e tonelagem movimentada. Mede eficiência fiscal da atividade portuária.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
+    },
+    "IND-6.10": {
+        "codigo": "IND-6.10",
+        "nome": "Correlação Tonelagem e Receita Fiscal",
+        "modulo": 6,
+        "unidade": "Coeficiente",
+        "unctad": False,
+        "descricao": "Correlação entre tonelagem movimentada e receita fiscal (ICMS+ISS). Trata-se de associação, não causalidade.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
+    },
+    "IND-6.11": {
+        "codigo": "IND-6.11",
+        "nome": "Elasticidade Tonelagem/Receita Fiscal",
+        "modulo": 6,
+        "unidade": "Elasticidade",
+        "unctad": False,
+        "descricao": "Sensibilidade histórica da tonelagem em relação à receita fiscal (log-log). Associação estatística, não causalidade inferencial.",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
     },
     # Module 7 - Synthetic Indices
     "IND-7.01": {
@@ -926,13 +1133,22 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
 class GenericIndicatorService:
     """Serviço genérico para consulta de qualquer indicador."""
 
-    def __init__(self, bq_client: Optional[BigQueryClient] = None):
+    def __init__(
+        self,
+        bq_client: Optional[BigQueryClient] = None,
+        query_cache: Optional[IndicatorQueryCache] = None,
+    ):
         """Inicializa o serviço."""
         self.bq_client = bq_client or get_bigquery_client()
+        self._query_cache = query_cache if query_cache is not None else IndicatorQueryCache()
 
     async def execute_indicator(
         self,
         request: GenericIndicatorRequest,
+        tenant_policy: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        audit_context: Optional[Dict[str, Any]] = None,
     ) -> GenericIndicatorResponse:
         """
         Executa a query de um indicador específico.
@@ -943,15 +1159,21 @@ class GenericIndicatorService:
         Returns:
             GenericIndicatorResponse com os dados do indicador
         """
+        started_at = time.perf_counter()
         codigo = request.codigo_indicador.upper()
 
         if codigo not in INDICATORS_METADATA:
             raise ValueError(f"Indicador {codigo} não encontrado")
 
         meta = INDICATORS_METADATA[codigo]
+        if codigo not in ALL_QUERIES:
+            raise ValueError(
+                f"Indicador {codigo} está em dívida técnica e ainda não possui query ativa"
+            )
 
         # Obtém a função de query
         query_func = get_query(codigo)
+        module_num = meta.get("modulo", 0)
 
         # Monta parâmetros da query
         raw_params = {}
@@ -968,32 +1190,212 @@ class GenericIndicatorService:
         if request.mes:
             raw_params["mes"] = request.mes
 
+        request_cache_key = self._build_request_cache_key(
+            modulo=module_num,
+            codigo=codigo,
+            tenant_id=tenant_id,
+            request=request,
+            extra_params=raw_params,
+        )
+
+        # Controle E5: allowlist por municipio direto
+        self._enforce_municipio_access(
+            codigo=codigo,
+            id_municipio=request.id_municipio,
+            tenant_policy=tenant_policy,
+        )
+
+        can_use_cache = self._query_cache is not None and tenant_id is not None
+        if can_use_cache:
+            cached = await self._query_cache.get(request_cache_key)
+            if cached is not None:
+                if isinstance(cached, dict):
+                    cached_data = cached.get("data", [])
+                    cached_warnings_payload = cached.get("warnings", [])
+                    if not isinstance(cached_data, list):
+                        cached_data = []
+                    if not isinstance(cached_warnings_payload, list):
+                        cached_warnings_payload = []
+                else:
+                    cached_data = cached if isinstance(cached, list) else []
+                    cached_warnings_payload = []
+
+                cached_warnings: List[DataQualityWarning] = []
+                for item in cached_warnings_payload:
+                    if isinstance(item, DataQualityWarning):
+                        cached_warnings.append(item)
+                    elif isinstance(item, dict):
+                        try:
+                            cached_warnings.append(DataQualityWarning(**item))
+                        except Exception:
+                            continue
+
+                if (
+                    request.id_instalacao
+                    and not request.id_municipio
+                    and request.include_breakdown
+                    and all(w.tipo != "municipio_influencia_agregada" for w in cached_warnings)
+                ):
+                    self._append_warning(
+                        cached_warnings,
+                        codigo,
+                        "municipio_influencia_agregada",
+                        "Resultado agregado por município de influência com breakdown municipal.",
+                        campo="municipio_influencia",
+                    )
+                resolved_id_municipio = request.id_municipio
+                if not resolved_id_municipio and request.id_instalacao:
+                    resolved_id_municipio = PORT_TO_IBGE_MAPPING.get(request.id_instalacao, request.id_instalacao)
+                if not cached_warnings and not cached_data and codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
+                    cached_warnings = await self._append_no_data_warnings_module3(
+                        codigo=codigo,
+                        request=request,
+                        id_municipio=resolved_id_municipio,
+                    )
+                response = GenericIndicatorResponse(
+                    codigo_indicador=meta["codigo"],
+                    nome=meta["nome"],
+                    unidade=meta["unidade"],
+                    unctad=meta["unctad"],
+                    modulo=meta["modulo"],
+                    data=cached_data,
+                    warnings=cached_warnings if cached_warnings else self._validate_indicator_quality(codigo, cached_data),
+                    cache_hit=True,
+                )
+                if audit_context is not None:
+                    audit_context["bytes_processed"] = None
+                    audit_context["cache_hit"] = True
+                    audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+                return response
+
         # Filtra apenas os parâmetros aceitos pela função de query
-        import inspect
         sig = inspect.signature(query_func)
         params = {
             k: v for k, v in raw_params.items()
             if k in sig.parameters
         }
 
-        # Caso especial: se for um indicador municipal (Módulos 3, 4, 5, 6) e recebemos id_instalacao (Porto),
-        # traduzimos para o id_municipio (IBGE) correspondente usando o mapping.
-        # Módulos 1 e 2 são por porto/instalação e NÃO devem ter essa tradução.
-        module_num = meta.get("modulo", 0)
-        if (module_num in [3, 4, 5, 6] and
-            "id_municipio" in sig.parameters and
-            not params.get("id_municipio") and
-            "id_instalacao" in raw_params):
+        # E4: municipio de influencia por instalacao (Módulo 5 e 6)
+        if (
+            request.id_instalacao
+            and not request.id_municipio
+            and codigo in AREA_AGGREGATION_FIELD_BY_CODE
+            and "id_municipio" in sig.parameters
+        ):
+            area = self._resolve_area_influencia(
+                id_instalacao=request.id_instalacao,
+                tenant_policy=tenant_policy,
+            )
+            if area:
+                allowed = set((tenant_policy or {}).get("allowed_municipios", []))
+                if allowed:
+                    blocked = [item["id_municipio"] for item in area if item["id_municipio"] not in allowed]
+                    if blocked:
+                        raise IndicatorAccessError(
+                            f"Municípios do município de influência não autorizados para o tenant: {', '.join(blocked)}"
+                        )
+                if len(area) == 1:
+                    params["id_municipio"] = area[0]["id_municipio"]
+                else:
+                    results, bytes_processed = await self._execute_area_influence(
+                        codigo=codigo,
+                        query_func=query_func,
+                        request=request,
+                        area=area,
+                        tenant_policy=tenant_policy,
+                    )
+                    warnings = self._validate_indicator_quality(codigo, results)
+                    if request.include_breakdown:
+                        self._append_warning(
+                            warnings,
+                            codigo,
+                            "municipio_influencia_agregada",
+                            "Resultado agregado por município de influência com breakdown municipal.",
+                            campo="municipio_influencia",
+                        )
+                    if can_use_cache:
+                        await self._query_cache.set(
+                            request_cache_key,
+                            {
+                                "data": results,
+                                "warnings": [w.model_dump(mode="json") for w in warnings],
+                            },
+                        )
+                    self._log_query_audit(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        codigo=codigo,
+                        request=request,
+                        duration_ms=(time.perf_counter() - started_at) * 1000.0,
+                        bytes_processed=bytes_processed,
+                    )
+                    response = GenericIndicatorResponse(
+                        codigo_indicador=meta["codigo"],
+                        nome=meta["nome"],
+                        unidade=meta["unidade"],
+                        unctad=meta["unctad"],
+                        modulo=meta["modulo"],
+                        data=results,
+                        warnings=warnings,
+                        cache_hit=False,
+                    )
+                    if audit_context is not None:
+                        audit_context["bytes_processed"] = bytes_processed
+                        audit_context["cache_hit"] = False
+                        audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+                    return response
+        # Caso especial legado: se for indicador municipal (3,4,5,6) e recebemos id_instalacao,
+        # traduzimos para id_municipio via mapa fixo.
+        if (
+            module_num in [3, 4, 5, 6]
+            and "id_municipio" in sig.parameters
+            and not params.get("id_municipio")
+            and "id_instalacao" in raw_params
+        ):
             port_name = raw_params["id_instalacao"]
             if port_name in PORT_TO_IBGE_MAPPING:
                 params["id_municipio"] = PORT_TO_IBGE_MAPPING[port_name]
             else:
-                # Fallback p/ o comportamento anterior se não houver no mapping
                 params["id_municipio"] = port_name
 
-        # Executa a query
+        # Executa a query regular
         query = query_func(**params)
+        bytes_estimated = await self._estimate_query_bytes(query)
+        self._enforce_bytes_quota(
+            codigo=codigo,
+            bytes_estimated=bytes_estimated,
+            tenant_policy=tenant_policy,
+        )
         results = await self.bq_client.execute_query(query)
+        warnings = self._validate_indicator_quality(codigo, results)
+        if codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
+            warnings.extend(
+                await self._append_no_data_warnings_module3(
+                    codigo=codigo,
+                    request=request,
+                    id_municipio=params.get("id_municipio"),
+                )
+            )
+        if can_use_cache:
+            await self._query_cache.set(
+                request_cache_key,
+                {
+                    "data": results,
+                    "warnings": [w.model_dump(mode="json") for w in warnings],
+                },
+            )
+        if audit_context is not None:
+            audit_context["bytes_processed"] = bytes_estimated
+            audit_context["cache_hit"] = False
+            audit_context["duration_ms"] = int((time.perf_counter() - started_at) * 1000)
+        self._log_query_audit(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            codigo=codigo,
+            request=request,
+            duration_ms=(time.perf_counter() - started_at) * 1000.0,
+            bytes_processed=bytes_estimated,
+        )
 
         return GenericIndicatorResponse(
             codigo_indicador=meta["codigo"],
@@ -1002,20 +1404,734 @@ class GenericIndicatorService:
             unctad=meta["unctad"],
             modulo=meta["modulo"],
             data=results,
+            warnings=warnings,
+            cache_hit=False,
         )
+
+    @staticmethod
+    def _resolve_area_influencia(
+        id_instalacao: str,
+        tenant_policy: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Resolve lista de municípios para uma instalação (E4)."""
+        policy = tenant_policy or {}
+        area_map = policy.get("municipio_influencia") or policy.get("area_influencia") or {}
+        mapped = area_map.get(id_instalacao)
+        if isinstance(mapped, list) and mapped:
+            cleaned = []
+            for item in mapped:
+                if not isinstance(item, dict):
+                    continue
+                id_municipio = str(item.get("id_municipio", "")).strip()
+                if not id_municipio:
+                    continue
+                peso = GenericIndicatorService._to_float(item.get("peso"))
+                cleaned.append(
+                    {
+                        "id_municipio": id_municipio,
+                        "peso": peso if peso is not None and peso > 0 else 1.0,
+                    }
+                )
+            if cleaned:
+                return cleaned
+
+        fallback_municipio = PORT_TO_IBGE_MAPPING.get(id_instalacao)
+        if fallback_municipio:
+            return [{"id_municipio": fallback_municipio, "peso": 1.0}]
+
+        return []
+
+    @staticmethod
+    def _build_request_cache_key(
+        modulo: int,
+        codigo: str,
+        tenant_id: Optional[str],
+        request: GenericIndicatorRequest,
+        extra_params: Dict[str, Any],
+    ) -> str:
+        """Constrói chave canônica para cache de consulta genérica."""
+        payload = {
+            "codigo_indicador": codigo.upper(),
+            "modulo": modulo,
+            "tenant_id": tenant_id or "public",
+            "id_instalacao": request.id_instalacao,
+            "id_municipio": request.id_municipio,
+            "ano": request.ano,
+            "ano_inicio": request.ano_inicio,
+            "ano_fim": request.ano_fim,
+            "mes": request.mes,
+            "include_breakdown": request.include_breakdown,
+            "extra_params": extra_params,
+        }
+        return IndicatorQueryCache.make_key(
+            module=modulo,
+            codigo=codigo.upper(),
+            tenant_id=tenant_id,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _enforce_municipio_access(
+        codigo: str,
+        id_municipio: Optional[str],
+        tenant_policy: Optional[Dict[str, Any]],
+    ) -> None:
+        """Aplica allowlist por municipio quando configurada (E5)."""
+        if not codigo.startswith("IND-5."):
+            return
+        if not id_municipio:
+            return
+
+        policy = tenant_policy or {}
+        allowed = set(policy.get("allowed_municipios", []))
+        if allowed and str(id_municipio) not in allowed:
+            raise IndicatorAccessError(f"id_municipio {id_municipio} nao autorizado para o tenant")
+
+    async def _estimate_query_bytes(self, query: str) -> Optional[int]:
+        """Estimativa de bytes via dry run quando suportado pelo cliente."""
+        dry_run_fn = getattr(self.bq_client, "get_dry_run_results", None)
+        if dry_run_fn is None:
+            return None
+        try:
+            stats = await dry_run_fn(query)
+        except Exception:
+            return None
+        bytes_processed = stats.get("total_bytes_processed")
+        try:
+            return int(bytes_processed) if bytes_processed is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _enforce_bytes_quota(
+        codigo: str,
+        bytes_estimated: Optional[int],
+        tenant_policy: Optional[Dict[str, Any]],
+    ) -> None:
+        """Enforce de limite de bytes por consulta (E5)."""
+        if not codigo.startswith("IND-5."):
+            return
+        if bytes_estimated is None:
+            return
+        max_bytes = (tenant_policy or {}).get("max_bytes_per_query")
+        if max_bytes is None:
+            return
+        try:
+            max_bytes_int = int(max_bytes)
+        except (TypeError, ValueError):
+            return
+        if max_bytes_int > 0 and bytes_estimated > max_bytes_int:
+            raise IndicatorQuotaError(
+                f"Consulta excede limite de bytes do tenant: estimado={bytes_estimated}, limite={max_bytes_int}"
+            )
+
+    @staticmethod
+    def _log_query_audit(
+        tenant_id: Optional[str],
+        user_id: Optional[str],
+        codigo: str,
+        request: GenericIndicatorRequest,
+        duration_ms: float,
+        bytes_processed: Optional[int],
+    ) -> None:
+        """Log estruturado para auditoria de consultas (E5)."""
+        logger.info(
+            "indicator_query_audit",
+            extra={
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "indicator_code": codigo,
+                "filters": {
+                    "id_instalacao": request.id_instalacao,
+                    "id_municipio": request.id_municipio,
+                    "ano": request.ano,
+                    "ano_inicio": request.ano_inicio,
+                    "ano_fim": request.ano_fim,
+                },
+                "duration_ms": round(duration_ms, 2),
+                "bytes_processed": bytes_processed,
+            },
+        )
+
+    async def _execute_area_influence(
+        self,
+        codigo: str,
+        query_func: Any,
+        request: GenericIndicatorRequest,
+        area: List[Dict[str, Any]],
+        tenant_policy: Optional[Dict[str, Any]],
+    ) -> tuple[List[Dict[str, Any]], Optional[int]]:
+        """
+        Executa agregação por município de influência (E4) para indicadores do módulo 5/6.
+
+        Estrategia:
+        - roda query por municipio da area
+        - agrega no backend por ano (ou linha unica para correlacionais)
+        """
+        signature = inspect.signature(query_func)
+        all_rows: List[Dict[str, Any]] = []
+        total_bytes_processed: Optional[int] = None
+        breakdown_map: Dict[str, List[Dict[str, Any]]] = {}
+
+        for item in area:
+            id_municipio = item["id_municipio"]
+            peso = self._to_float(item.get("peso")) or 1.0
+            params = self._build_params_for_signature(signature, request, id_municipio=id_municipio)
+            query = query_func(**params)
+            bytes_estimated = await self._estimate_query_bytes(query)
+            self._enforce_bytes_quota(codigo, bytes_estimated, tenant_policy)
+            rows = await self.bq_client.execute_query(query)
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                row_copy = dict(row)
+                row_copy["_peso_area"] = peso
+                row_copy["_id_municipio_area"] = id_municipio
+                all_rows.append(row_copy)
+            if request.include_breakdown:
+                breakdown_map[id_municipio] = rows
+            if bytes_estimated is not None:
+                if total_bytes_processed is None:
+                    total_bytes_processed = 0
+                total_bytes_processed += bytes_estimated
+
+        return self._aggregate_area_rows(
+            codigo=codigo,
+            rows=all_rows,
+            id_instalacao=request.id_instalacao,
+            include_breakdown=request.include_breakdown,
+            breakdown_map=breakdown_map,
+        ), total_bytes_processed
+
+    @staticmethod
+    def _build_params_for_signature(
+        signature: inspect.Signature,
+        request: GenericIndicatorRequest,
+        id_municipio: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Monta parametros aceitos por uma assinatura de query."""
+        raw_params: Dict[str, Any] = {}
+        if request.ano is not None:
+            raw_params["ano"] = request.ano
+        if request.ano_inicio is not None:
+            raw_params["ano_inicio"] = request.ano_inicio
+        if request.ano_fim is not None:
+            raw_params["ano_fim"] = request.ano_fim
+        if request.mes is not None:
+            raw_params["mes"] = request.mes
+        if id_municipio is not None:
+            raw_params["id_municipio"] = id_municipio
+        return {k: v for k, v in raw_params.items() if k in signature.parameters}
+
+    @classmethod
+    def _aggregate_area_rows(
+        cls,
+        codigo: str,
+        rows: List[Dict[str, Any]],
+        id_instalacao: Optional[str],
+        include_breakdown: bool = False,
+        breakdown_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Agrega resultados por município de influência por ano ou em linha única."""
+        if not rows:
+            return []
+
+        value_field = AREA_AGGREGATION_FIELD_BY_CODE.get(codigo)
+        if not value_field:
+            return []
+
+        strategy = "sum" if codigo in AREA_AGGREGATION_SUM_CODES else "weighted_avg"
+        has_year = any(isinstance(row, dict) and row.get("ano") is not None for row in rows)
+        grouped: Dict[Any, List[Dict[str, Any]]] = {}
+
+        for row in rows:
+            key = row.get("ano") if has_year else "single"
+            grouped.setdefault(key, []).append(row)
+
+        aggregated_rows: List[Dict[str, Any]] = []
+        for group_key, group_rows in sorted(grouped.items(), key=lambda x: x[0], reverse=True):
+            value_weighted_sum = 0.0
+            weight_sum = 0.0
+            values_sum = 0.0
+            n_values = 0
+
+            for row in group_rows:
+                value = cls._to_float(row.get(value_field))
+                if value is None:
+                    continue
+                weight = cls._to_float(row.get("_peso_area")) or 1.0
+                values_sum += value
+                value_weighted_sum += value * weight
+                weight_sum += weight
+                n_values += 1
+
+            if n_values == 0:
+                continue
+
+            if strategy == "sum":
+                agg_value = values_sum
+            else:
+                agg_value = value_weighted_sum / weight_sum if weight_sum > 0 else None
+
+            if agg_value is None:
+                continue
+
+            row_out: Dict[str, Any] = {
+                "id_instalacao": id_instalacao,
+                value_field: round(agg_value, 4),
+                "municipios_agregados": len({str(r.get("_id_municipio_area")) for r in group_rows}),
+            }
+            if has_year and group_key != "single":
+                row_out["ano"] = group_key
+
+            if codigo in {"IND-5.14", "IND-5.15", "IND-5.16", "IND-5.17"}:
+                n_obs = 0
+                for row in group_rows:
+                    n_current = cls._to_float(row.get("n_observacoes"))
+                    if n_current is not None:
+                        n_obs += int(n_current)
+                row_out["n_observacoes"] = n_obs
+
+            if include_breakdown and breakdown_map:
+                breakdown = []
+                for id_municipio, municipio_rows in breakdown_map.items():
+                    selected = None
+                    for candidate in municipio_rows:
+                        if not isinstance(candidate, dict):
+                            continue
+                        if has_year and group_key != "single" and candidate.get("ano") != group_key:
+                            continue
+                        if cls._to_float(candidate.get(value_field)) is not None:
+                            selected = candidate
+                            break
+                    if selected is None:
+                        continue
+                    breakdown.append(
+                        {
+                            "id_municipio": id_municipio,
+                            "ano": selected.get("ano"),
+                            value_field: selected.get(value_field),
+                            "peso": next(
+                                (
+                                    row.get("_peso_area")
+                                    for row in group_rows
+                                    if str(row.get("_id_municipio_area")) == id_municipio
+                                ),
+                                1.0,
+                            ),
+                        }
+                    )
+                row_out["breakdown"] = breakdown[:10]
+
+            aggregated_rows.append(row_out)
+
+        return aggregated_rows[:20]
+
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        """Converte valores do BigQuery para float com segurança."""
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, Decimal):
+            return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _append_warning(
+        warnings: List[DataQualityWarning],
+        codigo: str,
+        tipo: str,
+        mensagem: str,
+        campo: Optional[str] = None,
+        row: Optional[dict] = None,
+        valor: Optional[float] = None,
+    ) -> None:
+        """Adiciona alerta padronizado de qualidade."""
+        row_id = row.get("id_municipio") if isinstance(row, dict) else None
+        row_ano = row.get("ano") if isinstance(row, dict) else None
+        warnings.append(
+            DataQualityWarning(
+                tipo=tipo,
+                codigo_indicador=codigo,
+                campo=campo,
+                id_municipio=str(row_id) if row_id is not None else None,
+                ano=int(row_ano) if row_ano is not None else None,
+                valor=valor,
+                mensagem=mensagem,
+            )
+        )
+
+    async def _append_no_data_warnings_module3(
+        self,
+        codigo: str,
+        request: GenericIndicatorRequest,
+        id_municipio: Optional[str],
+    ) -> List[DataQualityWarning]:
+        """Adiciona warning de cobertura temporal quando não há resultados."""
+        if not id_municipio or not request.ano:
+            return []
+
+        coverage_query = query_rais_year_coverage_for_portuarios(
+            id_municipio=id_municipio,
+            ano=request.ano,
+        )
+
+        try:
+            coverage_rows = await self.bq_client.execute_query(coverage_query)
+        except Exception:
+            return []
+
+        if not coverage_rows:
+            warnings: List[DataQualityWarning] = []
+            self._append_warning(
+                warnings,
+                codigo,
+                "sem_cobertura_rais",
+                f"Sem dados de empregos portuários para o município {id_municipio}.",
+                campo="id_municipio",
+                row={"id_municipio": id_municipio},
+            )
+            return warnings
+
+        row = coverage_rows[0]
+        ano_min = row.get("ano_min")
+        ano_max = row.get("ano_max")
+        anos_disponiveis = row.get("anos_disponiveis") or 0
+        linhas_ano = row.get("linhas_ano_solicitado") or 0
+        linhas_ano_anterior = row.get("linhas_ano_anterior") or 0
+
+        ano_min_n = self._to_float(ano_min)
+        ano_max_n = self._to_float(ano_max)
+        anos_disponiveis_n = self._to_float(anos_disponiveis)
+        linhas_ano_n = self._to_float(linhas_ano)
+        linhas_ano_anterior_n = self._to_float(linhas_ano_anterior)
+        try:
+            ano_min_i = int(ano_min_n) if ano_min_n is not None else None
+            ano_max_i = int(ano_max_n) if ano_max_n is not None else None
+            linhas_ano_i = int(linhas_ano_n) if linhas_ano_n is not None else 0
+            linhas_ano_anterior_i = int(linhas_ano_anterior_n) if linhas_ano_anterior_n is not None else 0
+            anos_disponiveis_i = int(anos_disponiveis_n) if anos_disponiveis_n is not None else 0
+        except (TypeError, ValueError):
+            return []
+
+        warnings: List[DataQualityWarning] = []
+
+        if linhas_ano_i == 0:
+            if anos_disponiveis_i == 0:
+                self._append_warning(
+                    warnings,
+                    codigo,
+                    "sem_dados_municipio",
+                    f"Sem dados de empregos portuários para o município {id_municipio} no intervalo consultado.",
+                    campo="id_municipio",
+                    row={"id_municipio": id_municipio},
+                )
+                return warnings
+
+            if ano_min_i is not None and ano_max_i is not None:
+                if request.ano < ano_min_i:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "ano_antes_cobertura",
+                        (
+                            f"Sem dados para {request.ano}. Cobertura disponível: "
+                            f"de {ano_min_i} a {ano_max_i} ({anos_disponiveis_i} anos)."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+                elif request.ano > ano_max_i:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "ano_apos_cobertura",
+                        (
+                            f"Sem dados para {request.ano}. Último ano com dados: "
+                            f"{ano_max_i}."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+                else:
+                    self._append_warning(
+                        warnings,
+                        codigo,
+                        "sem_dados_ano",
+                        (
+                            f"Sem dados para o ano {request.ano} neste município. "
+                            f"Cobertura disponível: {ano_min_i}–{ano_max_i}."
+                        ),
+                        campo="ano",
+                        row={"id_municipio": id_municipio, "ano": request.ano},
+                    )
+        elif codigo == "IND-3.11" and linhas_ano_anterior_i == 0:
+            self._append_warning(
+                warnings,
+                codigo,
+                "historico_insuficiente",
+                (
+                    f"Para {codigo}, não há dados do ano anterior ({request.ano - 1}) "
+                    "para calcular variação anual."
+                ),
+                campo="ano",
+                row={"id_municipio": id_municipio, "ano": request.ano},
+            )
+
+        return warnings
+
+    @classmethod
+    def _validate_indicator_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Executa verificações mínimas de qualidade por módulo."""
+        if codigo.startswith("IND-5."):
+            return cls._validate_module5_quality(codigo, results)
+        if codigo.startswith("IND-6."):
+            return cls._validate_module6_quality(codigo, results)
+        return []
+
+    @classmethod
+    def _validate_module5_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Executa verificações mínimas de qualidade para o Módulo 5."""
+        if not results:
+            return []
+
+        warnings: List[DataQualityWarning] = []
+        percentage_fields_by_code = {
+            "IND-5.04": {"pib_servicos_percentual"},
+            "IND-5.05": {"pib_industria_percentual"},
+            "IND-5.08": {"concentracao_emprego_pct"},
+            "IND-5.09": {"concentracao_salarial_pct"},
+            "IND-5.18": {"participacao_pib_regional_pct"},
+            "IND-5.21": {"indice_concentracao_portuaria"},
+        }
+        non_negative_fields_by_code = {
+            "IND-5.01": {"pib_municipal", "pib"},
+            "IND-5.02": {"pib_per_capita"},
+            "IND-5.03": {"populacao"},
+            "IND-5.06": {"intensidade_portuaria"},
+            "IND-5.07": {"intensidade_comercial"},
+            "IND-5.20": {"empregos_portuarios", "empregos_totais", "razao_emprego_total_portuario"},
+            "IND-5.21": {"indice_concentracao_portuaria"},
+        }
+
+        correlation_fields = {"IND-5.14", "IND-5.15", "IND-5.16"}
+        correlation_aliases = (
+            "correlacao",
+            "correlacao_tonelagem_pib",
+            "correlacao_tonelagem_empregos",
+            "correlacao_comercio_pib",
+        )
+
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+
+            for field in percentage_fields_by_code.get(codigo, set()):
+                value = cls._to_float(row.get(field))
+                if value is None:
+                    continue
+                if not (0.0 <= value <= 100.0):
+                    cls._append_warning(
+                        warnings,
+                        codigo,
+                        "percentual_fora_intervalo",
+                        f"{field} fora do intervalo 0-100",
+                        campo=field,
+                        valor=value,
+                        row=row,
+                    )
+
+            for field in non_negative_fields_by_code.get(codigo, set()):
+                value = cls._to_float(row.get(field))
+                if value is None:
+                    continue
+                if value < 0:
+                    cls._append_warning(
+                        warnings,
+                        codigo,
+                        "valor_negativo",
+                        f"{field} com valor negativo",
+                        campo=field,
+                        valor=value,
+                        row=row,
+                    )
+
+            if codigo in correlation_fields:
+                for field in correlation_aliases:
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value) or value < -1.0 or value > 1.0:
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "correlacao_fora_intervalo",
+                            f"{field} fora do intervalo [-1,1]",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+            if codigo == "IND-5.17":
+                for field in ("elasticidade", "elasticidade_tonelagem_pib"):
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value):
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "elasticidade_invalida",
+                            f"{field} inválida (NaN/Inf)",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+        return warnings
+
+    @classmethod
+    def _validate_module6_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Executa verificações mínimas de qualidade para o Módulo 6."""
+        if not results:
+            return []
+
+        warnings: List[DataQualityWarning] = []
+        non_negative_fields_by_code = {
+            "IND-6.01": {"arrecadacao_icms"},
+            "IND-6.02": {"arrecadacao_iss"},
+            "IND-6.03": {"receita_total"},
+            "IND-6.04": {"receita_per_capita"},
+            "IND-6.05": {"crescimento_receita_pct"},
+            "IND-6.06": {"icms_por_tonelada"},
+            "IND-6.07": {"receita_fiscal_total"},
+            "IND-6.08": {"receita_fiscal_per_capita"},
+            "IND-6.09": {"receita_fiscal_por_tonelada"},
+        }
+
+        percentage_fields_by_code = {
+            "IND-6.05": {"crescimento_receita_pct"},
+            "IND-6.10": {"correlacao", "correlacao_tonelagem_receita_fiscal"},
+        }
+
+        correlation_fields = {"IND-6.10"}
+        correlation_aliases = ("correlacao", "correlacao_tonelagem_receita_fiscal")
+
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+
+            if codigo in {"IND-6.05", "IND-6.06", "IND-6.09", "IND-6.10", "IND-6.11"}:
+                for field in percentage_fields_by_code.get(codigo, set()):
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if not (-1000 <= value <= 1000):
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "percentual_fora_intervalo_esperado",
+                            f"{field} fora do intervalo esperado de crescimento",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+            for field in non_negative_fields_by_code.get(codigo, set()):
+                value = cls._to_float(row.get(field))
+                if value is None:
+                    continue
+                if value < 0 and codigo in {"IND-6.01", "IND-6.02", "IND-6.03", "IND-6.04", "IND-6.07", "IND-6.08", "IND-6.09"}:
+                    cls._append_warning(
+                        warnings,
+                        codigo,
+                        "valor_negativo",
+                        f"{field} com valor negativo",
+                        campo=field,
+                        valor=value,
+                        row=row,
+                    )
+
+            if codigo in correlation_fields:
+                for field in correlation_aliases:
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value) or value < -1.0 or value > 1.0:
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "correlacao_fora_intervalo",
+                            f"{field} fora do intervalo [-1,1]",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+            if codigo == "IND-6.11":
+                for field in ("elasticidade", "elasticidade_tonelagem_receita_fiscal"):
+                    value = cls._to_float(row.get(field))
+                    if value is None:
+                        continue
+                    if math.isinf(value) or math.isnan(value):
+                        cls._append_warning(
+                            warnings,
+                            codigo,
+                            "elasticidade_invalida",
+                            f"{field} inválida (NaN/Inf)",
+                            campo=field,
+                            valor=value,
+                            row=row,
+                        )
+
+        return warnings
 
     def get_all_metadata(self) -> AllIndicatorsResponse:
         """Retorna metadados de todos os indicadores."""
-        indicadores = [
-            IndicatorMetadata(**v)
-            for v in INDICATORS_METADATA.values()
-        ]
+        technical_debt_indicators = set()
+        indicadores = []
 
-        unctad_count = sum(1 for v in INDICATORS_METADATA.values() if v["unctad"])
+        for codigo, meta in INDICATORS_METADATA.items():
+            meta_with_status = dict(meta)
+            if codigo in ALL_QUERIES:
+                meta_with_status["implementation_status"] = "implemented"
+            else:
+                meta_with_status["implementation_status"] = "technical_debt"
+                technical_debt_indicators.add(codigo)
+
+            indicadores.append(IndicatorMetadata(**meta_with_status))
+
+        orphans = set(ALL_QUERIES) - set(INDICATORS_METADATA)
+        technical_debt_indicators.update(orphans)
+
+        unctad_count = sum(
+            1 for item in indicadores
+            if item.implementation_status == "implemented" and item.unctad
+        )
 
         return AllIndicatorsResponse(
             total_indicadores=len(indicadores),
             unctad_compliant=unctad_count,
+            technical_debt_indicators=sorted(technical_debt_indicators),
             indicadores=indicadores,
         )
 
@@ -1024,7 +2140,12 @@ class GenericIndicatorService:
         codigo = codigo.upper()
         if codigo not in INDICATORS_METADATA:
             raise ValueError(f"Indicador {codigo} não encontrado")
-        return IndicatorMetadata(**INDICATORS_METADATA[codigo])
+
+        meta = dict(INDICATORS_METADATA[codigo])
+        meta["implementation_status"] = (
+            "implemented" if codigo in ALL_QUERIES else "technical_debt"
+        )
+        return IndicatorMetadata(**meta)
 
 
 # Singleton do serviço

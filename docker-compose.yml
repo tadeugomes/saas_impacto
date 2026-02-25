@@ -37,6 +37,80 @@ services:
     networks:
       - saas_network
 
+  # API FastAPI
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: api
+    container_name: saas_impacto_api
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saas_network
+    restart: unless-stopped
+
+  # Celery Worker — Análises de Impacto Econômico
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: worker
+    container_name: saas_impacto_worker
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saas_network
+    restart: unless-stopped
+    # Limite de recursos: análises causais são CPU-intensivas
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # Celery Beat — tarefas recorrentes (purge audit logs e jobs agendados)
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: worker
+    container_name: saas_impacto_celery_beat
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      - redis
+    networks:
+      - saas_network
+    command: >
+      celery -A app.tasks.celery_app.celery_app beat
+      --loglevel=info
+    restart: unless-stopped
+
   # PgAdmin - Interface gráfica para PostgreSQL (opcional)
   pgadmin:
     image: dpage/pgadmin4:latest

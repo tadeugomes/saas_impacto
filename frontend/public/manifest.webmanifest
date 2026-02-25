@@ -1,0 +1,19 @@
+{
+  "name": "SaaS Impacto Portuário",
+  "short_name": "Impacto Portuário",
+  "description": "Portal de análise econômica portuária",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0ea5e9",
+  "lang": "pt-BR",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

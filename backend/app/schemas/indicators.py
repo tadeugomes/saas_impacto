@@ -6,7 +6,7 @@ dos indicadores de operações de navios segundo a especificação técnica.
 """
 
 from datetime import date, datetime
-from typing import Optional, List
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -311,6 +311,95 @@ class GenericIndicatorRequest(BaseModel):
     ano_inicio: Optional[int] = Field(None, description="Ano inicial do período", ge=2000, le=2100)
     ano_fim: Optional[int] = Field(None, description="Ano final do período", ge=2000, le=2100)
     mes: Optional[int] = Field(None, description="Mês de referência (1-12)", ge=1, le=12)
+    include_breakdown: bool = Field(
+        default=False,
+        description="Inclui detalhamento por município quando aplicável (ex.: município de influência).",
+    )
+
+
+class TenantModulePermissionItem(BaseModel):
+    """Linha de permissão por módulo/ação para um role/tenant."""
+
+    module_number: int = Field(..., ge=1, le=7)
+    action: Literal["read", "execute", "write"]
+    allowed: bool = True
+
+
+class TenantModulePermissionsRequest(BaseModel):
+    """Payload para definir permissões de um role em um tenant."""
+
+    permissions: list[TenantModulePermissionItem] = Field(
+        default_factory=list,
+        description="Lista de combinações módulo/ação",
+    )
+
+
+class TenantModulePermissionsResponse(BaseModel):
+    """Permissões retornadas por role (tenant)."""
+
+    role: str = Field(..., description="Role alvo")
+    permissions: list[TenantModulePermissionItem] = Field(
+        default_factory=list,
+        description="Permissões permitidas no escopo do role",
+    )
+
+
+class MunicipioLookupItem(BaseModel):
+    """Item com identificador e nome de município."""
+
+    id_municipio: str = Field(..., description="ID IBGE do município")
+    nome_municipio: str = Field(..., description="Nome do município")
+
+
+class MunicipioLookupResponse(BaseModel):
+    """Resposta para consulta de nomes de municípios por código IBGE."""
+
+    municipios: list[MunicipioLookupItem] = Field(
+        default_factory=list,
+        description="Pares ID e nome encontrados",
+    )
+
+
+class AreaInfluenceMunicipio(BaseModel):
+    """Municipio pertencente ao município de influência."""
+
+    id_municipio: str = Field(..., description="Codigo IBGE do municipio")
+    peso: float = Field(1.0, description="Peso de agregacao", gt=0)
+
+
+class AreaInfluenceUpsertRequest(BaseModel):
+    """Payload para criar/atualizar município de influência."""
+
+    municipios: List[AreaInfluenceMunicipio] = Field(..., min_length=1)
+
+
+class AllowlistPolicyUpdateRequest(BaseModel):
+    """Payload de atualizacao de allowlist/quota do tenant."""
+
+    allowed_municipios: List[str] = Field(default_factory=list)
+    max_bytes_per_query: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Limite de bytes por consulta para modulo 5",
+    )
+
+
+class DataQualityWarning(BaseModel):
+    """Advertência de qualidade de dado retornada junto com o resultado."""
+
+    tipo: str = Field(..., description="Tipo da verificação de qualidade")
+    codigo_indicador: str = Field(..., description="Indicador com problema potencial")
+    campo: Optional[str] = Field(
+        None,
+        description="Campo numérico validado",
+    )
+    id_municipio: Optional[str] = Field(
+        None,
+        description="Município relacionado",
+    )
+    ano: Optional[int] = Field(None, description="Ano relacionado à observação")
+    valor: Optional[float] = Field(None, description="Valor avaliado")
+    mensagem: str = Field(..., description="Descrição da inconsistência")
 
 
 class GenericIndicatorResponse(BaseModel):
@@ -322,6 +411,14 @@ class GenericIndicatorResponse(BaseModel):
     unctad: bool = Field(..., description="Segue padrão UNCTAD")
     modulo: int = Field(..., description="Número do módulo (1-7)")
     data: List[dict] = Field(..., description="Dados do indicador")
+    warnings: List[DataQualityWarning] = Field(
+        default_factory=list,
+        description="Advertências de qualidade de dados"
+    )
+    cache_hit: bool = Field(
+        default=False,
+        description="Indica se o resultado veio do cache de consulta",
+    )
     data_referencia: datetime = Field(
         default_factory=datetime.utcnow,
         description="Data/hora da geração dos dados",
@@ -336,6 +433,10 @@ class IndicatorMetadata(BaseModel):
     modulo: int = Field(..., description="Número do módulo")
     unidade: str = Field(..., description="Unidade de medida")
     unctad: bool = Field(..., description="Segue padrão UNCTAD")
+    implementation_status: Literal["implemented", "technical_debt"] = Field(
+        ...,
+        description="Status de implementação do indicador",
+    )
     descricao: Optional[str] = Field(None, description="Descrição do indicador")
     granularidade: str = Field(..., description="Granularidade dos dados")
     fonte_dados: str = Field(..., description="Fonte de dados")
@@ -346,5 +447,8 @@ class AllIndicatorsResponse(BaseModel):
 
     total_indicadores: int = Field(..., description="Total de indicadores disponíveis")
     unctad_compliant: int = Field(..., description="Indicadores UNCTAD compliant")
+    technical_debt_indicators: List[str] = Field(
+        default_factory=list,
+        description="Indicadores em dívida técnica (sem implementação completa)",
+    )
     indicadores: List[IndicatorMetadata] = Field(..., description="Lista de indicadores")
-

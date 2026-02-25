@@ -7,6 +7,7 @@ import { BarChart } from '../../../components/charts/BarChart';
 import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
+import type { IndicatorResponse } from '../../../types/api';
 
 const INDICATORS_INFO = [
   { code: 'IND-7.01', name: 'Índice de Eficiência Portuária', unit: '0-100', desc: 'Índice composto de eficiência', valueField: 'indice_eficiencia' },
@@ -15,13 +16,30 @@ const INDICATORS_INFO = [
   { code: 'IND-7.04', name: 'Índice de Concentração', unit: '0-100', desc: 'Índice de concentração', valueField: 'indice_concentracao' },
 ];
 
-function getValueFromData(item: any, valueField: string): number {
-  return item[valueField] || 0;
+type IndicatorRow = Record<string, unknown>;
+type ModuleIndicatorResponse = IndicatorResponse<IndicatorRow>;
+type IndicatorMap = Record<string, ModuleIndicatorResponse>;
+
+const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorResponse => ({
+  codigo_indicador: codigoIndicador,
+  nome: codigoIndicador,
+  unidade: '',
+  unctad: false,
+  data: [],
+});
+
+function getValueFromData(item: IndicatorRow, valueField: string): number {
+  const value = item[valueField];
+  return typeof value === 'number' ? value : 0;
+}
+
+function getLabelFromData(item: IndicatorRow): string {
+  return typeof item.id_instalacao === 'string' ? item.id_instalacao : 'N/A';
 }
 
 export function Module7View() {
   const { selectedYear, selectedInstallation } = useFilterStore();
-  const [indicators, setIndicators] = useState<Record<string, any>>({});
+  const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,22 +49,24 @@ export function Module7View() {
       setError(null);
       try {
         const promises = INDICATORS_INFO.map((ind) =>
-          indicatorsService.queryIndicator({
+          indicatorsService.queryIndicator<IndicatorRow>({
             codigo_indicador: ind.code,
             params: {
               ano: selectedYear,
               id_instalacao: selectedInstallation || undefined
             },
-          }).catch(() => ({ data: [] }))
+          }).catch(() => createEmptyIndicatorResponse(ind.code))
         );
         const results = await Promise.all(promises);
-        const mapped: Record<string, any> = {};
+        const mapped: IndicatorMap = {};
         results.forEach((result, i) => {
           mapped[INDICATORS_INFO[i].code] = result;
         });
         setIndicators(mapped);
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Erro ao carregar indicadores');
+      } catch (err: unknown) {
+        const errorResponse = err as { response?: { data?: { detail?: unknown } } };
+        const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao carregar indicadores';
+        setError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao carregar indicadores');
       } finally {
         setIsLoading(false);
       }
@@ -95,10 +115,14 @@ export function Module7View() {
             >
               {hasData ? (
                 <BarChart
-                  labels={indData.data.slice(0, 10).map((d: any) => d.id_instalacao || 'N/A')}
+                labels={indData.data
+                  .slice(0, 10)
+                  .map((d: IndicatorRow) => getLabelFromData(d))}
                   datasets={[{
                     label: ind.unit,
-                    data: indData.data.slice(0, 10).map((d: any) => getValueFromData(d, ind.valueField)),
+                    data: indData.data
+                      .slice(0, 10)
+                      .map((d: IndicatorRow) => getValueFromData(d, ind.valueField)),
                   }]}
                   yAxisLabel={ind.unit}
                   horizontal

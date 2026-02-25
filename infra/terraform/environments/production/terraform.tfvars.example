@@ -1,0 +1,14 @@
+project_id = "seu-projeto-gcp"
+region     = "southamerica-east1"
+
+api_image    = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/api:<tag>"
+worker_image = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/worker:<tag>"
+
+database_password = "troque-por-uma-senha-forte"
+
+secrets = {
+  POSTGRES_PASSWORD = "senha-forte"
+  JWT_SECRET_KEY    = "seu-jwt-secret"
+  JWT_SECRET        = "seu-jwt-secret"
+  GCP_SA_KEY       = "json-da-service-account"
+}

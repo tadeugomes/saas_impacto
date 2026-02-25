@@ -8,6 +8,7 @@ NOTA: IND-3.07 (Produtividade) usa view oficial ANTAQ v_carga_metodologia_oficia
 """
 
 from typing import Optional
+from app.db.bigquery.sector_codes import CNAES_PORTUARIOS
 
 
 # ============================================================================
@@ -22,15 +23,6 @@ BD_DADOS_DIRETORIO_MUNICIPIO = "basedosdados.br_bd_diretorios_brasil.municipio"
 # Dataset ANTAQ no BigQuery (para IND-3.07)
 ANTAQ_DATASET = "antaqdados.br_antaq_estatistico_aquaviario"
 VIEW_CARGA_METODOLOGIA_OFICIAL = f"{ANTAQ_DATASET}.v_carga_metodologia_oficial"
-
-# CNAEs do Setor Portuário
-CNAES_PORTUARIOS = [
-    '5231101', '5231102', '5231103', '5011401', '5011402',
-    '5012201', '5012202', '5021101', '5021102', '5022001',
-    '5022002', '5030101', '5030102', '5030103', '5091201',
-    '5091202', '5099801', '5099899', '5232000', '5239701',
-    '5239799', '5250801', '5250802', '5250804'
-]
 
 CNAES_CLAUSE = f"({', '.join(repr(c) for c in CNAES_PORTUARIOS)})"
 
@@ -727,6 +719,47 @@ def query_participacao_emprego_local(
     """
 
 
+def query_rais_year_coverage_for_portuarios(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+) -> str:
+    """
+    Retorna cobertura temporal da RAIS para o indicador de empregos portuários.
+
+    Útil para diagnosticar ausência de dados em consultas que exigem ano/ano anterior.
+    """
+    where_clauses = [
+        _where_cnae_portuario("r"),
+        _where_vinculo_ativo("r"),
+    ]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano is not None:
+        where_clauses.append(f"CAST(r.ano AS INT64) BETWEEN {ano - 2} AND {ano}")
+
+    where_sql = "\n        AND ".join(where_clauses)
+
+    selected_year_expr = f"{ano} as ano_solicitado" if ano is not None else "NULL as ano_solicitado"
+    previous_year_expr = (
+        f"{ano - 1} as ano_anterior_solicitado" if ano is not None else "NULL as ano_anterior_solicitado"
+    )
+
+    return f"""
+    SELECT
+        MIN(CAST(r.ano AS INT64)) AS ano_min,
+        MAX(CAST(r.ano AS INT64)) AS ano_max,
+        COUNT(DISTINCT CAST(r.ano AS INT64)) AS anos_disponiveis,
+        SUM(IF(CAST(r.ano AS INT64) = {ano if ano is not None else "NULL"}, 1, 0)) AS linhas_ano_solicitado,
+        SUM(IF(CAST(r.ano AS INT64) = {ano - 1 if ano is not None else "NULL"}, 1, 0)) AS linhas_ano_anterior,
+        {selected_year_expr},
+        {previous_year_expr}
+    FROM
+        `{BD_DADOS_RAIS}` r
+    WHERE
+        {where_sql}
+    """
+
+
 # ============================================================================
 # Dicionário de Queries
 # ============================================================================
@@ -752,3 +785,54 @@ def get_query_module3(indicator_code: str) -> callable:
     if indicator_code not in QUERIES_MODULE_3:
         raise ValueError(f"Indicador {indicator_code} não encontrado no Módulo 3")
     return QUERIES_MODULE_3[indicator_code]
+
+
+# ============================================================================
+# Queries Auxiliares (fora do dicionário de indicadores)
+# ============================================================================
+
+def query_total_municipal_employment(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    Emprego total municipal — TODOS os setores (sem filtro CNAE).
+
+    Usada pelo serviço de multiplicadores para calcular empregos
+    indiretos via estimativa causal (outcome = emprego_total).
+
+    Unidade: Contagem
+    Granularidade: Município/Ano
+    """
+    where_clauses = [_where_vinculo_ativo("r")]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_clauses.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_sql = "\n        AND ".join(where_clauses)
+
+    return f"""
+    SELECT
+        {_as_string("r.id_municipio")} AS id_municipio,
+        dir.nome AS nome_municipio,
+        r.ano,
+        COUNT(*) AS empregos_totais
+    FROM
+        `{BD_DADOS_RAIS}` r
+    LEFT JOIN
+        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON {_as_string("r.id_municipio")} = {_as_string("dir.id_municipio")}
+    WHERE
+        {where_sql}
+    GROUP BY
+        id_municipio,
+        dir.nome,
+        r.ano
+    ORDER BY
+        r.ano DESC,
+        dir.nome
+    """

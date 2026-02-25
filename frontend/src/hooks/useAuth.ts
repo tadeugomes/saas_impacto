@@ -2,28 +2,34 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../api/auth';
-import type { LoginRequest, RegisterRequest } from '../types/auth';
+import type { LoginRequest, RegisterRequest, OnboardingCompanyRequest } from '../types/auth';
 
 export function useAuth() {
+  const bypassAuth = import.meta.env.VITE_DISABLE_AUTH === 'true';
   const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, setAuth, clearAuth, setLoading } = useAuthStore();
 
   const login = useCallback(async (credentials: LoginRequest) => {
+    setLoading(true);
     try {
-      setLoading(true);
       const data = await authService.login(credentials);
-      // Buscar dados do usuário
       const userData = await authService.getCurrentUser();
       setAuth(userData, data.access_token);
       navigate('/');
-    } catch (error) {
-      throw error;
     } finally {
       setLoading(false);
     }
   }, [navigate, setAuth, setLoading]);
 
   const logout = useCallback(async () => {
+    if (bypassAuth) {
+      clearAuth();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      navigate('/');
+      return;
+    }
+
     try {
       await authService.logout();
     } catch (error) {
@@ -48,6 +54,24 @@ export function useAuth() {
     }
   }, [login, setLoading]);
 
+  const registerCompany = useCallback(
+    async (data: OnboardingCompanyRequest) => {
+      setLoading(true);
+      try {
+        const registerResponse = await authService.registerCompany(data);
+        localStorage.setItem('access_token', registerResponse.access_token);
+        localStorage.setItem('refresh_token', registerResponse.refresh_token);
+
+        const user = await authService.getCurrentUser();
+        setAuth(user, registerResponse.access_token);
+        navigate('/');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [navigate, setAuth, setLoading],
+  );
+
   return {
     user,
     isAuthenticated,
@@ -55,5 +79,6 @@ export function useAuth() {
     login,
     logout,
     register,
+    registerCompany,
   };
 }

@@ -108,7 +108,7 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
     },
     "IND-6": {
         "name": "Módulo 6 - Finanças Públicas",
-        "description": "6 indicadores de finanças públicas seguindo padrão UNCTAD",
+        "description": "11 indicadores de finanças públicas",
         "indicators": [
             {"code": "IND-6.01", "name": "Arrecadação de ICMS", "unit": "R$", "description": "Total arrecadado de ICMS no município"},
             {"code": "IND-6.02", "name": "Arrecadação de ISS", "unit": "R$", "description": "Total arrecadado de ISS no município"},
@@ -116,6 +116,11 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-6.04", "name": "Receita per Capita", "unit": "R$/hab", "description": "Receita municipal por habitante"},
             {"code": "IND-6.05", "name": "Crescimento da Receita", "unit": "%", "description": "Variação anual da receita"},
             {"code": "IND-6.06", "name": "ICMS por Tonelada", "unit": "R$/ton", "description": "ICMS arrecadado por tonelada movimentada"},
+            {"code": "IND-6.07", "name": "Receita Fiscal Total", "unit": "R$", "description": "Soma de ICMS + ISS por município"},
+            {"code": "IND-6.08", "name": "Receita Fiscal per Capita", "unit": "R$/hab", "description": "Receita fiscal por habitante"},
+            {"code": "IND-6.09", "name": "Receita Fiscal por Tonelada", "unit": "R$/ton", "description": "Receita fiscal (ICMS + ISS) por tonelada movimentada"},
+            {"code": "IND-6.10", "name": "Correlação Tonelagem e Receita Fiscal", "unit": "coef", "description": "Associação estatística entre tonelagem movimentada e receita fiscal",},
+            {"code": "IND-6.11", "name": "Elasticidade Tonelagem/Receita Fiscal", "unit": "Elast", "description": "Sensibilidade da tonelagem à variação da receita fiscal (modelo log-log), associação estatística sem causalidade."},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
     },
@@ -154,6 +159,25 @@ def get_indicator_info(module_code: str, indicator_code: str) -> Optional[Dict]:
             if ind["code"] == indicator_code:
                 return ind
     return None
+
+
+def get_indicators_by_module(module_code: str) -> list[str]:
+    """Retorna os códigos dos indicadores vinculados ao módulo."""
+    normalized = module_code.upper()
+    if normalized.startswith("IND-"):
+        normalized = normalized.replace("IND-", "IND-", 1)
+        normalized = normalized.replace("IND-", "", 1)
+
+    if "." in normalized:
+        normalized = normalized.split(".")[0]
+
+    normalized = normalized.lstrip("0")
+    candidate_key = f"IND-{normalized}"
+    template = get_module_template(candidate_key)
+    if not template:
+        return []
+
+    return [indicator["code"] for indicator in template.get("indicators", [])]
 
 
 def format_value(value: Any, unit: str = "") -> str:

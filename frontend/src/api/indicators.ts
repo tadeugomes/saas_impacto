@@ -5,18 +5,37 @@ import type {
   IndicatorResponse,
   ModulesOverview,
   IndicatorMetadata,
+  AllIndicatorsMetadataResponse,
+  MunicipioLookupResponse,
+  TenantPoliciesResponse,
 } from '../types/api';
 
 export const indicatorsService = {
-  async queryIndicator<T = any>(request: IndicatorRequest): Promise<IndicatorResponse<T>> {
+  async queryIndicator<T = unknown>(request: IndicatorRequest): Promise<IndicatorResponse<T>> {
     const { params, ...rest } = request;
     const body = { ...rest, ...params };
     const response = await apiClient.post<IndicatorResponse<T>>('/api/v1/indicators/query', body);
     return response.data;
   },
 
-  async getMetadata(): Promise<{ indicadores: IndicatorMetadata[] }> {
+  async getMetadata(): Promise<AllIndicatorsMetadataResponse> {
     const response = await apiClient.get('/api/v1/indicators/metadata');
+    return response.data;
+  },
+
+  async getPolicies(): Promise<TenantPoliciesResponse> {
+    const response = await apiClient.get<TenantPoliciesResponse>('/api/v1/indicators/policies');
+    return response.data;
+  },
+
+  async getMunicipioLookup(ids: string[]): Promise<MunicipioLookupResponse> {
+    if (!ids.length) {
+      return { municipios: [] };
+    }
+
+    const response = await apiClient.get<MunicipioLookupResponse>('/api/v1/indicators/municipios', {
+      params: { ids },
+    });
     return response.data;
   },
 

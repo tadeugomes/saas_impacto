@@ -4,12 +4,11 @@ import json
 
 BASE_URL = "http://localhost:8000/api/v1"
 
-# All module indicators
 MODULES = {
-    4: ['IND-4.01', 'IND-4.02', 'IND-4.03', 'IND-4.04', 'IND-4.05', 'IND-4.06', 'IND-4.07', 'IND-4.08', 'IND-4.09', 'IND-4.10'],
-    5: ['IND-5.01', 'IND-5.02', 'IND-5.03', 'IND-5.04', 'IND-5.05', 'IND-5.06', 'IND-5.07', 'IND-5.08', 'IND-5.09', 'IND-5.10'],
-    6: ['IND-6.01', 'IND-6.02', 'IND-6.03', 'IND-6.04', 'IND-6.05', 'IND-6.06', 'IND-6.07', 'IND-6.08', 'IND-6.09', 'IND-6.10'],
-    7: ['IND-7.01', 'IND-7.02', 'IND-7.03', 'IND-7.04', 'IND-7.05', 'IND-7.06', 'IND-7.07', 'IND-7.08', 'IND-7.09', 'IND-7.10'],
+    4: [f"IND-4.{i:02d}" for i in range(1, 11)],
+    5: [f"IND-5.{i:02d}" for i in range(1, 22)],
+    6: [f"IND-6.{i:02d}" for i in range(1, 12)],
+    7: [f"IND-7.{i:02d}" for i in range(1, 8)],
 }
 
 def check_all_modules():
@@ -22,6 +21,10 @@ def check_all_modules():
                     json={"codigo_indicador": ind, "ano": 2023},
                     timeout=10
                 )
+                if resp.status_code != 200:
+                    error_msg = resp.json().get("detail", resp.text)
+                    print(f"  {ind}: ERROR - HTTP {resp.status_code}: {error_msg}")
+                    continue
                 data = resp.json()
                 count = len(data.get('data', []))
                 if count > 0:
