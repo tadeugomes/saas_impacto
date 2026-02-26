@@ -27,7 +27,7 @@ Autenticação:
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -48,7 +48,6 @@ from app.schemas.impacto_economico import (
 from app.services.impacto_economico.analysis_service import (
     AnalysisNotFoundError,
     AnalysisService,
-    MethodNotAvailableError,
 )
 from app.services.audit_service import AuditService, get_audit_service
 from app.reports import ReportService
@@ -90,9 +89,8 @@ para execução assíncrona pelo worker Celery.
 - `event_study` — Event study com janela pre/post
 - `compare` — Executa DiD + IV e compara consistência dos resultados
 
-**Métodos experimentais (retornam 501 até habilitação):**
-- `scm` — Synthetic Control Method (requer `ENABLE_SCM=true` + módulo portado)
-- `augmented_scm` — Augmented SCM/Ben-Michael 2021 (requer `ENABLE_AUGMENTED_SCM=true`)
+- `scm` — Synthetic Control Method (implementação local)
+- `augmented_scm` — Augmented SCM/Ben-Michael 2021 (implementação local)
 
 **Fluxo assíncrono (PR-06):**
 A resposta retorna imediatamente com `status: queued`.
@@ -141,12 +139,6 @@ async def create_analysis(
                 "analysis_id": str(analysis.id),
                 "tenant_id": str(tenant_id),
             },
-        )
-    except MethodNotAvailableError as exc:
-        # Método experimental com feature flag desabilitada → 501 Not Implemented
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=str(exc),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -218,14 +210,14 @@ async def list_analyses(
         int, Query(ge=1, le=100, description="Itens por página")
     ] = 20,
     status_filter: Annotated[
-        str | None,
+        Optional[str],
         Query(
             alias="status",
             description="Filtrar por status: queued | running | success | failed",
         ),
     ] = None,
     method_filter: Annotated[
-        str | None,
+        Optional[str],
         Query(
             alias="method",
             description="Filtrar por método: did | iv | panel_iv | event_study | compare",

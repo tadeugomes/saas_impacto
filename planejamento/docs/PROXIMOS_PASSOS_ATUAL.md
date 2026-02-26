@@ -1,6 +1,6 @@
 # Próximos Passos — SaaS Impacto Portuário
 
-> Atualizado: 2026-02-20 | Auditoria pós-sprint de robustez/segurança
+> Atualizado: 2026-02-26 | PR-19 a PR-21 + PR-31 concluídos; Python 3.9 compat.
 
 ---
 
@@ -23,8 +23,12 @@
 | PR-13 | RBAC granular (tabela permissions, decorators, endpoints protegidos) | +35 | ✅ |
 | PR-14 | Audit log (tabela, AuditMiddleware, AuditService, admin endpoint) | +22 | ✅ |
 | PR-18 | CI/CD GitHub Actions (lint, test, build, deploy GCP Cloud Run) | — | ✅ |
+| PR-19 | Frontend: rota `/dashboard/module5` → `Module5View` | — | ✅ (já existia) |
+| PR-20 | Relatório DOCX para análise causal (`ReportService`) | 16 | ✅ |
+| PR-21 | Logging estruturado structlog + compatibilidade Python 3.9 | 3 | ✅ |
+| PR-31 | Module3View: Painel de Impacto em Emprego (frontend) | — | ✅ |
 
-**Total acumulado:** ~305 testes, 5.082 linhas de teste, 20 arquivos
+**Total acumulado:** 296 testes unitários passando, 0 falhas
 
 **Stack atual em produção:**
 - FastAPI + asyncpg + SQLAlchemy 2.0 + Alembic (5 migrations)

@@ -50,6 +50,8 @@ def _inject_google_cloud_stub() -> None:
     """Injeta stubs para google-cloud-bigquery (não instalado no CI unitário)."""
     for name in (
         "google",
+        "google.auth",
+        "google.auth.credentials",
         "google.cloud",
         "google.cloud.bigquery",
         "google.oauth2",

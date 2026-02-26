@@ -7,6 +7,7 @@ Permite listar usuários por tenant e ajustar status/roles.
 from __future__ import annotations
 
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -33,8 +34,8 @@ async def list_tenant_users(
     tenant_id: uuid.UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    ativo: bool | None = Query(None, description="Filtrar por ativos/inativos"),
-    nome: str | None = Query(None, description="Busca por nome/email"),
+    ativo: Optional[bool] = Query(None, description="Filtrar por ativos/inativos"),
+    nome: Optional[str] = Query(None, description="Busca por nome/email"),
     _: object = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserAdminListResponse:

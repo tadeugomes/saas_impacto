@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +40,7 @@ async def dashboard_usage(
     return await service.usage(db=db, tenant_id=tenant_id, rate_limit_cap=rate_limit_cap)
 
 
-def _normalize_plan(plan: str | None) -> str:
+def _normalize_plan(plan: Optional[str]) -> str:
     normalized = (plan or "basic").strip().lower()
     if normalized not in {"basic", "pro", "enterprise"}:
         return "basic"

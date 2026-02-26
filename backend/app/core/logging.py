@@ -33,7 +33,7 @@ _RESERVED_LOG_KWARGS = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class _StdlibLoggerAdapter:
     """Compatibilidade de API ``logger.*`` quando ``structlog`` não está disponível."""
 

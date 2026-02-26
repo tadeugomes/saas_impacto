@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -15,12 +15,12 @@ router = APIRouter(prefix="/employment", tags=["Employment"])
 @router.get("/multipliers/{id_municipio}")
 async def get_multipliers(
     id_municipio: str,
-    ano: int | None = Query(default=None, description="Ano de referência"),
+    ano: Optional[int] = Query(default=None, description="Ano de referência"),
     use_causal: bool = Query(
         default=False,
         description="Requer estimativa causal (ainda indisponível)",
     ),
-    delta_tonelagem_pct: float | None = Query(
+    delta_tonelagem_pct: Optional[float] = Query(
         default=None,
         description="Variação percentual da tonelagem para cenário de impacto simulado",
     ),

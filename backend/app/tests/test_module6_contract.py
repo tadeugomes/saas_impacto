@@ -1,4 +1,5 @@
 """Validações de contrato para o Módulo 6 (Finanças Públicas)."""
+from __future__ import annotations
 
 import inspect
 import math

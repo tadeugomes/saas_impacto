@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -34,7 +35,7 @@ from app.services.tenant_permission_service import get_tenant_permission_service
 router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
 
 
-def _as_tenant_payload(tenant: Tenant, users_count: int | None = None) -> TenantListItem:
+def _as_tenant_payload(tenant: Tenant, users_count: Optional[int] = None) -> TenantListItem:
     """Converte entidade Tenant em payload de resposta."""
     payload = {
         "id": str(tenant.id),

@@ -7,7 +7,7 @@ de análises causais (DiD, IV, Panel IV, Event Study, Compare).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -17,12 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 MethodLiteral = Literal[
     "did", "iv", "panel_iv", "event_study", "compare",
-    # ── Métodos experimentais (requerem feature flag) ──────────────────────
-    # "scm" e "augmented_scm" são aceitos pela API mas retornam HTTP 501
-    # enquanto os módulos synthetic_control.py / synthetic_augmented.py
-    # não estiverem portados e ENABLE_SCM / ENABLE_AUGMENTED_SCM=true.
-    "scm",
-    "augmented_scm",
+    "scm", "augmented_scm",
 ]
 ScopeLiteral = Literal["state", "municipal"]
 StatusLiteral = Literal["queued", "running", "success", "failed"]
@@ -79,7 +74,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     ]
 
-    control_ids: list[str] | None = Field(
+    control_ids: Optional[List[str]] = Field(
         default=None,
         max_length=500,
         description=(
@@ -119,7 +114,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     ]
 
-    controls: list[str] | None = Field(
+    controls: Optional[List[str]] = Field(
         default=None,
         max_length=10,
         description=(
@@ -128,7 +123,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     )
 
-    instrument: str | None = Field(
+    instrument: Optional[str] = Field(
         default=None,
         description=(
             "Instrumento exógeno para métodos IV e panel_iv. "
@@ -231,7 +226,7 @@ class EconomicImpactAnalysisResponse(BaseModel):
 
     id: UUID = Field(..., description="UUID da análise.")
     tenant_id: UUID = Field(..., description="UUID do tenant dono da análise.")
-    user_id: UUID | None = Field(None, description="UUID do usuário que disparou.")
+    user_id: Optional[UUID] = Field(None, description="UUID do usuário que disparou.")
     status: StatusLiteral = Field(..., description="queued | running | success | failed")
     method: str = Field(..., description="Método causal utilizado.")
     created_at: datetime
@@ -243,14 +238,14 @@ class EconomicImpactAnalysisResponse(BaseModel):
 class EconomicImpactResultSummary(BaseModel):
     """Resumo executivo dos resultados (populado quando status=success)."""
 
-    outcome: str | None = None
-    coef: float | None = Field(None, description="Coeficiente ATT estimado.")
-    std_err: float | None = Field(None, description="Erro padrão.")
-    p_value: float | None = Field(None, description="P-valor.")
-    ci_lower: float | None = Field(None, description="Limite inferior IC 95%.")
-    ci_upper: float | None = Field(None, description="Limite superior IC 95%.")
-    n_obs: int | None = Field(None, description="Número de observações.")
-    r2: float | None = Field(None, description="R² do modelo.")
+    outcome: Optional[str] = None
+    coef: Optional[float] = Field(None, description="Coeficiente ATT estimado.")
+    std_err: Optional[float] = Field(None, description="Erro padrão.")
+    p_value: Optional[float] = Field(None, description="P-valor.")
+    ci_lower: Optional[float] = Field(None, description="Limite inferior IC 95%.")
+    ci_upper: Optional[float] = Field(None, description="Limite superior IC 95%.")
+    n_obs: Optional[int] = Field(None, description="Número de observações.")
+    r2: Optional[float] = Field(None, description="R² do modelo.")
     warnings: list[str] = Field(default_factory=list, description="Alertas metodológicos.")
 
     model_config = {"from_attributes": True}
@@ -259,14 +254,14 @@ class EconomicImpactResultSummary(BaseModel):
 class EconomicImpactAnalysisDetailResponse(EconomicImpactAnalysisResponse):
     """Resposta detalhada: inclui parâmetros, resumo e diagnósticos."""
 
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    duration_seconds: float | None = None
-    request_params: dict[str, Any] = Field(default_factory=dict)
-    result_summary: dict[str, Any] | None = None
-    result_full: dict[str, Any] | None = None
-    artifact_path: str | None = None
-    error_message: str | None = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    request_params: dict = Field(default_factory=dict)
+    result_summary: Optional[dict] = None
+    result_full: Optional[dict] = None
+    artifact_path: Optional[str] = None
+    error_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -313,11 +308,11 @@ class MatchingCandidate(BaseModel):
     """Item retornado por matching de controles."""
 
     id_municipio: str = Field(..., description="Código IBGE do município candidato.")
-    similarity_score: float | None = Field(
+    similarity_score: Optional[float] = Field(
         default=None,
         description="Similaridade entre tratado e candidato (maior é mais próximo).",
     )
-    distance: float | None = Field(
+    distance: Optional[float] = Field(
         default=None,
         description="Distância padronizada no espaço de features.",
     )
@@ -374,7 +369,7 @@ class MatchingRequest(BaseModel):
         description="Fim da janela usada para cálculo de distâncias.",
     )
 
-    features: list[str] | None = Field(
+    features: Optional[List[str]] = Field(
         default=None,
         max_length=20,
         description=(

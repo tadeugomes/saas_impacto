@@ -61,7 +61,7 @@ class EmploymentImpactResult(BaseModel):
     """Resultado central de impacto de emprego para leitura de negócio."""
 
     municipality_id: str = Field(..., description="id_municipio IBGE (7 dígitos)")
-    municipality_name: str | None = Field(default=None, description="nome do município")
+    municipality_name: Optional[str] = Field(default=None, description="nome do município")
     ano: int = Field(..., description="ano da estimativa")
     empregos_diretos: int = Field(..., ge=0, description="empregos diretos no setor portuário")
     empregos_totais: Optional[int] = Field(

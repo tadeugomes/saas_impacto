@@ -3,6 +3,7 @@ Serviço de geração de relatórios DOCX.
 
 Orquestra a consulta de dados e geração de documentos Word.
 """
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -1026,7 +1027,7 @@ class ReportService:
         if len(points) < 2:
             return None
 
-        x, y = zip(*sorted(points), strict=False)
+        x, y = zip(*sorted(points))
 
         try:
             plt.figure(figsize=(6.0, 3.8))
