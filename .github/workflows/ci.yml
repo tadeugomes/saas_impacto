@@ -105,5 +105,8 @@ jobs:
       - name: Frontend lint
         run: npm run lint -- src
 
+      - name: Frontend tests
+        run: npm run test
+
       - name: Frontend build
         run: npm run build
