@@ -88,6 +88,8 @@ class ReportService:
                 self._add_employment_impact_section(data, extra_data or {})
             elif section_type == "causal_analysis":
                 self._add_causal_analysis_section(extra_data or {})
+            elif section_type == "causal_comparison":
+                self._add_causal_comparison_section(extra_data or {})
 
         # Tabela detalhada de indicadores
         self._add_detailed_table(module_code, data, template)
@@ -469,6 +471,60 @@ class ReportService:
         if warnings:
             self.generator.add_section("Alertas Metodológicos", level=3)
             self.generator.add_bullet_list([str(w) for w in warnings])
+
+    def _add_causal_comparison_section(self, extra_data: Dict[str, Any]):
+        """Adiciona seção de comparação side-by-side de múltiplos métodos causais (Módulo 5)."""
+        rows_data = extra_data.get("causal_comparison")
+        if not rows_data:
+            return
+
+        self.generator.add_section("Comparação de Métodos Causais", level=2)
+        self.generator.add_text(
+            "Resultados comparativos entre diferentes estimadores causais aplicados ao mesmo conjunto de dados. "
+            "A convergência entre métodos fortalece a robustez da estimativa.",
+            italic=True,
+        )
+
+        headers = ["Método", "Coeficiente", "P-value", "IC 95%", "Obs.", "Significância"]
+        table_rows: List[List[str]] = []
+
+        for item in rows_data:
+            raw_method = str(item.get("method", ""))
+            method_label = self._METHOD_LABELS.get(raw_method.lower(), raw_method.upper())
+            coef = item.get("coefficient")
+            p_val = item.get("p_value")
+            ci_lower = item.get("ci_lower")
+            ci_upper = item.get("ci_upper")
+            n_obs = item.get("n_obs")
+            significance = str(item.get("significance", ""))
+
+            coef_str = f"{float(coef):.4f}" if coef is not None else "N/D"
+            p_str = f"{float(p_val):.4f}" if p_val is not None else "N/D"
+            ic_str = (
+                f"[{float(ci_lower):.3f}, {float(ci_upper):.3f}]"
+                if ci_lower is not None and ci_upper is not None
+                else "N/D"
+            )
+            n_str = str(n_obs) if n_obs is not None else "N/D"
+            table_rows.append([method_label, coef_str, p_str, ic_str, n_str, significance])
+
+        if table_rows:
+            self.generator.add_indicator_table(headers, table_rows)
+
+        # Nota de interpretação
+        sig_count = sum(1 for r in rows_data if r.get("significance") == "significativo")
+        total = len(rows_data)
+        if total > 1:
+            if sig_count == total:
+                consensus = f"Todos os {total} métodos indicam resultado significativo — alta robustez da estimativa."
+            elif sig_count == 0:
+                consensus = f"Nenhum dos {total} métodos indica resultado significativo — evidência consistente de efeito nulo ou insuficiente."
+            else:
+                consensus = (
+                    f"{sig_count} de {total} métodos indicam resultado significativo — "
+                    f"robustez parcial; verifique especificações e período de análise."
+                )
+            self.generator.add_text(consensus, bold=True)
 
     def _add_methodological_notes(self, module_code: str, template: Optional[Dict] = None):
         """Adiciona notas metodológicas específicas do módulo ou genéricas como fallback."""

@@ -1722,7 +1722,16 @@ export function Module5View() {
             Avalie como a atividade portuária influencia a economia do município sob análise
           </p>
         </div>
-        <ExportButton moduleCode="5" analysisId={analysisToDisplay?.id} />
+        <ExportButton
+          moduleCode="5"
+          analysisId={analysisToDisplay?.id}
+          compareAnalysisIds={
+            recentAnalyses
+              .filter((a) => a.status === 'success' && a.id !== analysisToDisplay?.id)
+              .slice(0, 5)
+              .map((a) => a.id)
+          }
+        />
       </div>
 
       <FilterBar />

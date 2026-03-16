@@ -161,7 +161,7 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             "Dados de carga e comércio: ANTAQ e ComexStat/MDIC.",
             "Análise causal: métodos econométricos (DiD, IV, SCM) com controles selecionados.",
         ],
-        "extra_sections": ["causal_analysis"],
+        "extra_sections": ["causal_analysis", "causal_comparison"],
     },
     "IND-6": {
         "name": "Módulo 6 - Finanças Públicas",

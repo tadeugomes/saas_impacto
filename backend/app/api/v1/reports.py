@@ -55,6 +55,7 @@ async def export_module_report(
     ano_inicio: Optional[int] = Query(None, description="Ano inicial do período"),
     ano_fim: Optional[int] = Query(None, description="Ano final do período"),
     analysis_id: Optional[str] = Query(None, description="ID da análise causal (Módulo 5)"),
+    compare_analysis_ids: Optional[str] = Query(None, description="IDs separados por vírgula para comparação de métodos (Módulo 5)"),
     delta_tonelagem_pct: Optional[float] = Query(None, description="Variação percentual de tonelagem para cenário (Módulo 3)"),
     format: Literal["docx", "pdf", "xlsx"] = Query("docx"),
     service: GenericIndicatorService = Depends(get_generic_indicator_service),
@@ -87,9 +88,14 @@ async def export_module_report(
         if module_code == "IND-3" and id_municipio and format == "docx":
             extra_data = await _fetch_employment_impact(id_municipio, report_ano, delta_tonelagem_pct)
 
-        if module_code == "IND-5" and analysis_id and format == "docx":
-            causal = await _fetch_causal_analysis(analysis_id)
-            extra_data.update(causal)
+        if module_code == "IND-5" and format == "docx":
+            if analysis_id:
+                causal = await _fetch_causal_analysis(analysis_id)
+                extra_data.update(causal)
+            if compare_analysis_ids:
+                ids = [i.strip() for i in compare_analysis_ids.split(",") if i.strip()]
+                comparison = await _fetch_causal_comparison(ids)
+                extra_data.update(comparison)
 
         if format == "docx":
             report_service = ReportService()
@@ -193,6 +199,47 @@ async def _fetch_causal_analysis(
             }
     except Exception:
         logger.warning("Falha ao buscar análise causal para relatório M5", exc_info=True)
+    return {}
+
+
+async def _fetch_causal_comparison(
+    analysis_ids: list[str],
+) -> dict[str, Any]:
+    """Busca múltiplas análises para comparação de métodos no relatório do Módulo 5."""
+    if not analysis_ids:
+        return {}
+    try:
+        import uuid
+        from app.services.impacto_economico.analysis_service import AnalysisService
+        svc = AnalysisService()
+        rows = []
+        for aid in analysis_ids[:6]:  # limite razoável
+            try:
+                detail = await svc.get_detail(uuid.UUID(aid))
+            except Exception:
+                continue
+            if not detail or detail.status != "success":
+                continue
+            summary = detail.result_summary or {}
+            p_val = summary.get("p_value")
+            rows.append({
+                "method": detail.method,
+                "coefficient": summary.get("coef"),
+                "p_value": p_val,
+                "ci_lower": summary.get("ci_lower"),
+                "ci_upper": summary.get("ci_upper"),
+                "n_obs": summary.get("n_obs"),
+                "outcome": summary.get("outcome"),
+                "significance": (
+                    "significativo" if p_val is not None and p_val < 0.05
+                    else "não significativo"
+                ),
+                "analysis_id": aid,
+            })
+        if rows:
+            return {"causal_comparison": rows}
+    except Exception:
+        logger.warning("Falha ao buscar comparação de análises para relatório M5", exc_info=True)
     return {}
 
 

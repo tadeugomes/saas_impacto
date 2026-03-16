@@ -7,6 +7,7 @@ interface ExportButtonProps {
   moduleCode: string;
   indicatorCode?: string;
   analysisId?: string;
+  compareAnalysisIds?: string[];
   municipioId?: string;
   deltaTonelagemPct?: number;
   label?: string;
@@ -20,6 +21,7 @@ export function ExportButton({
   moduleCode,
   indicatorCode,
   analysisId,
+  compareAnalysisIds,
   municipioId,
   deltaTonelagemPct,
   label = indicatorCode ? 'Exportar Indicador' : 'Exportar Módulo',
@@ -49,6 +51,7 @@ export function ExportButton({
           id_municipio: municipioId || undefined,
           ano: selectedYear || undefined,
           analysis_id: analysisId || undefined,
+          compare_analysis_ids: compareAnalysisIds?.length ? compareAnalysisIds.join(',') : undefined,
           delta_tonelagem_pct: deltaTonelagemPct,
           format,
         });
