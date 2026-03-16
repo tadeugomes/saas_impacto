@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../../../i18n/I18nContext';
 import { AlertCircle } from 'lucide-react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
@@ -300,6 +301,7 @@ function resolveImpactEstimate(
 
 export function Module3View() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -612,7 +614,7 @@ export function Module3View() {
         if (allWarnings.length === 0) return null;
         return (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs font-semibold text-amber-800 mb-1">Observações de qualidade ({allWarnings.length})</p>
+            <p className="text-xs font-semibold text-amber-800 mb-1">{t('module3.warnings.title')} ({allWarnings.length})</p>
             <ul className="list-disc pl-4 space-y-0.5">
               {allWarnings.slice(0, 10).map((w, i) => (
                 <li key={`w-${i}`} className="text-xs text-amber-700">
@@ -834,7 +836,7 @@ export function Module3View() {
             <h2 className="text-lg font-semibold text-gray-900">Painel de Impacto em Emprego</h2>
             <p className="text-sm text-gray-500 mt-0.5">
               Fonte: RAIS + ANTAQ · {selectedYear} · {useCausalEstimate
-                ? 'Estimativa causal aproximada (beta)'
+                ? t('module3.multiplier.causalBeta')
                 : 'Multiplicadores de literatura (UNCTAD / MInfra)'}
             </p>
           </div>
@@ -867,7 +869,7 @@ export function Module3View() {
                 : 'bg-amber-100 text-amber-700 border-amber-200'
             }`}>
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              {useCausalEstimate ? 'Estimativa causal ativa' : 'Proxy literário · não causal'}
+              {useCausalEstimate ? t('module3.multiplier.causalActive') : t('module3.multiplier.literaryProxy')}
             </span>
           </div>
         </div>
@@ -937,21 +939,21 @@ export function Module3View() {
                       {resp.literature && (
                         <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
                           <p className="text-xs font-medium text-gray-500">Fonte do multiplicador</p>
-                          <div className="flex justify-between items-center text-xs text-gray-400">
-                            <span>Referência</span>
-                            <span className="font-medium text-gray-600 text-right max-w-[60%]">{resp.literature.source}</span>
+                          <div className="flex justify-between items-start text-xs text-gray-400 gap-2">
+                            <span className="flex-shrink-0">Referência</span>
+                            <span className="font-medium text-gray-600 text-right min-w-0 break-words">{resp.literature.source}</span>
                           </div>
                           <div className="flex justify-between items-center text-xs text-gray-400">
-                            <span>Coeficiente</span>
+                            <span>{t('module3.multiplier.coefficient')}</span>
                             <span className="font-medium">{formatDecimal(resp.literature.coefficient, 1)}x</span>
                           </div>
                           <div className="flex justify-between items-center text-xs text-gray-400">
-                            <span>Intervalo</span>
+                            <span>{t('module3.multiplier.range')}</span>
                             <span className="font-medium">{formatDecimal(resp.literature.range_low, 1)}x – {formatDecimal(resp.literature.range_high, 1)}x</span>
                           </div>
                           {resp.literature.confidence && (
                             <div className="flex justify-between items-center text-xs text-gray-400">
-                              <span>Confiança</span>
+                              <span>{t('module3.multiplier.confidence')}</span>
                               <span className={`font-medium ${
                                 resp.literature.confidence === 'strong' ? 'text-green-600'
                                   : resp.literature.confidence === 'moderate' ? 'text-amber-600'
@@ -963,7 +965,7 @@ export function Module3View() {
                           )}
                           {resp.literature.region && (
                             <div className="flex justify-between items-center text-xs text-gray-400">
-                              <span>Região</span>
+                              <span>{t('module3.multiplier.region')}</span>
                               <span className="font-medium">{resp.literature.region}</span>
                             </div>
                           )}
@@ -980,7 +982,7 @@ export function Module3View() {
                           </div>
                           {resp.causal.coefficient != null && (
                             <div className="flex justify-between items-center text-xs text-gray-400">
-                              <span>Coeficiente</span>
+                              <span>{t('module3.multiplier.coefficient')}</span>
                               <span className="font-medium">{formatDecimal(resp.causal.coefficient, 2)}x</span>
                             </div>
                           )}
@@ -1014,10 +1016,10 @@ export function Module3View() {
 
             {/* Simulação de choque de carga — multi-cenário */}
             <div className="bg-white rounded-lg border border-amber-100 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h3 className="font-semibold text-gray-800">Simulação de Choque de Carga</h3>
+              <div className="mb-4">
+                <h3 className="font-semibold text-gray-800 mb-2">{t('module3.shock.title')}</h3>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-500">Cenários rápidos:</span>
+                  <span className="text-xs text-gray-500">{t('module3.shock.quickScenarios')}</span>
                   {[-20, -10, 5, 10, 20, 50].map((pct) => (
                     <button
                       key={pct}
@@ -1055,7 +1057,7 @@ export function Module3View() {
                       }}
                       className="px-2 py-0.5 text-xs rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
                     >
-                      Adicionar
+                      {t('module3.shock.add')}
                     </button>
                   </div>
                 </div>
@@ -1068,7 +1070,7 @@ export function Module3View() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-gray-500 border-b border-gray-100">
-                        <th className="pb-2 pr-3 font-medium">Município</th>
+                        <th className="pb-2 pr-3 font-medium">{t('module3.shock.municipality')}</th>
                         {scenarioDeltas.map((pct) => (
                           <th key={pct} className={`pb-2 px-2 font-medium text-right whitespace-nowrap ${pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                             {pct >= 0 ? '+' : ''}{pct}%
@@ -1104,25 +1106,21 @@ export function Module3View() {
               )}
 
               <p className="text-xs text-gray-400 mt-3">
-                Δ Total estimado de empregos (diretos + indiretos + induzidos) para cada cenário de variação de tonelagem.
-                {useCausalEstimate
-                  ? ' Base: multiplicador causal ativo.'
-                  : ' Base: multiplicadores de literatura (UNCTAD/MInfra). Hipótese linear — não constitui previsão causal.'}
+                {t('module3.shock.disclaimer')}
               </p>
             </div>
 
             {/* Link para análise causal completa no Módulo 5 */}
             <div className="mt-4 pt-3 border-t border-amber-200">
               <p className="text-xs text-gray-600 mb-2">
-                Para verificar se o impacto no emprego é <strong>causal</strong> (e não apenas correlação),
-                execute uma análise econométrica no Módulo 5 com o indicador de vínculos.
+                {t('module3.causal.linkDescription')}
               </p>
               <button
                 type="button"
                 onClick={() => navigate('/dashboard/module5')}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-300 bg-blue-50 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
               >
-                Analisar impacto causal no emprego →
+                {t('module3.causal.linkButton')}
               </button>
             </div>
           </>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useI18n } from '../../../i18n/I18nContext';
 import { ChevronDown, ChevronUp, Download, Play, RefreshCw, Search } from 'lucide-react';
 
 import { useFilterStore } from '../../../store/filterStore';
@@ -1088,6 +1089,7 @@ function renderWarnings(
 }
 
 export function Module5View() {
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
 
   const [indicators, setIndicators] = useState<ModuleIndicatorStore>({});
@@ -1973,7 +1975,7 @@ export function Module5View() {
                   className="flex-shrink-0 inline-flex flex-col items-center gap-1 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Search className="h-4 w-4" />
-                  {isMatchingControls ? 'Buscando...' : 'Sugerir automaticamente'}
+                  {isMatchingControls ? t('module5.matching.searching') : t('module5.matching.suggest')}
                 </button>
               </div>
               {toSafeArray(analysisControls).length > 0 && (
@@ -2623,13 +2625,13 @@ export function Module5View() {
                   const items: Array<{ name: string; value: string; ok: boolean | null }> = [];
 
                   // N observations
-                  if (main.n_obs != null) items.push({ name: 'Observações', value: String(main.n_obs).replace(/\B(?=(\d{3})+(?!\d))/g, '.'), ok: (main.n_obs as number) >= 30 });
+                  if (main.n_obs != null) items.push({ name: t('module5.diagnostics.observations'), value: String(main.n_obs).replace(/\B(?=(\d{3})+(?!\d))/g, '.'), ok: (main.n_obs as number) >= 30 });
                   // R²
                   if (main.r2 != null) items.push({ name: 'R²', value: formatDecimal(main.r2 as number, 3), ok: (main.r2 as number) > 0.1 });
                   // First-stage F-stat (IV)
                   if (main.f_stat != null) items.push({ name: 'F-stat (1º estágio)', value: formatDecimal(main.f_stat as number, 1), ok: (main.f_stat as number) > 10 });
                   // Parallel trends p-value
-                  if (main.parallel_trends_p != null) items.push({ name: 'Parallel trends (p)', value: formatDecimal(main.parallel_trends_p as number, 3), ok: (main.parallel_trends_p as number) > 0.05 });
+                  if (main.parallel_trends_p != null) items.push({ name: t('module5.diagnostics.parallelTrends'), value: formatDecimal(main.parallel_trends_p as number, 3), ok: (main.parallel_trends_p as number) > 0.05 });
                   // Pre-RMSPE (SCM)
                   if (main.pre_rmspe != null) items.push({ name: 'Pre-RMSPE', value: formatDecimal(main.pre_rmspe as number, 4), ok: (main.pre_rmspe as number) < 0.1 });
                   // Placebo
@@ -2643,7 +2645,7 @@ export function Module5View() {
                 if (diagnostics.length === 0) return null;
                 return (
                   <div className="card">
-                    <h3 className="font-semibold text-gray-900 mb-1">Diagnósticos da Estimativa</h3>
+                    <h3 className="font-semibold text-gray-900 mb-1">{t('module5.diagnostics.title')}</h3>
                     <p className="text-xs text-gray-500 mb-3">
                       Métricas de qualidade estatística — verde indica condição satisfeita, vermelho indica cautela.
                     </p>
@@ -2840,7 +2842,7 @@ export function Module5View() {
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Download className="h-3.5 w-3.5" />
-                        {isDownloadingReport ? 'Gerando...' : `Relatório (${reportFormat.toUpperCase()})`}
+                        {isDownloadingReport ? t('module5.report.generating') : `${t('module5.report.button')} (${reportFormat.toUpperCase()})`}
                       </button>
                     </div>
                   </div>
