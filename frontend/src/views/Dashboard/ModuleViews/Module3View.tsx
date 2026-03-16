@@ -584,6 +584,7 @@ export function Module3View() {
         </div>
         <ExportButton
           moduleCode="3"
+          municipioId={installationMunicipioResolution.municipioId ?? undefined}
           deltaTonelagemPct={scenarioDeltas.length > 0 ? scenarioDeltas[0] : undefined}
         />
       </div>
@@ -840,7 +841,7 @@ export function Module3View() {
             <p className="text-sm text-gray-500 mt-0.5">
               Fonte: RAIS + ANTAQ · {selectedYear} · {useCausalEstimate
                 ? t('module3.multiplier.causalBeta')
-                : 'Multiplicadores de literatura (UNCTAD / MInfra)'}
+                : 'Multiplicadores de literatura (MInfra / literatura acadêmica)'}
             </p>
           </div>
           <div className="flex items-center gap-2">
