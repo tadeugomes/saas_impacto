@@ -49,7 +49,6 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-3.01", "name": "Empregos Portuários", "unit": "Empregos", "description": "Total de empregos no setor portuário (RAIS)"},
             {"code": "IND-3.02", "name": "Paridade de Gênero", "unit": "%", "description": "Percentual de mulheres no setor portuário"},
             {"code": "IND-3.03", "name": "Paridade por Categoria", "unit": "%", "description": "Paridade por categoria profissional"},
-            {"code": "IND-3.04", "name": "Taxa Emprego Temporário", "unit": "%", "description": "Percentual de contratos temporários"},
             {"code": "IND-3.05", "name": "Salário Médio", "unit": "R$", "description": "Remuneração média mensal"},
             {"code": "IND-3.06", "name": "Massa Salarial", "unit": "R$", "description": "Massa salarial anual estimada"},
             {"code": "IND-3.07", "name": "Produtividade", "unit": "ton/emp", "description": "Toneladas por empregado"},

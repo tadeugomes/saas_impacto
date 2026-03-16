@@ -47,13 +47,20 @@ export interface EmploymentMultiplierLiterature {
   coefficient: number;
   range_low: number;
   range_high: number;
+  confidence?: 'strong' | 'moderate' | 'weak' | null;
+  year_published?: number | null;
+  region?: string | null;
 }
 
 export interface EmploymentMultiplierCausal {
   source: string;
   method: 'iv_2sls' | 'panel_iv' | 'other';
   n_obs: number;
-  r2: number;
+  r2: number | null;
+  coefficient?: number | null;
+  p_value?: number | null;
+  ci_lower?: number | null;
+  ci_upper?: number | null;
 }
 
 export interface EmploymentMultiplierResponse {

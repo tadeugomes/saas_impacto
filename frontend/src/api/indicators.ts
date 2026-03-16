@@ -8,6 +8,7 @@ import type {
   AllIndicatorsMetadataResponse,
   MunicipioLookupResponse,
   TenantPoliciesResponse,
+  InstallationMunicipioResolution,
 } from '../types/api';
 
 export const indicatorsService = {
@@ -35,6 +36,13 @@ export const indicatorsService = {
 
     const response = await apiClient.get<MunicipioLookupResponse>('/api/v1/indicators/municipios', {
       params: { ids },
+    });
+    return response.data;
+  },
+
+  async resolveInstallationToMunicipio(idInstalacao: string): Promise<InstallationMunicipioResolution> {
+    const response = await apiClient.get<InstallationMunicipioResolution>('/api/v1/indicators/resolve-installation', {
+      params: { id_instalacao: idInstalacao },
     });
     return response.data;
   },

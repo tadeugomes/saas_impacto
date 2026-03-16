@@ -8,6 +8,7 @@ import {
   Tooltip,
   Legend,
   type ChartOptions,
+  type Plugin,
 } from 'chart.js';
 import { useMemo } from 'react';
 import { createFormattedScaleOptions, createTooltipCallback, type ChartValueFormat } from '../../utils/chartFormats';
@@ -36,6 +37,12 @@ interface BarChartProps {
   valueFormat?: ChartValueFormat;
   /** Altura customizada do gráfico (em classes Tailwind) */
   height?: string;
+  /** Linha de referência opcional (ex: média nacional) */
+  referenceLine?: {
+    value: number;
+    label?: string;
+    color?: string;
+  };
 }
 
 const COLORS = {
@@ -67,6 +74,7 @@ export function BarChart({
   horizontal,
   valueFormat,
   height = 'h-64',
+  referenceLine,
 }: BarChartProps) {
   // Determina o eixo que precisa de formatação baseado na orientação
   const valueAxis = horizontal ? 'x' : 'y';
@@ -151,6 +159,63 @@ export function BarChart({
     return baseOptions as ChartOptions<'bar'>;
   }, [title, yAxisLabel, horizontal, valueFormat, valueAxis, labelAxis]);
 
+  const referenceLinePlugin = useMemo<Plugin<'bar'> | undefined>(() => {
+    if (!referenceLine || typeof referenceLine.value !== 'number' || Number.isNaN(referenceLine.value)) {
+      return undefined;
+    }
+
+    const lineColor = referenceLine.color || '#dc2626';
+    const label = referenceLine.label || '';
+
+    return {
+      id: 'referenceLinePlugin',
+      afterDraw: (chart) => {
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+
+        const valueScale = horizontal ? chart.scales.x : chart.scales.y;
+        if (!valueScale) return;
+
+        const pixel = valueScale.getPixelForValue(referenceLine.value);
+        if (!Number.isFinite(pixel)) return;
+
+        ctx.save();
+        ctx.strokeStyle = lineColor;
+        ctx.fillStyle = lineColor;
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 1.5;
+
+        if (horizontal) {
+          ctx.beginPath();
+          ctx.moveTo(pixel, chartArea.top);
+          ctx.lineTo(pixel, chartArea.bottom);
+          ctx.stroke();
+          if (label) {
+            ctx.setLineDash([]);
+            ctx.font = "11px 'Inter', system-ui, sans-serif";
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(label, pixel + 6, chartArea.top + 4);
+          }
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, pixel);
+          ctx.lineTo(chartArea.right, pixel);
+          ctx.stroke();
+          if (label) {
+            ctx.setLineDash([]);
+            ctx.font = "11px 'Inter', system-ui, sans-serif";
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(label, chartArea.right - 4, pixel - 4);
+          }
+        }
+
+        ctx.restore();
+      },
+    };
+  }, [referenceLine, horizontal]);
+
   const chartData = useMemo(() => ({
     labels,
     datasets: datasets.map((ds, i) => ({
@@ -166,7 +231,7 @@ export function BarChart({
 
   return (
     <div className={`${height} w-full`}>
-      <Bar data={chartData} options={options} />
+      <Bar data={chartData} options={options} plugins={referenceLinePlugin ? [referenceLinePlugin] : undefined} />
     </div>
   );
 }

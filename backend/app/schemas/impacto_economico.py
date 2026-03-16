@@ -44,6 +44,7 @@ _VALID_INSTRUMENTS = frozenset(
         "commodity_index",
     }
 )
+ShockModeLiteral = Literal["movement", "investment"]
 
 
 # ── Request ───────────────────────────────────────────────────────────────────
@@ -402,3 +403,143 @@ class MatchingResponse(BaseModel):
     n_treated: int = Field(default=0, ge=0)
     n_candidates: int = Field(default=0, ge=0)
     features: list[str] = Field(default_factory=list)
+
+
+# ── Simulação de Impacto ───────────────────────────────────────────────────────
+
+
+from datetime import datetime
+
+class ImpactSimulationRequest(BaseModel):
+    """Parâmetros de cenário para estimar impacto hipotético."""
+
+    shock_mode: ShockModeLiteral = Field(
+        default="movement",
+        description=(
+            "Modo de entrada do cenário:\n"
+            "- `movement` (padrão): choques já em % de movimentação.\n"
+            "- `investment`: choques em % de investimento; aplica elasticidade de transmissão."
+        ),
+    )
+
+    shock_intensity_pct: float = Field(
+        ...,
+        ge=-100,
+        le=500,
+        description=(
+            "Intensidade hipotética do choque em % (ex.: 10 = +10%).\n"
+            "Se `shock_mode='movement'`, é variação de movimentação.\n"
+            "Se `shock_mode='investment'`, é variação de investimento e será convertida "
+            "para movimentação usando `investment_to_movement_elasticity`."
+        ),
+    )
+    reference_outcome: str = Field(
+        default="toneladas_antaq_log",
+        description=(
+            "Outcome de referência para escalar o cenário. "
+            "Recomendado: `toneladas_antaq_log`."
+        ),
+    )
+    investment_to_movement_elasticity: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Razão de transmissão de investimento -> movimentação (Δmovimentação / Δinvestimento). "
+            "Obrigatório quando `shock_mode='investment'`."
+        ),
+    )
+    target_outcomes: Optional[List[str]] = Field(
+        default=None,
+        max_length=50,
+        description=(
+            "Outcomes a projetar. "
+            "Se None, usa todos os outcomes disponíveis na análise."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_investment_inputs(self) -> "ImpactSimulationRequest":
+        if self.shock_mode == "investment" and self.investment_to_movement_elasticity is None:
+            raise ValueError(
+                "investment_to_movement_elasticity é obrigatório quando shock_mode='investment'."
+            )
+        return self
+
+
+class ImpactSimulationProjection(BaseModel):
+    """Projeção por variável de resultado."""
+
+    outcome: str = Field(..., description="Variável de resultado projetada.")
+    outcome_label: str = Field(..., description="Rótulo amigável para apresentação.")
+    treatment_effect_100pct: Optional[float] = Field(
+        default=None,
+        description="Efeito estimado da intervenção completa (100%) em %.",
+    )
+    projected_delta_pct: Optional[float] = Field(
+        default=None,
+        description="Projeção em % para o cenário informado.",
+    )
+    method_used: str = Field(..., description="Regra de cálculo aplicada.")
+    coef: Optional[float] = Field(default=None, description="Coeficiente estimado (escala original do modelo).")
+    std_err: Optional[float] = Field(default=None, description="Erro padrão estimado.")
+    p_value: Optional[float] = Field(default=None, description="P-valor do coeficiente da fonte.")
+    confidence: str = Field(default="fraca", description="Rótulo de confiança: forte | moderada | fraca")
+    notes: list[str] = Field(default_factory=list, description="Notas de ajuste/qualidade da projeção.")
+    warning: Optional[str] = Field(default=None, description="Observação de qualidade para o cenário.")
+    treatment_effect_100pct_ci_lower: Optional[float] = Field(
+        default=None,
+        description="Limite inferior (95%) do efeito em 100% de intervenção, em %.",
+    )
+    treatment_effect_100pct_ci_upper: Optional[float] = Field(
+        default=None,
+        description="Limite superior (95%) do efeito em 100% de intervenção, em %.",
+    )
+    projected_delta_pct_conservative: Optional[float] = Field(
+        default=None,
+        description="Projeção conservadora para o cenário informado (faixa baixa), em %.",
+    )
+    projected_delta_pct_optimistic: Optional[float] = Field(
+        default=None,
+        description="Projeção otimista para o cenário informado (faixa alta), em %.",
+    )
+
+
+class ImpactSimulationMetadata(BaseModel):
+    """Metadados de geração da simulação executiva."""
+
+    model_version: str = Field(default="simulador_impacto_v1", description="Versão do modelo usado")
+    as_of: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de geração")
+    notes: list[str] = Field(default_factory=list, description="Notas operacionais/avisos de qualidade.")
+    generated_by: str = Field(default="impacto_economico_router", description="Componente que gerou o output")
+
+
+class ImpactSimulationResponse(BaseModel):
+    """Resposta da calculadora de impacto baseada em análise causal."""
+
+    analysis_id: UUID
+    method: str
+    shock_intensity_pct: float
+    shock_mode: str = Field(default="movement")
+    applied_shock_intensity_pct: float = Field(
+        ...,
+        description="Choque efetivo de movimentação aplicado aos outcomes (em %).",
+    )
+    investment_to_movement_elasticity: Optional[float] = Field(
+        default=None,
+        description=(
+            "Elasticidade usada para converter investimento em movimentação, "
+            "quando aplicável."
+        ),
+    )
+    reference_outcome: str
+    reference_effect_100pct: Optional[float] = Field(
+        default=None,
+        description="Efeito da referência para 100% de intervenção (em %)."
+    )
+    projected_outcomes: list[ImpactSimulationProjection]
+    assumptions: list[str] = Field(default_factory=list)
+    simulation_metadata: ImpactSimulationMetadata = Field(
+        default_factory=ImpactSimulationMetadata,
+        description="Metadados da simulação.",
+    )
+    executive_summary: list[str] = Field(default_factory=list)

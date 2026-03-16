@@ -360,6 +360,21 @@ class MunicipioLookupResponse(BaseModel):
     )
 
 
+class InstallationMunicipioResolutionResponse(BaseModel):
+    """Resposta de resolução de instalação/porto para município IBGE."""
+
+    id_instalacao: str = Field(..., description="Instalação/porto solicitado")
+    id_municipio: Optional[str] = Field(
+        None,
+        description="ID IBGE do município associado (se encontrado)",
+    )
+    municipio_found: bool = Field(
+        ...,
+        description="Indica se foi encontrado município associado",
+    )
+    message: str = Field(..., description="Resumo de validação da resolução")
+
+
 class AreaInfluenceMunicipio(BaseModel):
     """Municipio pertencente ao município de influência."""
 

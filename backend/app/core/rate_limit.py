@@ -39,6 +39,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self._settings.rate_limiting_enabled:
             return await call_next(request)
 
+        # Skip CORS preflight requests — CORSMiddleware handles them
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         path = request.url.path
         if path in PUBLIC_PATHS:
             return await call_next(request)
