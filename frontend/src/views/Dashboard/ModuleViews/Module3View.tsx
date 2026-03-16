@@ -582,7 +582,10 @@ export function Module3View() {
             Indicadores de emprego, remuneração, produtividade e diversidade para decisão de investimento — dados RAIS + ANTAQ
           </p>
         </div>
-        <ExportButton moduleCode="3" />
+        <ExportButton
+          moduleCode="3"
+          deltaTonelagemPct={scenarioDeltas.length > 0 ? scenarioDeltas[0] : undefined}
+        />
       </div>
 
       <FilterBar />

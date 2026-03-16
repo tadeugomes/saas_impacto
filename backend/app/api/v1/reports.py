@@ -55,6 +55,7 @@ async def export_module_report(
     ano_inicio: Optional[int] = Query(None, description="Ano inicial do período"),
     ano_fim: Optional[int] = Query(None, description="Ano final do período"),
     analysis_id: Optional[str] = Query(None, description="ID da análise causal (Módulo 5)"),
+    delta_tonelagem_pct: Optional[float] = Query(None, description="Variação percentual de tonelagem para cenário (Módulo 3)"),
     format: Literal["docx", "pdf", "xlsx"] = Query("docx"),
     service: GenericIndicatorService = Depends(get_generic_indicator_service),
 ):
@@ -84,7 +85,7 @@ async def export_module_report(
         report_ano = ano or (ano_inicio if ano_inicio else None)
 
         if module_code == "IND-3" and id_municipio and format == "docx":
-            extra_data = await _fetch_employment_impact(id_municipio, report_ano)
+            extra_data = await _fetch_employment_impact(id_municipio, report_ano, delta_tonelagem_pct)
 
         if module_code == "IND-5" and analysis_id and format == "docx":
             causal = await _fetch_causal_analysis(analysis_id)
@@ -133,6 +134,7 @@ async def export_module_report(
 async def _fetch_employment_impact(
     id_municipio: str,
     ano: Optional[int],
+    delta_tonelagem_pct: Optional[float] = None,
 ) -> dict[str, Any]:
     """Busca dados de impacto em emprego para incluir no relatório do Módulo 3."""
     try:
@@ -141,6 +143,7 @@ async def _fetch_employment_impact(
         results = await svc.get_impacto_emprego(
             municipality_id=id_municipio,
             ano=ano,
+            delta_tonelagem_pct=delta_tonelagem_pct,
         )
         if results:
             return {
@@ -162,21 +165,30 @@ async def _fetch_causal_analysis(
         detail = await svc.get_detail(uuid.UUID(analysis_id))
         if detail and detail.status == "success":
             summary = detail.result_summary or {}
+            full = detail.result_full or {}
+            diagnostics = full.get("diagnostics") or {}
+            first_stage = diagnostics.get("first_stage") or {}
+            parallel_trends = diagnostics.get("parallel_trends") or {}
+            p_val = summary.get("p_value")
             return {
                 "causal_analysis": {
                     "method": detail.method,
                     "coefficient": summary.get("coef"),
-                    "p_value": summary.get("p_value"),
+                    "p_value": p_val,
                     "std_error": summary.get("std_err"),
                     "ci_lower": summary.get("ci_lower"),
                     "ci_upper": summary.get("ci_upper"),
                     "n_obs": summary.get("n_obs"),
                     "outcome": summary.get("outcome"),
                     "significance": (
-                        "significativo" if summary.get("p_value") is not None
-                        and summary["p_value"] < 0.05 else "não significativo"
+                        "significativo" if p_val is not None and p_val < 0.05
+                        else "não significativo"
                     ),
                     "narrative": summary.get("narrative"),
+                    "warnings": summary.get("warnings") or [],
+                    "first_stage_f_stat": first_stage.get("f_stat"),
+                    "parallel_trends_p_value": parallel_trends.get("p_value"),
+                    "parallel_trends_passed": parallel_trends.get("passed"),
                 },
             }
     except Exception:

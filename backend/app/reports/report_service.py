@@ -285,14 +285,20 @@ class ReportService:
     ):
         """Adiciona seção de impacto em emprego (Módulo 3)."""
         impact_data = extra_data.get("employment_impact", [])
-        if not impact_data:
-            return
 
         self.generator.add_section("Impacto em Emprego", level=2)
         self.generator.add_text(
             "Estimativa de empregos diretos, indiretos e induzidos gerados pelo setor portuário.",
             italic=True,
         )
+
+        if not impact_data:
+            self.generator.add_text(
+                "Dados de emprego portuário não disponíveis para o município/ano selecionado. "
+                "Verifique se há registros RAIS para o período.",
+                italic=True,
+            )
+            return
 
         headers = ["Categoria", "Empregos", "Fonte"]
         rows = []
@@ -304,14 +310,18 @@ class ReportService:
             fonte = item.get("fonte", "N/A")
             municipio = item.get("municipality_name") or item.get("municipality_id", "")
             confianca = item.get("indicador_de_confianca", "")
-
-            rows.append(["Empregos diretos", format_value(diretos, "Empregos"), "RAIS/CAGED"])
-            rows.append(["Empregos indiretos (est.)", format_value(indiretos, "Empregos"), fonte])
-            rows.append(["Empregos induzidos (est.)", format_value(induzidos, "Empregos"), fonte])
-            rows.append(["Total estimado", format_value(total, "Empregos"), ""])
+            participacao = item.get("participacao_emprego_local")
 
             if municipio:
                 self.generator.add_text(f"Município: {municipio}", bold=True)
+
+            rows.append(["Empregos diretos (RAIS)", format_value(diretos, "Empregos"), "RAIS/CAGED"])
+            rows.append(["Empregos indiretos (est.)", format_value(indiretos, "Empregos"), fonte])
+            rows.append(["Empregos induzidos (est.)", format_value(induzidos, "Empregos"), fonte])
+            rows.append(["Total estimado", format_value(total, "Empregos"), ""])
+            if participacao is not None:
+                rows.append(["Participação no emprego local", f"{float(participacao):.2f}%", "RAIS"])
+
             if confianca:
                 self.generator.add_text(f"Nível de confiança: {confianca}", italic=True)
 
@@ -323,20 +333,70 @@ class ReportService:
             scenario = item.get("scenario")
             if scenario:
                 delta_pct = scenario.get("delta_tonelagem_pct", 0)
+                delta_total = scenario.get("delta_emprego_total", 0)
+                direction = "crescimento" if delta_pct >= 0 else "redução"
+                self.generator.add_section(
+                    f"Cenário de Simulação: {delta_pct:+.0f}% na tonelagem", level=3
+                )
                 self.generator.add_text(
-                    f"Cenário de simulação: variação de {delta_pct:+.1f}% na tonelagem",
-                    bold=True,
+                    f"Com uma variação de {delta_pct:+.1f}% na movimentação portuária, "
+                    f"o impacto estimado no emprego total é de {delta_total:+.0f} postos de trabalho "
+                    f"({direction}).",
+                    italic=True,
                 )
                 scenario_rows = [
                     ["Variação empregos diretos", format_value(scenario.get("delta_empregos_diretos", 0), "Empregos"), ""],
                     ["Variação empregos indiretos", format_value(scenario.get("delta_empregos_indiretos", 0), "Empregos"), ""],
                     ["Variação empregos induzidos", format_value(scenario.get("delta_empregos_induzidos", 0), "Empregos"), ""],
-                    ["Variação total", format_value(scenario.get("delta_emprego_total", 0), "Empregos"), ""],
+                    ["Variação total", format_value(delta_total, "Empregos"), ""],
                 ]
                 self.generator.add_indicator_table(
                     ["Categoria", "Variação", ""],
                     scenario_rows,
                 )
+
+    _METHOD_LABELS: Dict[str, str] = {
+        "did": "Diferenças-em-Diferenças (DiD)",
+        "iv": "Variáveis Instrumentais (IV)",
+        "iv_2sls": "Variáveis Instrumentais — 2SLS",
+        "panel_iv": "Painel com Variáveis Instrumentais",
+        "event_study": "Estudo de Evento",
+        "scm": "Controle Sintético (SCM)",
+        "augmented_scm": "Controle Sintético Aumentado (ASCM)",
+        "compare": "Comparação de Métodos",
+    }
+
+    def _build_causal_narrative(
+        self,
+        method: str,
+        coefficient: Optional[float],
+        p_value: Optional[float],
+        outcome: Optional[str],
+    ) -> str:
+        """Gera narrativa interpretativa automática para a análise causal."""
+        outcome_label = outcome or "variável de resultado"
+        is_significant = p_value is not None and p_value < 0.05
+
+        if coefficient is None:
+            return "Resultado causal não disponível para o período/escopo selecionado."
+
+        coef_10pct = coefficient * 10
+        direction = "crescimento" if coefficient >= 0 else "redução"
+
+        if is_significant:
+            return (
+                f"Um aumento de 10% na movimentação portuária está associado a um {direction} "
+                f"estimado de {abs(coef_10pct):.2f}% na variável '{outcome_label}' "
+                f"(p={p_value:.3f}). "
+                f"O resultado é estatisticamente significativo ao nível de 5%."
+            )
+        return (
+            f"Não foi identificado impacto estatisticamente significativo na variável "
+            f"'{outcome_label}' para o período analisado "
+            f"(coeficiente={coefficient:.4f}, p={p_value:.3f if p_value is not None else 'N/D'}). "
+            f"Isso pode refletir efeito real nulo, poder estatístico insuficiente ou "
+            f"necessidade de ajuste de controles."
+        )
 
     def _add_causal_analysis_section(
         self,
@@ -349,33 +409,66 @@ class ReportService:
 
         self.generator.add_section("Análise de Impacto Causal", level=2)
 
-        method = str(analysis.get("method", "")).upper()
-        status_val = str(analysis.get("status", ""))
-        self.generator.add_text(f"Método: {method} | Status: {status_val}", bold=True)
+        raw_method = str(analysis.get("method", ""))
+        method_label = self._METHOD_LABELS.get(raw_method.lower(), raw_method.upper())
+        self.generator.add_text(f"Método: {method_label}", bold=True)
 
-        result_summary = analysis.get("result_summary") or {}
-        coefficient = result_summary.get("coefficient")
-        p_value = result_summary.get("p_value")
-        ci_lower = result_summary.get("ci_lower")
-        ci_upper = result_summary.get("ci_upper")
-        significance = result_summary.get("significance", "")
+        # Data is flat in the causal_analysis dict (from _fetch_causal_analysis)
+        coefficient = analysis.get("coefficient")
+        p_value = analysis.get("p_value")
+        ci_lower = analysis.get("ci_lower")
+        ci_upper = analysis.get("ci_upper")
+        std_error = analysis.get("std_error")
+        n_obs = analysis.get("n_obs")
+        outcome = analysis.get("outcome")
+        significance = analysis.get("significance", "")
 
-        rows = []
+        # Auto-generated narrative (or use provided one)
+        narrative = analysis.get("narrative")
+        if not narrative:
+            narrative = self._build_causal_narrative(raw_method, coefficient, p_value, outcome)
+        self.generator.add_text(narrative, italic=True)
+
+        # Result table
+        rows: List[List[str]] = []
         if coefficient is not None:
-            rows.append(["Coeficiente", f"{float(coefficient):.4f}"])
+            rows.append(["Coeficiente (ATT)", f"{float(coefficient):.4f}"])
+        if std_error is not None:
+            rows.append(["Erro padrão", f"{float(std_error):.4f}"])
         if p_value is not None:
             rows.append(["P-value", f"{float(p_value):.4f}"])
         if ci_lower is not None and ci_upper is not None:
             rows.append(["IC 95%", f"[{float(ci_lower):.4f}, {float(ci_upper):.4f}]"])
         if significance:
             rows.append(["Significância", str(significance)])
-
-        narrative = result_summary.get("narrative") or result_summary.get("interpretation")
-        if narrative:
-            self.generator.add_text(str(narrative), italic=True)
+        if n_obs is not None:
+            rows.append(["Nº de observações", str(n_obs)])
 
         if rows:
             self.generator.add_indicator_table(["Parâmetro", "Valor"], rows)
+
+        # Diagnostics section
+        diag_rows: List[List[str]] = []
+        f_stat = analysis.get("first_stage_f_stat")
+        pt_p = analysis.get("parallel_trends_p_value")
+        pt_passed = analysis.get("parallel_trends_passed")
+
+        if f_stat is not None:
+            strength = "forte (>10)" if float(f_stat) > 10 else "fraco (≤10)"
+            diag_rows.append(["F-stat 1ª etapa", f"{float(f_stat):.2f} — instrumento {strength}"])
+        if pt_p is not None:
+            pt_label = "✓ aprovado" if pt_passed else "✗ reprovado"
+            diag_rows.append(["Parallel trends (p)", f"{float(pt_p):.4f} — {pt_label}"])
+
+        if diag_rows:
+            self.generator.add_section("Diagnósticos", level=3)
+            self.generator.add_indicator_table(["Diagnóstico", "Resultado"], diag_rows)
+
+        # Warnings
+        warnings = analysis.get("warnings") or []
+        if warnings:
+            self.generator.add_section("Alertas Metodológicos", level=3)
+            self.generator.add_bullet_list([str(w) for w in warnings])
 
     def _add_methodological_notes(self, module_code: str, template: Optional[Dict] = None):
         """Adiciona notas metodológicas específicas do módulo ou genéricas como fallback."""

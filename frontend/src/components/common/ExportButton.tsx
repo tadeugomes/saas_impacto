@@ -7,6 +7,7 @@ interface ExportButtonProps {
   moduleCode: string;
   indicatorCode?: string;
   analysisId?: string;
+  deltaTonelagemPct?: number;
   label?: string;
   variant?: 'primary' | 'secondary';
   className?: string;
@@ -18,6 +19,7 @@ export function ExportButton({
   moduleCode,
   indicatorCode,
   analysisId,
+  deltaTonelagemPct,
   label = indicatorCode ? 'Exportar Indicador' : 'Exportar Módulo',
   variant = 'secondary',
   className = '',
@@ -44,6 +46,7 @@ export function ExportButton({
           id_instalacao: selectedInstallation || undefined,
           ano: selectedYear || undefined,
           analysis_id: analysisId || undefined,
+          delta_tonelagem_pct: deltaTonelagemPct,
           format,
         });
       }
