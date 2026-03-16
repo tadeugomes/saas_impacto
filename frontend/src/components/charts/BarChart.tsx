@@ -43,6 +43,8 @@ interface BarChartProps {
     label?: string;
     color?: string;
   };
+  /** Valor máximo forçado para o eixo de valores (útil para percentuais: maxValue=100) */
+  maxValue?: number;
 }
 
 const COLORS = {
@@ -75,6 +77,7 @@ export function BarChart({
   valueFormat,
   height = 'h-64',
   referenceLine,
+  maxValue,
 }: BarChartProps) {
   // Determina o eixo que precisa de formatação baseado na orientação
   const valueAxis = horizontal ? 'x' : 'y';
@@ -86,6 +89,7 @@ export function BarChart({
       format: valueFormat,
       label: yAxisLabel,
       beginAtZero: true,
+      ...(maxValue !== undefined && { max: maxValue }),
     });
 
     const baseOptions = {
@@ -157,7 +161,7 @@ export function BarChart({
     } satisfies ChartOptions<'bar'>;
 
     return baseOptions as ChartOptions<'bar'>;
-  }, [title, yAxisLabel, horizontal, valueFormat, valueAxis, labelAxis]);
+  }, [title, yAxisLabel, horizontal, valueFormat, valueAxis, labelAxis, maxValue]);
 
   const referenceLinePlugin = useMemo<Plugin<'bar'> | undefined>(() => {
     if (!referenceLine || typeof referenceLine.value !== 'number' || Number.isNaN(referenceLine.value)) {

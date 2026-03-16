@@ -155,6 +155,29 @@ module "worker" {
   depends_on = [module.cloud_sql, module.redis, module.iam, module.secrets, module.vpc]
 }
 
+module "frontend" {
+  source               = "../../modules/cloud_run"
+  name                 = "${var.env_prefix}-frontend"
+  region               = var.region
+  image                = var.frontend_image
+  container_port       = 8080
+  memory               = "512Mi"
+  cpu                  = "1000m"
+  min_instances        = 0
+  max_instances        = 2
+  service_account_email = module.iam.api_service_account_email
+  env_vars             = {}
+  secret_env_vars      = {}
+  vpc_connector        = module.vpc.connector_full_name
+
+  depends_on = [module.api, module.vpc]
+}
+
+output "frontend_service_url" {
+  value       = module.frontend.service_url
+  description = "URL pública do frontend."
+}
+
 output "api_service_url" {
   value       = module.api.service_url
   description = "URL pública do serviço de API."

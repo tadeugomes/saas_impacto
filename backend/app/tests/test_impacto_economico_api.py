@@ -962,6 +962,25 @@ class TestRouter:
         assert body["suggested_controls"][0]["id_municipio"] == "3304557"
         mock_matching.assert_called_once()
 
+    def test_matching_returns_400_on_value_error(self):
+        matching_payload = {
+            "treated_ids": ["2111300"],
+            "treatment_year": 2015,
+            "scope": "state",
+            "ano_inicio": 2010,
+            "ano_fim": 2023,
+        }
+
+        with patch(
+            "app.services.impacto_economico.causal.matching.suggest_control_matches",
+            new=AsyncMock(side_effect=ValueError("Sem observações pré-tratamento para calcular distância.")),
+        ):
+            client = self._make_client(MagicMock())
+            resp = client.post(f"{self.PREFIX}/matching", json=matching_payload)
+
+        assert resp.status_code == 400
+        assert "Sem observações pré-tratamento" in resp.json()["detail"]
+
     def test_get_analysis_report_not_found(self):
         from app.services.impacto_economico.analysis_service import AnalysisNotFoundError
 

@@ -50,6 +50,7 @@ class ReportService:
         data: Dict[str, List[Dict[str, Any]]],
         porto: str = "",
         ano: Optional[int] = None,
+        extra_data: Optional[Dict[str, Any]] = None,
     ) -> tuple[bytes, str]:
         """
         Gera um relatório DOCX completo para um módulo.
@@ -59,6 +60,7 @@ class ReportService:
             data: Dicionário com dados dos indicadores {indicator_code: [items]}
             porto: Nome do porto/filtro
             ano: Ano dos dados
+            extra_data: Dados adicionais para seções extras (multiplicadores, análise causal)
 
         Returns:
             Tupla (bytes_do_documento, nome_arquivo)
@@ -77,14 +79,21 @@ class ReportService:
             ano=ano,
         )
 
-        # Resumo executivo com cards de totais
-        self._add_summary_section(module_code, data, template)
+        # Destaques narrativos (substitui o antigo resumo genérico)
+        self._add_highlights_section(data, template)
+
+        # Seções extras específicas do módulo
+        for section_type in template.get("extra_sections", []):
+            if section_type == "employment_impact":
+                self._add_employment_impact_section(data, extra_data or {})
+            elif section_type == "causal_analysis":
+                self._add_causal_analysis_section(extra_data or {})
 
         # Tabela detalhada de indicadores
         self._add_detailed_table(module_code, data, template)
 
-        # Notas metodológicas
-        self._add_methodological_notes(module_code)
+        # Notas metodológicas (específicas por módulo quando disponíveis)
+        self._add_methodological_notes(module_code, template)
 
         # Gera o documento
         doc_bytes = self.generator.save()
@@ -92,16 +101,102 @@ class ReportService:
 
         return doc_bytes, filename
 
-    def _add_summary_section(
+    def _add_highlights_section(
         self,
-        module_code: str,
         data: Dict[str, List[Dict[str, Any]]],
         template: Dict,
     ):
-        """Adiciona seção de resumo executivo."""
+        """Adiciona seção de destaques narrativos baseada nos highlights do template."""
+        highlights = template.get("highlights")
+        if not highlights:
+            # Fallback para módulos sem highlights definidos
+            self._add_summary_section_fallback(data, template)
+            return
+
+        self.generator.add_section("Destaques", level=2)
+
+        bullets = []
+        for hl in highlights:
+            indicator_code = hl["indicator"]
+            role = hl["role"]
+            label = hl["label"]
+            items = data.get(indicator_code, [])
+
+            if not items:
+                continue
+
+            # Encontra definição do indicador
+            indicator_def = None
+            for ind in template["indicators"]:
+                if ind["code"] == indicator_code:
+                    indicator_def = ind
+                    break
+            if not indicator_def:
+                continue
+
+            value_field = self._guess_value_field(items[0])
+
+            if role == "headline":
+                # Valor principal: pega o primeiro item (mais relevante)
+                value = self._get_value_from_data(items[0], value_field)
+                location = self._get_label_from_data(items[0])
+                ano = items[0].get("ano", "")
+                formatted = format_value(value, indicator_def["unit"])
+                ctx = f" ({location}, {ano})" if location != "N/A" and ano else ""
+                bullets.append(f"{label}: {formatted}{ctx}")
+
+            elif role == "trend":
+                value = self._get_value_from_data(items[0], value_field)
+                if isinstance(value, (int, float)):
+                    direction = "crescimento" if value > 0 else "queda" if value < 0 else "estável"
+                    formatted = format_value(value, indicator_def["unit"])
+                    bullets.append(f"{label}: {formatted} — {direction}")
+
+            elif role == "esg":
+                value = self._get_value_from_data(items[0], value_field)
+                benchmark = hl.get("benchmark")
+                benchmark_label = hl.get("benchmark_label", "referência")
+                formatted = format_value(value, indicator_def["unit"])
+                if benchmark is not None and isinstance(value, (int, float)):
+                    gap = "abaixo" if value < benchmark else "acima"
+                    bullets.append(
+                        f"{label}: {formatted} (benchmark {benchmark_label}: "
+                        f"{format_value(benchmark, indicator_def['unit'])}) — {gap}"
+                    )
+                else:
+                    bullets.append(f"{label}: {formatted}")
+
+            elif role == "alert":
+                value = self._get_value_from_data(items[0], value_field)
+                threshold = hl.get("threshold")
+                threshold_label = hl.get("threshold_label", "limite")
+                formatted = format_value(value, indicator_def["unit"])
+                if threshold is not None and isinstance(value, (int, float)) and value > threshold:
+                    bullets.append(
+                        f"{label}: {formatted} — acima do {threshold_label} "
+                        f"({format_value(threshold, indicator_def['unit'])})"
+                    )
+                else:
+                    bullets.append(f"{label}: {formatted}")
+
+            elif role == "context":
+                value = self._get_value_from_data(items[0], value_field)
+                formatted = format_value(value, indicator_def["unit"])
+                bullets.append(f"{label}: {formatted}")
+
+        if bullets:
+            self.generator.add_bullet_list(bullets)
+        else:
+            self.generator.add_text("Dados insuficientes para gerar destaques.", italic=True)
+
+    def _add_summary_section_fallback(
+        self,
+        data: Dict[str, List[Dict[str, Any]]],
+        template: Dict,
+    ):
+        """Fallback: resumo executivo genérico (contagem + soma) para módulos sem highlights."""
         self.generator.add_section("Resumo Executivo", level=2)
 
-        # Cria cards com os valores agregados por indicador
         for indicator_def in template["indicators"]:
             indicator_code = indicator_def["code"]
             items = data.get(indicator_code, [])
@@ -109,13 +204,11 @@ class ReportService:
             if not items:
                 continue
 
-            # Título do indicador
             self.generator.add_text(
                 f"{indicator_code} - {indicator_def['name']}",
                 bold=True,
             )
 
-            # Calcula total/valor agregado
             value_field = self._guess_value_field(items[0])
             total = sum(
                 self._get_value_from_data(item, value_field) or 0
@@ -123,7 +216,6 @@ class ReportService:
                 if isinstance(self._get_value_from_data(item, value_field), (int, float))
             )
 
-            # Mostra resumo
             if total > 0 or len(items) > 0:
                 count_text = f"{len(items)} registro(s)"
                 if isinstance(total, (int, float)) and total > 0:
@@ -186,18 +278,121 @@ class ReportService:
         else:
             self.generator.add_text("Nenhum dado disponível para o período selecionado.")
 
-    def _add_methodological_notes(self, module_code: str):
-        """Adiciona notas metodológicas."""
+    def _add_employment_impact_section(
+        self,
+        data: Dict[str, List[Dict[str, Any]]],
+        extra_data: Dict[str, Any],
+    ):
+        """Adiciona seção de impacto em emprego (Módulo 3)."""
+        impact_data = extra_data.get("employment_impact", [])
+        if not impact_data:
+            return
+
+        self.generator.add_section("Impacto em Emprego", level=2)
+        self.generator.add_text(
+            "Estimativa de empregos diretos, indiretos e induzidos gerados pelo setor portuário.",
+            italic=True,
+        )
+
+        headers = ["Categoria", "Empregos", "Fonte"]
+        rows = []
+        for item in impact_data:
+            diretos = item.get("empregos_diretos", 0)
+            indiretos = item.get("empregos_indiretos_estimados", 0)
+            induzidos = item.get("empregos_induzidos_estimados", 0)
+            total = item.get("emprego_total_estimado", 0)
+            fonte = item.get("fonte", "N/A")
+            municipio = item.get("municipality_name") or item.get("municipality_id", "")
+            confianca = item.get("indicador_de_confianca", "")
+
+            rows.append(["Empregos diretos", format_value(diretos, "Empregos"), "RAIS/CAGED"])
+            rows.append(["Empregos indiretos (est.)", format_value(indiretos, "Empregos"), fonte])
+            rows.append(["Empregos induzidos (est.)", format_value(induzidos, "Empregos"), fonte])
+            rows.append(["Total estimado", format_value(total, "Empregos"), ""])
+
+            if municipio:
+                self.generator.add_text(f"Município: {municipio}", bold=True)
+            if confianca:
+                self.generator.add_text(f"Nível de confiança: {confianca}", italic=True)
+
+        if rows:
+            self.generator.add_indicator_table(headers, rows)
+
+        # Cenário de choque se disponível
+        for item in impact_data:
+            scenario = item.get("scenario")
+            if scenario:
+                delta_pct = scenario.get("delta_tonelagem_pct", 0)
+                self.generator.add_text(
+                    f"Cenário de simulação: variação de {delta_pct:+.1f}% na tonelagem",
+                    bold=True,
+                )
+                scenario_rows = [
+                    ["Variação empregos diretos", format_value(scenario.get("delta_empregos_diretos", 0), "Empregos"), ""],
+                    ["Variação empregos indiretos", format_value(scenario.get("delta_empregos_indiretos", 0), "Empregos"), ""],
+                    ["Variação empregos induzidos", format_value(scenario.get("delta_empregos_induzidos", 0), "Empregos"), ""],
+                    ["Variação total", format_value(scenario.get("delta_emprego_total", 0), "Empregos"), ""],
+                ]
+                self.generator.add_indicator_table(
+                    ["Categoria", "Variação", ""],
+                    scenario_rows,
+                )
+
+    def _add_causal_analysis_section(
+        self,
+        extra_data: Dict[str, Any],
+    ):
+        """Adiciona seção de análise causal (Módulo 5)."""
+        analysis = extra_data.get("causal_analysis")
+        if not analysis:
+            return
+
+        self.generator.add_section("Análise de Impacto Causal", level=2)
+
+        method = str(analysis.get("method", "")).upper()
+        status_val = str(analysis.get("status", ""))
+        self.generator.add_text(f"Método: {method} | Status: {status_val}", bold=True)
+
+        result_summary = analysis.get("result_summary") or {}
+        coefficient = result_summary.get("coefficient")
+        p_value = result_summary.get("p_value")
+        ci_lower = result_summary.get("ci_lower")
+        ci_upper = result_summary.get("ci_upper")
+        significance = result_summary.get("significance", "")
+
+        rows = []
+        if coefficient is not None:
+            rows.append(["Coeficiente", f"{float(coefficient):.4f}"])
+        if p_value is not None:
+            rows.append(["P-value", f"{float(p_value):.4f}"])
+        if ci_lower is not None and ci_upper is not None:
+            rows.append(["IC 95%", f"[{float(ci_lower):.4f}, {float(ci_upper):.4f}]"])
+        if significance:
+            rows.append(["Significância", str(significance)])
+
+        narrative = result_summary.get("narrative") or result_summary.get("interpretation")
+        if narrative:
+            self.generator.add_text(str(narrative), italic=True)
+
+        if rows:
+            self.generator.add_indicator_table(["Parâmetro", "Valor"], rows)
+
+    def _add_methodological_notes(self, module_code: str, template: Optional[Dict] = None):
+        """Adiciona notas metodológicas específicas do módulo ou genéricas como fallback."""
         self.generator.add_page_break()
         self.generator.add_section("Notas Metodológicas", level=2)
 
-        notes = [
-            "Fonte de dados: ANTAQ (Agência Nacional de Transportes Aquaviários), "
-            "IBGE, RAIS, Comex Stat e outras fontes oficiais.",
-            "Os indicadores seguem metodologia harmonizada com padrões internacionais (UNCTAD).",
-            "Valores podem estar sujeitos a revisão conforme atualização das fontes de dados.",
-            "Para mais informações, consulte a documentação técnica do sistema.",
-        ]
+        # Usa notas específicas do template se disponíveis
+        if template and template.get("methodological_notes"):
+            notes = list(template["methodological_notes"])
+        else:
+            notes = [
+                "Fonte de dados: ANTAQ (Agência Nacional de Transportes Aquaviários), "
+                "IBGE, RAIS, Comex Stat e outras fontes oficiais.",
+                "Os indicadores seguem metodologia harmonizada com padrões internacionais.",
+                "Valores podem estar sujeitos a revisão conforme atualização das fontes de dados.",
+                "Para mais informações, consulte a documentação técnica do sistema.",
+            ]
 
         self.generator.add_bullet_list(notes)
 
@@ -342,7 +537,7 @@ class ReportService:
             self.generator.add_text("Nenhum dado disponível para o período selecionado.")
 
         # Notas
-        self._add_methodological_notes(module_code)
+        self._add_methodological_notes(module_code, template)
 
         doc_bytes = self.generator.save()
         filename = f"{indicator_code}_{porto or 'todos'}_{ano or 'todos'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"

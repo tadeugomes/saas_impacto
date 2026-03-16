@@ -4,3 +4,23 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+docker-compose.override.yml
+
+# Node
+node_modules/
+
+# Build output
+frontend/dist/
+
+# Environment files
+.env
+.env.local
+backend/.env
+frontend/.env
+
+# IDE
+.idea/
+.vscode/
+
+# Playwright
+.playwright-cli/

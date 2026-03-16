@@ -8,6 +8,7 @@ export interface ReportExportParams {
   ano?: number;
   ano_inicio?: number;
   ano_fim?: number;
+  analysis_id?: string;
   format?: 'docx' | 'pdf' | 'xlsx';
 }
 

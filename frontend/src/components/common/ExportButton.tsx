@@ -6,6 +6,7 @@ import { useFilterStore } from '../../store/filterStore';
 interface ExportButtonProps {
   moduleCode: string;
   indicatorCode?: string;
+  analysisId?: string;
   label?: string;
   variant?: 'primary' | 'secondary';
   className?: string;
@@ -16,6 +17,7 @@ interface ExportButtonProps {
 export function ExportButton({
   moduleCode,
   indicatorCode,
+  analysisId,
   label = indicatorCode ? 'Exportar Indicador' : 'Exportar Módulo',
   variant = 'secondary',
   className = '',
@@ -41,6 +43,7 @@ export function ExportButton({
           moduleCode,
           id_instalacao: selectedInstallation || undefined,
           ano: selectedYear || undefined,
+          analysis_id: analysisId || undefined,
           format,
         });
       }

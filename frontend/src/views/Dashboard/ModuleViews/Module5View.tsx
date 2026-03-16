@@ -1098,7 +1098,7 @@ export function Module5View() {
   const [implementationStatus, setImplementationStatus] = useState<Record<string, ImplementationStatus>>({});
 
   const [analysisMethod, setAnalysisMethod] = useState<AnalysisMethod>('did');
-  const [analysisTreated, setAnalysisTreated] = useState('');
+  const [analysisTreated, setAnalysisTreated] = useState('2111300');
   const [analysisControls, setAnalysisControls] = useState('');
   const [analysisOutcomes, setAnalysisOutcomes] = useState('pib_log');
   const [analysisScope, setAnalysisScope] = useState<AnalysisScope>('state');
@@ -1722,7 +1722,7 @@ export function Module5View() {
             Avalie como a atividade portuária influencia a economia do município sob análise
           </p>
         </div>
-        <ExportButton moduleCode="5" />
+        <ExportButton moduleCode="5" analysisId={analysisToDisplay?.id} />
       </div>
 
       <FilterBar />

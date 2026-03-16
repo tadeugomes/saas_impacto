@@ -1155,6 +1155,10 @@ export function Module3View() {
                   yAxisLabel={ind.unit}
                   horizontal
                   valueFormat={getIndicatorFormat(ind.code)}
+                  {...(ind.code === 'IND-3.02' && {
+                    maxValue: 100,
+                    referenceLine: { value: 50, label: 'Paridade (50%)', color: '#9ca3af' },
+                  })}
                 />
               ) : (
                 renderDataStatus(hasError)
@@ -1204,6 +1208,8 @@ export function Module3View() {
                 }]}
                 yAxisLabel="% Feminino"
                 valueFormat="percent"
+                maxValue={100}
+                referenceLine={{ value: 50, label: 'Paridade (50%)', color: '#9ca3af' }}
               />
             );
           })()}

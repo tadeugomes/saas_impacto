@@ -183,17 +183,27 @@ async def suggest_controls(
     """Endpoint de apoio ao frontend para preencher control_ids automaticamente."""
     from app.services.impacto_economico.causal.matching import suggest_control_matches
 
-    result = await suggest_control_matches(
-        treated_ids=body.treated_ids,
-        treatment_year=body.treatment_year,
-        scope=body.scope,
-        n_controls=body.n_controls,
-        ano_inicio=body.ano_inicio,
-        ano_fim=body.ano_fim,
-        features=body.features,
-    )
-
-    return MatchingResponse.model_validate(result)
+    try:
+        result = await suggest_control_matches(
+            treated_ids=body.treated_ids,
+            treatment_year=body.treatment_year,
+            scope=body.scope,
+            n_controls=body.n_controls,
+            ano_inicio=body.ano_inicio,
+            ano_fim=body.ano_fim,
+            features=body.features,
+        )
+        return MatchingResponse.model_validate(result)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao sugerir controles: {exc}",
+        )
 
 
 @router.get(

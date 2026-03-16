@@ -1,0 +1,109 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: southamerica-east1
+  API_IMAGE: ${{ secrets.GCP_REGION_DOCKER }}/${{ secrets.GCP_PROJECT_ID }}/saas-impacto/api
+  WORKER_IMAGE: ${{ secrets.GCP_REGION_DOCKER }}/${{ secrets.GCP_PROJECT_ID }}/saas-impacto/worker
+  FRONTEND_IMAGE: ${{ secrets.GCP_REGION_DOCKER }}/${{ secrets.GCP_PROJECT_ID }}/saas-impacto/frontend
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: python -m pytest app/tests/ -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test
+
+  build-and-deploy:
+    name: Build & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION_DOCKER }} --quiet
+
+      - name: Build & push API image
+        run: |
+          docker build -t $API_IMAGE:${{ github.sha }} -t $API_IMAGE:latest \
+            --target api backend/
+          docker push $API_IMAGE --all-tags
+
+      - name: Build & push Worker image
+        run: |
+          docker build -t $WORKER_IMAGE:${{ github.sha }} -t $WORKER_IMAGE:latest \
+            --target worker backend/
+          docker push $WORKER_IMAGE --all-tags
+
+      - name: Build & push Frontend image
+        run: |
+          docker build -t $FRONTEND_IMAGE:${{ github.sha }} -t $FRONTEND_IMAGE:latest \
+            --build-arg VITE_API_BASE_URL="" \
+            frontend/
+          docker push $FRONTEND_IMAGE --all-tags
+
+      - name: Deploy API to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: staging-api
+          region: ${{ env.GCP_REGION }}
+          image: ${{ env.API_IMAGE }}:${{ github.sha }}
+
+      - name: Deploy Worker to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: staging-worker
+          region: ${{ env.GCP_REGION }}
+          image: ${{ env.WORKER_IMAGE }}:${{ github.sha }}
+
+      - name: Deploy Frontend to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: staging-frontend
+          region: ${{ env.GCP_REGION }}
+          image: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
