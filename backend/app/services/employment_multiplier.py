@@ -38,7 +38,6 @@ from app.db.bigquery.client import BigQueryClient, BigQueryError, get_bigquery_c
 from app.db.bigquery.queries.module3_human_resources import (
     query_empregos_diretos_portuarios,
     query_massa_salarial_portuaria,
-    query_participacao_emprego_local,
     query_produtividade_ton_empregado,
     query_total_municipal_employment,
 )
@@ -58,6 +57,7 @@ from app.services.io_analysis.national_multipliers import (
     AdjustmentMethod,
     RegionalMultiplierResult,
     adjust_multipliers,
+    compute_location_quotient,
     decompose_production_impact,
     decompose_income_impact,
 )
@@ -66,10 +66,13 @@ from app.services.io_analysis.national_multipliers import (
 # Constantes derivadas da MIP IBGE 2015 — Vale & Perobelli (2020)
 # ---------------------------------------------------------------------------
 
-# Participação média nacional do setor Transporte, Armazenagem e Correios
-# no emprego formal (RAIS 2015, divisões CNAE 49-53 / total Brasil).
-# Usado como denominador para estimar o QL municipal.
-_NATIONAL_TRANSPORT_SHARE = 0.043  # ~4,3 %
+# Emprego formal nacional — referência RAIS para cálculo do QL.
+# RAIS 2022: setor Transporte, Armazenagem e Correios (CNAE 49-53).
+# Valores usados como denominador do QL via compute_location_quotient().
+# Atualizáveis quando houver dados RAIS mais recentes.
+_NATIONAL_TRANSPORT_EMPLOYMENT = 2_150_000   # ~2,15 M empregos no setor
+_NATIONAL_TOTAL_EMPLOYMENT = 49_500_000      # ~49,5 M empregos formais
+# Participação implícita: ~4,3 %
 
 # Multiplicadores nacionais do setor Transporte (MIP 2015)
 _MEI = TRANSPORT_EMPLOYMENT.type_i    # 1.827595 — Tipo I  (direto + indireto)
@@ -163,23 +166,32 @@ DEFAULT_SOURCE = "RAIS + ANTAQ + MIP IBGE 2015 (Vale & Perobelli, 2020)"
 # Helpers de QL a partir de dados municipais
 # ---------------------------------------------------------------------------
 
-def _estimate_ql_from_participation(participacao_pct: Optional[float]) -> float:
-    """Estima o QL do setor Transporte para o município.
+def _compute_ql(
+    direct_jobs: int,
+    total_jobs: int,
+) -> float:
+    """Calcula o QL do setor Transporte para o município via RAIS.
 
-    Usa a participação do emprego portuário no emprego local como
-    numerador, e a participação nacional média (_NATIONAL_TRANSPORT_SHARE)
-    como denominador — proxy do QL clássico sem necessidade de totais
-    nacionais em tempo real.
+    Usa ``compute_location_quotient()`` de ``national_multipliers`` com
+    os dados que o service já possui (empregos diretos portuários e
+    emprego total municipal, ambos da RAIS), sem chamada adicional ao
+    BigQuery.
 
     Args:
-        participacao_pct: emprego portuário / emprego total local (%).
+        direct_jobs: empregos portuários (CNAE 49-53) no município.
+        total_jobs: emprego formal total no município.
 
     Returns:
-        QL estimado. Retorna 1.0 (nacional) se dado indisponível.
+        QL (Simple Location Quotient). Retorna 1.0 se dados insuficientes.
     """
-    if participacao_pct is None or participacao_pct <= 0:
+    if direct_jobs <= 0 or total_jobs <= 0:
         return 1.0  # sem dados → usar multiplicador nacional sem ajuste
-    return (participacao_pct / 100.0) / _NATIONAL_TRANSPORT_SHARE
+    return compute_location_quotient(
+        employment_sector_region=float(direct_jobs),
+        employment_total_region=float(total_jobs),
+        employment_sector_national=float(_NATIONAL_TRANSPORT_EMPLOYMENT),
+        employment_total_national=float(_NATIONAL_TOTAL_EMPLOYMENT),
+    )
 
 
 class EmploymentMultiplierService:
@@ -277,22 +289,21 @@ class EmploymentMultiplierService:
 
     @staticmethod
     def get_literature_multiplier_ql_adjusted(
-        participacao_pct: Optional[float],
+        ql: float,
     ) -> LiteratureMultiplier:
         """Retorna multiplicador Tipo II ajustado pelo QL municipal.
 
-        Calcula o Quociente Locacional a partir da participação local
-        do emprego portuário e aplica ajuste CAPPED_LINEAR sobre os
-        multiplicadores nacionais da MIP (Vale & Perobelli, 2020).
+        Aplica ajuste CAPPED_LINEAR sobre os multiplicadores nacionais
+        da MIP (Vale & Perobelli, 2020) usando o QL já calculado via
+        ``compute_location_quotient()``.
 
         Args:
-            participacao_pct: participação % do emprego portuário no
-                              emprego formal total do município.
+            ql: Quociente Locacional do setor Transporte no município,
+                calculado via ``_compute_ql(direct_jobs, total_jobs)``.
 
         Returns:
             LiteratureMultiplier com coeficiente e breakdown ajustados.
         """
-        ql = _estimate_ql_from_participation(participacao_pct)
         regional = adjust_multipliers(
             ql=ql,
             adjustment_method=AdjustmentMethod.CAPPED_LINEAR,
@@ -478,9 +489,6 @@ class EmploymentMultiplierService:
         total_rows = await self._execute_query(
             query_total_municipal_employment(id_municipio=municipality, ano=year)
         )
-        share_rows = await self._execute_query(
-            query_participacao_emprego_local(id_municipio=municipality, ano=year)
-        )
         produt_rows = await self._execute_query(
             query_produtividade_ton_empregado(id_municipio=municipality, ano=year)
         )
@@ -491,11 +499,6 @@ class EmploymentMultiplierService:
         direct_jobs = self._first_row_value(direct_rows, "empregos_portuarios", int) or 0
         nome_municipio = self._first_row_value(direct_rows, "nome_municipio", str)
         total_jobs = self._first_row_value(total_rows, "empregos_totais", int)
-        participacao = self._first_row_value(
-            share_rows,
-            "participacao_emprego_local",
-            float,
-        )
         ton_por_empregado = self._first_row_value(
             produt_rows,
             "ton_por_empregado",
@@ -507,9 +510,10 @@ class EmploymentMultiplierService:
             float,
         )
 
-        if participacao is None:
-            if total_jobs and total_jobs > 0:
-                participacao = (direct_jobs * 100.0) / total_jobs
+        # Participação local: calculada dos dados já consultados (sem query extra)
+        participacao: Optional[float] = None
+        if total_jobs and total_jobs > 0:
+            participacao = (direct_jobs * 100.0) / total_jobs
 
         toneladas_total_antoq = None
         empregos_por_milhao_toneladas = None
@@ -526,17 +530,17 @@ class EmploymentMultiplierService:
             return []
 
         # ------------------------------------------------------------------
-        # Multiplicador ajustado pelo QL municipal (MIP IBGE 2015)
+        # QL e multiplicador ajustado (MIP IBGE 2015)
         # ------------------------------------------------------------------
-        # Se há participação local disponível (RAIS), estima o QL e ajusta
-        # o MEII nacional (3.43) para a escala do município.
-        # Sem participação, usa o multiplicador nacional sem ajuste.
+        # O QL é calculado via compute_location_quotient() com os dados
+        # já disponíveis (direct_jobs, total_jobs) — sem query adicional.
         ql_estimado: Optional[float] = None
         regional: Optional[RegionalMultiplierResult] = None
+        nat_share_pct = (_NATIONAL_TRANSPORT_EMPLOYMENT / _NATIONAL_TOTAL_EMPLOYMENT) * 100
 
-        if participacao is not None:
-            multiplier = self.get_literature_multiplier_ql_adjusted(participacao)
-            ql_estimado = _estimate_ql_from_participation(participacao)
+        if direct_jobs > 0 and total_jobs and total_jobs > 0:
+            ql_estimado = _compute_ql(direct_jobs, total_jobs)
+            multiplier = self.get_literature_multiplier_ql_adjusted(ql_estimado)
             regional = adjust_multipliers(
                 ql=ql_estimado,
                 region_code=municipality,
@@ -546,9 +550,9 @@ class EmploymentMultiplierService:
             )
             metodologia = (
                 f"MIP IBGE 2015 (Vale & Perobelli, 2020), setor Transporte. "
-                f"Multiplicador Tipo II ajustado por QL estimado = {ql_estimado:.2f} "
-                f"(participação local {participacao:.1f}% / referência nacional "
-                f"{_NATIONAL_TRANSPORT_SHARE*100:.1f}%). "
+                f"QL = {ql_estimado:.2f} (compute_location_quotient: "
+                f"{direct_jobs:,} port. / {total_jobs:,} total vs. "
+                f"nacional {nat_share_pct:.1f}%). "
                 f"Método de ajuste: CAPPED_LINEAR (Miller & Blair, 2009). "
                 f"MEII ajustado = {multiplier.coefficient:.3f} "
                 f"(nacional = {_MEII:.3f}). "
@@ -566,7 +570,7 @@ class EmploymentMultiplierService:
             metodologia = (
                 "MIP IBGE 2015 (Vale & Perobelli, 2020), setor Transporte. "
                 f"Multiplicador Tipo II nacional = {_MEII:.3f} "
-                "(sem ajuste regional — participação local não disponível). "
+                "(sem ajuste regional — emprego total municipal não disponível). "
                 "Não constitui estimativa causal."
             )
 
@@ -656,7 +660,7 @@ class EmploymentMultiplierService:
                 else "baixo"
             ),
             correlacao_ou_proxy=True,
-            metodo="mip_ql_ajustado" if participacao is not None else "mip_nacional",
+            metodo="mip_ql_ajustado" if ql_estimado is not None else "mip_nacional",
             fonte=DEFAULT_SOURCE,
             # Produção (VBP)
             producao_direta_brl=round(prod_result.direct, 2) if prod_result else None,

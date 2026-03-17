@@ -115,7 +115,6 @@ class TestImpactQuery:
             side_effect=[
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_portuarios": 1200}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
-                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 10.0}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "tonelagem_total": 2500000, "ton_por_empregado": 2083.33}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 56_160_000.0}],
             ]
@@ -125,8 +124,12 @@ class TestImpactQuery:
         item = rows[0]
         assert item.empregos_diretos == 1200
         assert item.empregos_totais == 12000
+        # Participação calculada diretamente: 1200/12000 * 100 = 10.0
         assert item.participacao_emprego_local == 10.0
-        assert item.metodo in ("mip_ql_ajustado", "mip_nacional")
+        assert item.metodo == "mip_ql_ajustado"
+        # QL calculado via compute_location_quotient()
+        assert item.ql_estimado is not None
+        assert item.ql_estimado > 1.0  # 10% vs ~4.3% nacional → QL > 2
         assert item.empregos_por_milhao_toneladas is not None
         assert item.empregos_por_milhao_toneladas > 0
         # Produção/renda calculados com dados RAIS reais
@@ -142,7 +145,6 @@ class TestImpactQuery:
             side_effect=[
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_portuarios": 1000}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
-                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 8.3}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "ton_por_empregado": 2000.0}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 46_800_000.0}],
             ]

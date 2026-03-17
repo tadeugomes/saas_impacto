@@ -47,7 +47,14 @@ def _inject_asyncpg_stub() -> None:
 
 
 def _inject_google_cloud_stub() -> None:
-    """Injeta stubs para google-cloud-bigquery (não instalado no CI unitário)."""
+    """Injeta stubs para google-cloud-bigquery (não instalado no CI unitário).
+
+    Pula a injeção se credenciais reais existem (testes de integração).
+    """
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if cred_path and os.path.isfile(cred_path):
+        return  # credenciais reais — não injetar stubs
+
     for name in (
         "google",
         "google.auth",
@@ -83,6 +90,23 @@ def _inject_google_cloud_stub() -> None:
     sa_stub = types.ModuleType("google.oauth2.service_account")
     sa_stub.Credentials = mock.MagicMock
     sys.modules["google.oauth2.service_account"] = sa_stub
+
+
+def _load_dotenv() -> None:
+    """Carrega .env do backend (se existir) para que credenciais reais sejam detectadas."""
+    from pathlib import Path
+    env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_file.is_file():
+        return
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip()
+            # Não sobrescrever vars já definidas no shell
+            os.environ.setdefault(key, val)
 
 
 def _set_env_defaults() -> None:
@@ -131,6 +155,7 @@ def _configure_celery_eager() -> None:
 # ---------------------------------------------------------------------------
 # Executa os stubs antes de qualquer import de módulo da app
 # ---------------------------------------------------------------------------
+_load_dotenv()           # carrega .env ANTES dos stubs (detecta credenciais reais)
 _inject_asyncpg_stub()
 _inject_google_cloud_stub()
 _set_env_defaults()
