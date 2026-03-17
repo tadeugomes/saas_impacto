@@ -90,8 +90,16 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
         ],
         "methodological_notes": [
             "Dados de emprego: RAIS/CAGED (MTE), classificação CBO-2002 para setor portuário.",
-            "Multiplicadores de emprego: coeficientes técnicos de insumo-produto.",
-            "Dados de carga: ANTAQ, Sistema de Desempenho Portuário.",
+            "Multiplicadores de emprego, produção e renda: derivados da Matriz de Insumo-Produto "
+            "nacional (IBGE, 2015), tabulada por Vale & Perobelli (2020), setor Transporte, "
+            "Armazenagem e Correios (CNAE 49-53). Ajuste regional via Quociente Locacional "
+            "(Miller & Blair, 2009, cap. 3).",
+            "Dados de carga: ANTAQ, Sistema de Desempenho Portuário (SDP).",
+            "Limitações: os multiplicadores são uma aproximação baseada em MIP nacional com "
+            "ajuste por QL — não substituem uma MIP regional completa (com balanceamento RAS). "
+            "Para investimentos portuários de grande porte, recomenda-se complementar com "
+            "estudos de impacto específicos baseados em MIP estadual.",
+            "Ano de referência da MIP: 2015. Os coeficientes técnicos podem ter se alterado.",
         ],
         "extra_sections": ["employment_impact"],
     },

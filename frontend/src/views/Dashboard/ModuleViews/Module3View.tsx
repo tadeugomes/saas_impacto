@@ -1018,6 +1018,18 @@ export function Module3View() {
               })}
             </div>
 
+            {/* Nota metodológica — limitações MIP */}
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">Nota metodológica:</span>{' '}
+                Multiplicadores de emprego, produção e renda estimados via Matriz de
+                Insumo-Produto nacional (IBGE 2015; Vale &amp; Perobelli, 2020), setor
+                Transporte, com ajuste regional por Quociente Locacional (Miller &amp;
+                Blair, 2009). Este método é uma aproximação — não substitui uma MIP
+                regional completa (com balanceamento RAS). Ano de referência da MIP: 2015.
+              </p>
+            </div>
+
             {/* Simulação de choque de carga — multi-cenário */}
             <div className="bg-white rounded-lg border border-amber-100 p-4">
               <div className="mb-4">

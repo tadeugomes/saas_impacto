@@ -52,8 +52,13 @@ from app.schemas.employment_multiplier import (
 )
 from app.services.io_analysis.national_multipliers import (
     TRANSPORT_EMPLOYMENT,
+    TRANSPORT_PRODUCTION,
+    TRANSPORT_INCOME,
     AdjustmentMethod,
+    RegionalMultiplierResult,
     adjust_multipliers,
+    decompose_production_impact,
+    decompose_income_impact,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,6 +76,14 @@ _MEII = TRANSPORT_EMPLOYMENT.type_ii  # 3.430779 — Tipo II (direto + indireto 
 
 _SOURCE_MIP = "Vale & Perobelli (2020) — MIP IBGE 2015, setor Transporte"
 _YEAR_MIP = 2020
+
+# VBP por emprego direto — derivado de ME simples (MIP 2015)
+# ME_simples = 17.07 empregos / R$ 1.000.000 → R$ 58.582 / emprego direto
+_VBP_PER_DIRECT_JOB = 1_000_000.0 / TRANSPORT_EMPLOYMENT.simple  # ~R$ 58.582
+
+# Renda anual média setor Transporte (RAIS 2015, proxy)
+# ~R$ 3.000/mês × 13 meses (inclui 13º salário)
+_RENDA_ANUAL_MEDIA = 39_000.0
 
 
 # ---------------------------------------------------------------------------
@@ -504,9 +517,19 @@ class EmploymentMultiplierService:
         # Se há participação local disponível (RAIS), estima o QL e ajusta
         # o MEII nacional (3.43) para a escala do município.
         # Sem participação, usa o multiplicador nacional sem ajuste.
+        ql_estimado: Optional[float] = None
+        regional: Optional[RegionalMultiplierResult] = None
+
         if participacao is not None:
             multiplier = self.get_literature_multiplier_ql_adjusted(participacao)
             ql_estimado = _estimate_ql_from_participation(participacao)
+            regional = adjust_multipliers(
+                ql=ql_estimado,
+                region_code=municipality,
+                adjustment_method=AdjustmentMethod.CAPPED_LINEAR,
+                cap=2.5,
+                ql_method="simple",
+            )
             metodologia = (
                 f"MIP IBGE 2015 (Vale & Perobelli, 2020), setor Transporte. "
                 f"Multiplicador Tipo II ajustado por QL estimado = {ql_estimado:.2f} "
@@ -519,6 +542,13 @@ class EmploymentMultiplierService:
             )
         else:
             multiplier = self.get_literature_multiplier()
+            regional = adjust_multipliers(
+                ql=1.0,
+                region_code=municipality,
+                adjustment_method=AdjustmentMethod.CAPPED_LINEAR,
+                cap=2.5,
+                ql_method="simple",
+            )
             metodologia = (
                 "MIP IBGE 2015 (Vale & Perobelli, 2020), setor Transporte. "
                 f"Multiplicador Tipo II nacional = {_MEII:.3f} "
@@ -533,6 +563,36 @@ class EmploymentMultiplierService:
             municipality_name=nome_municipio,
             year=year,
         )
+
+        # ------------------------------------------------------------------
+        # Impacto econômico — produção (VBP) e renda
+        # ------------------------------------------------------------------
+        # VBP e renda diretos são estimados via proxy quando não há dados
+        # reais no BigQuery. O proxy usa coeficientes técnicos da MIP.
+        prod_result = None
+        income_result = None
+        dados_producao_renda = False
+        nota_producao_renda: Optional[str] = None
+
+        if direct_jobs > 0:
+            vbp_direto = direct_jobs * _VBP_PER_DIRECT_JOB
+            renda_direta = direct_jobs * _RENDA_ANUAL_MEDIA
+
+            prod_result = decompose_production_impact(vbp_direto, regional)
+            income_result = decompose_income_impact(renda_direta, regional)
+
+            dados_producao_renda = True
+            nota_producao_renda = (
+                "VBP e renda estimados via proxy MIP "
+                f"(empregos × coeficiente técnico: VBP/emp = R$ {_VBP_PER_DIRECT_JOB:,.0f}, "
+                f"renda/emp = R$ {_RENDA_ANUAL_MEDIA:,.0f}/ano). "
+                "Valores aproximados — para maior precisão, fornecer VBP e "
+                "massa salarial reais do município."
+            )
+        else:
+            nota_producao_renda = (
+                "Dados de VBP/renda não calculados: sem empregos diretos registrados."
+            )
 
         impact = EmploymentImpactResult(
             municipality_id=municipality,
@@ -555,6 +615,23 @@ class EmploymentMultiplierService:
             correlacao_ou_proxy=True,
             metodo="mip_ql_ajustado" if participacao is not None else "mip_nacional",
             fonte=DEFAULT_SOURCE,
+            # Produção (VBP)
+            producao_direta_brl=round(prod_result.direct, 2) if prod_result else None,
+            producao_indireta_brl=round(prod_result.indirect, 2) if prod_result else None,
+            producao_induzida_brl=round(prod_result.induced, 2) if prod_result else None,
+            producao_total_brl=round(prod_result.total, 2) if prod_result else None,
+            # Renda
+            renda_direta_brl=round(income_result.direct, 2) if income_result else None,
+            renda_indireta_brl=round(income_result.indirect, 2) if income_result else None,
+            renda_induzida_brl=round(income_result.induced, 2) if income_result else None,
+            renda_total_brl=round(income_result.total, 2) if income_result else None,
+            # Multiplicadores / transparência
+            multiplicador_emprego_tipo_ii=round(regional.employment_type_ii, 4),
+            multiplicador_producao_tipo_ii=round(regional.production_type_ii, 4),
+            multiplicador_renda_tipo_ii=round(regional.income_type_ii, 4),
+            ql_estimado=round(ql_estimado, 4) if ql_estimado is not None else None,
+            dados_producao_renda_disponiveis=dados_producao_renda,
+            nota_dados_producao_renda=nota_producao_renda,
         )
 
         if delta_tonelagem_pct is not None:

@@ -330,6 +330,75 @@ class ReportService:
         if rows:
             self.generator.add_indicator_table(headers, rows)
 
+        # ------------------------------------------------------------------
+        # Tabela de impacto econômico (produção / renda) — MIP
+        # ------------------------------------------------------------------
+        for item in impact_data:
+            if not item.get("dados_producao_renda_disponiveis"):
+                nota = item.get("nota_dados_producao_renda")
+                if nota:
+                    self.generator.add_text(f"Nota: {nota}", italic=True)
+                continue
+
+            self.generator.add_section("Impacto Econômico — Produção e Renda", level=3)
+
+            def _fmt_brl(val):
+                if val is None:
+                    return "N/D"
+                if abs(val) >= 1_000_000:
+                    return f"R$ {val/1_000_000:,.2f} mi"
+                return f"R$ {val:,.0f}"
+
+            econ_headers = ["Dimensão", "Direto", "Indireto", "Induzido", "Total"]
+            econ_rows = [
+                [
+                    "Emprego (postos)",
+                    format_value(item.get("empregos_diretos", 0), "Empregos"),
+                    format_value(item.get("empregos_indiretos_estimados", 0), "Empregos"),
+                    format_value(item.get("empregos_induzidos_estimados", 0), "Empregos"),
+                    format_value(item.get("emprego_total_estimado", 0), "Empregos"),
+                ],
+                [
+                    "Produção — VBP (R$)",
+                    _fmt_brl(item.get("producao_direta_brl")),
+                    _fmt_brl(item.get("producao_indireta_brl")),
+                    _fmt_brl(item.get("producao_induzida_brl")),
+                    _fmt_brl(item.get("producao_total_brl")),
+                ],
+                [
+                    "Renda — salários (R$)",
+                    _fmt_brl(item.get("renda_direta_brl")),
+                    _fmt_brl(item.get("renda_indireta_brl")),
+                    _fmt_brl(item.get("renda_induzida_brl")),
+                    _fmt_brl(item.get("renda_total_brl")),
+                ],
+            ]
+            self.generator.add_indicator_table(econ_headers, econ_rows)
+
+            # Linha com multiplicadores aplicados
+            mult_parts = []
+            meii = item.get("multiplicador_emprego_tipo_ii")
+            mptt = item.get("multiplicador_producao_tipo_ii")
+            mrii = item.get("multiplicador_renda_tipo_ii")
+            ql = item.get("ql_estimado")
+            if meii is not None:
+                mult_parts.append(f"MEII (emprego) = {meii:.2f}")
+            if mptt is not None:
+                mult_parts.append(f"MPTT (produção) = {mptt:.2f}")
+            if mrii is not None:
+                mult_parts.append(f"MRII (renda) = {mrii:.2f}")
+            if ql is not None:
+                mult_parts.append(f"QL = {ql:.2f}")
+            if mult_parts:
+                self.generator.add_text(
+                    "Multiplicadores aplicados: " + " | ".join(mult_parts),
+                    italic=True,
+                )
+
+            nota = item.get("nota_dados_producao_renda")
+            if nota:
+                self.generator.add_text(f"Nota: {nota}", italic=True)
+
         # Cenário de choque se disponível
         for item in impact_data:
             scenario = item.get("scenario")
