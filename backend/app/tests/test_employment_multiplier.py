@@ -117,6 +117,7 @@ class TestImpactQuery:
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 10.0}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "tonelagem_total": 2500000, "ton_por_empregado": 2083.33}],
+                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 56_160_000.0}],
             ]
         )
         rows = await service.get_impacto_emprego("3548500", ano=2023)
@@ -128,6 +129,12 @@ class TestImpactQuery:
         assert item.metodo in ("mip_ql_ajustado", "mip_nacional")
         assert item.empregos_por_milhao_toneladas is not None
         assert item.empregos_por_milhao_toneladas > 0
+        # Produção/renda calculados com dados RAIS reais
+        assert item.dados_producao_renda_disponiveis is True
+        assert item.renda_direta_brl == 56_160_000.0
+        assert item.producao_direta_brl is not None
+        assert item.producao_direta_brl > 0
+        assert "RAIS" in (item.nota_dados_producao_renda or "")
 
     @pytest.mark.asyncio
     async def test_get_impacto_emprego_with_scenario(self, service):
@@ -137,6 +144,7 @@ class TestImpactQuery:
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 8.3}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "ton_por_empregado": 2000.0}],
+                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 46_800_000.0}],
             ]
         )
         rows = await service.get_impacto_emprego("3548500", ano=2023, delta_tonelagem_pct=10.0)

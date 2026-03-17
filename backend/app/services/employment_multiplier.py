@@ -37,6 +37,7 @@ from typing import Optional, List, Any
 from app.db.bigquery.client import BigQueryClient, BigQueryError, get_bigquery_client
 from app.db.bigquery.queries.module3_human_resources import (
     query_empregos_diretos_portuarios,
+    query_massa_salarial_portuaria,
     query_participacao_emprego_local,
     query_produtividade_ton_empregado,
     query_total_municipal_employment,
@@ -82,8 +83,13 @@ _YEAR_MIP = 2020
 _VBP_PER_DIRECT_JOB = 1_000_000.0 / TRANSPORT_EMPLOYMENT.simple  # ~R$ 58.582
 
 # Renda anual média setor Transporte (RAIS 2015, proxy)
-# ~R$ 3.000/mês × 13 meses (inclui 13º salário)
-_RENDA_ANUAL_MEDIA = 39_000.0
+# ~R$ 3.000/mês × 13 meses (inclui 13º salário) — fallback quando não
+# há massa salarial real no BQ
+_RENDA_ANUAL_MEDIA_FALLBACK = 39_000.0
+
+# MR simples = participação da renda direta no VBP direto do setor Transporte
+# Se renda direta conhecida: VBP = renda / MR_simples
+_MR_SIMPLES = TRANSPORT_INCOME.simple  # 0.443788
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +484,9 @@ class EmploymentMultiplierService:
         produt_rows = await self._execute_query(
             query_produtividade_ton_empregado(id_municipio=municipality, ano=year)
         )
+        massa_rows = await self._execute_query(
+            query_massa_salarial_portuaria(id_municipio=municipality, ano=year)
+        )
 
         direct_jobs = self._first_row_value(direct_rows, "empregos_portuarios", int) or 0
         nome_municipio = self._first_row_value(direct_rows, "nome_municipio", str)
@@ -490,6 +499,11 @@ class EmploymentMultiplierService:
         ton_por_empregado = self._first_row_value(
             produt_rows,
             "ton_por_empregado",
+            float,
+        )
+        massa_salarial_anual = self._first_row_value(
+            massa_rows,
+            "massa_salarial_anual",
             float,
         )
 
@@ -567,28 +581,57 @@ class EmploymentMultiplierService:
         # ------------------------------------------------------------------
         # Impacto econômico — produção (VBP) e renda
         # ------------------------------------------------------------------
-        # VBP e renda diretos são estimados via proxy quando não há dados
-        # reais no BigQuery. O proxy usa coeficientes técnicos da MIP.
+        # Prioridade: dados reais RAIS (massa salarial) → proxy MIP.
+        # - Renda direta: massa_salarial_anual do BQ (RAIS) ou fallback.
+        # - VBP direto: renda / MR_simples (da MIP) ou fallback.
         prod_result = None
         income_result = None
         dados_producao_renda = False
         nota_producao_renda: Optional[str] = None
 
         if direct_jobs > 0:
-            vbp_direto = direct_jobs * _VBP_PER_DIRECT_JOB
-            renda_direta = direct_jobs * _RENDA_ANUAL_MEDIA
+            # --- Renda direta ---
+            renda_source = "proxy"
+            if massa_salarial_anual is not None and massa_salarial_anual > 0:
+                renda_direta = massa_salarial_anual
+                renda_source = "RAIS"
+            else:
+                renda_direta = direct_jobs * _RENDA_ANUAL_MEDIA_FALLBACK
+                renda_source = "proxy"
+
+            # --- VBP direto ---
+            # Derivado da renda via MR simples (MIP 2015):
+            # MR = renda_direta / VBP_direto → VBP = renda / MR
+            # Quando renda vem da RAIS, o VBP reflete o perfil real do município.
+            # Quando é proxy, usa a constante nacional como fallback.
+            vbp_source = "proxy"
+            if renda_source == "RAIS":
+                vbp_direto = renda_direta / _MR_SIMPLES
+                vbp_source = "derivado RAIS/MIP"
+            else:
+                vbp_direto = direct_jobs * _VBP_PER_DIRECT_JOB
+                vbp_source = "proxy"
 
             prod_result = decompose_production_impact(vbp_direto, regional)
             income_result = decompose_income_impact(renda_direta, regional)
 
             dados_producao_renda = True
-            nota_producao_renda = (
-                "VBP e renda estimados via proxy MIP "
-                f"(empregos × coeficiente técnico: VBP/emp = R$ {_VBP_PER_DIRECT_JOB:,.0f}, "
-                f"renda/emp = R$ {_RENDA_ANUAL_MEDIA:,.0f}/ano). "
-                "Valores aproximados — para maior precisão, fornecer VBP e "
-                "massa salarial reais do município."
-            )
+            if renda_source == "RAIS":
+                nota_producao_renda = (
+                    f"Renda direta: massa salarial RAIS ({municipality}/{year}) = "
+                    f"R$ {renda_direta:,.0f}. "
+                    f"VBP direto derivado via MR simples (MIP 2015): "
+                    f"R$ {renda_direta:,.0f} / {_MR_SIMPLES:.4f} = R$ {vbp_direto:,.0f}. "
+                    "Dados regionalizados."
+                )
+            else:
+                nota_producao_renda = (
+                    "VBP e renda estimados via proxy MIP nacional "
+                    f"(VBP/emp = R$ {_VBP_PER_DIRECT_JOB:,.0f}, "
+                    f"renda/emp = R$ {_RENDA_ANUAL_MEDIA_FALLBACK:,.0f}/ano). "
+                    "Valores aproximados — massa salarial RAIS não disponível "
+                    "para este município/ano."
+                )
         else:
             nota_producao_renda = (
                 "Dados de VBP/renda não calculados: sem empregos diretos registrados."
