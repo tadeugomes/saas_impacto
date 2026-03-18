@@ -175,10 +175,10 @@ export function Module1View() {
       setAnalyticsLoading(true);
       try {
         const [tendRes, scoreRes] = await Promise.allSettled([
-          apiClient.get<TendenciaResponse[]>('/indicators/module1/analise-tendencia', {
+          apiClient.get<TendenciaResponse[]>('/api/v1/indicators/module1/analise-tendencia', {
             params: { id_instalacao: selectedInstallation, ano_fim: selectedYear },
           }),
-          apiClient.get<ScoreResponse[]>('/indicators/module1/score-eficiencia', {
+          apiClient.get<ScoreResponse[]>('/api/v1/indicators/module1/score-eficiencia', {
             params: { id_instalacao: selectedInstallation, ano: selectedYear },
           }),
         ]);
