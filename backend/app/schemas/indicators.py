@@ -5,7 +5,10 @@ Estes schemas definem a estrutura de dados para entrada e saída
 dos indicadores de operações de navios segundo a especificação técnica.
 """
 
+from __future__ import annotations
+
 from datetime import date, datetime
+from enum import Enum
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -455,6 +458,130 @@ class IndicatorMetadata(BaseModel):
     descricao: Optional[str] = Field(None, description="Descrição do indicador")
     granularidade: str = Field(..., description="Granularidade dos dados")
     fonte_dados: str = Field(..., description="Fonte de dados")
+
+
+# ============================================================================
+# Módulo 1 — Analíticos: Tendência, Benchmarking, Score Eficiência
+# ============================================================================
+
+class ClassificacaoTendencia(str, Enum):
+    """Classificação da tendência operacional."""
+    IMPROVING = "IMPROVING"
+    STABLE = "STABLE"
+    DETERIORATING = "DETERIORATING"
+    SEM_DADOS = "SEM_DADOS"
+
+
+class TendenciaItem(BaseModel):
+    """Tendência de um indicador operacional."""
+
+    indicador_codigo: str = Field(..., description="Código do indicador (ex: IND-1.01)")
+    indicador_nome: str = Field(..., description="Nome do indicador")
+    unidade: str = Field(..., description="Unidade de medida")
+    valor_atual: Optional[float] = Field(None, description="Valor no ano atual")
+    valor_anterior: Optional[float] = Field(None, description="Valor no ano anterior")
+    variacao_yoy_pct: Optional[float] = Field(None, description="Variação ano a ano (%)")
+    cagr_3y_pct: Optional[float] = Field(None, description="CAGR 3 anos (%)")
+    classificacao: ClassificacaoTendencia = Field(
+        ClassificacaoTendencia.SEM_DADOS,
+        description="IMPROVING / STABLE / DETERIORATING / SEM_DADOS",
+    )
+    polaridade_inversa: bool = Field(
+        True,
+        description="Se True, queda no valor = melhoria (tempos). Se False, crescimento = melhoria (atracações).",
+    )
+
+
+class TendenciaOperacionalResponse(BaseModel):
+    """Análise de tendência operacional de uma instalação."""
+
+    id_instalacao: str = Field(..., description="ID da instalação portuária")
+    ano: int = Field(..., description="Ano de referência (mais recente)")
+    indicadores: List[TendenciaItem] = Field(
+        ...,
+        description="Tendência para cada indicador temporal",
+    )
+
+
+class ClassificacaoBenchmark(str, Enum):
+    """Classificação de benchmarking."""
+    ACIMA_MEDIA = "ACIMA_MEDIA"
+    NA_MEDIA = "NA_MEDIA"
+    ABAIXO_MEDIA = "ABAIXO_MEDIA"
+
+
+class BenchmarkItem(BaseModel):
+    """Posição de uma instalação em um indicador relativo ao universo nacional."""
+
+    indicador_codigo: str = Field(..., description="Código do indicador")
+    indicador_nome: str = Field(..., description="Nome do indicador")
+    unidade: str = Field(..., description="Unidade de medida")
+    valor_instalacao: Optional[float] = Field(None, description="Valor da instalação")
+    mediana_nacional: Optional[float] = Field(None, description="Mediana de todos os portos no ano")
+    p75_nacional: Optional[float] = Field(None, description="Percentil 75 nacional")
+    percentil_rank: Optional[float] = Field(
+        None, description="Posição percentil da instalação (0-100)", ge=0, le=100,
+    )
+    classificacao: ClassificacaoBenchmark = Field(
+        ClassificacaoBenchmark.NA_MEDIA,
+        description="ACIMA_MEDIA / NA_MEDIA / ABAIXO_MEDIA",
+    )
+    polaridade_inversa: bool = Field(
+        True,
+        description="Se True, percentil baixo (menos tempo) = melhor",
+    )
+
+
+class BenchmarkingResponse(BaseModel):
+    """Benchmarking de uma instalação contra pares nacionais."""
+
+    id_instalacao: str = Field(..., description="ID da instalação portuária")
+    ano: int = Field(..., description="Ano de referência")
+    total_portos: int = Field(..., description="Total de portos no universo comparativo")
+    indicadores: List[BenchmarkItem] = Field(
+        ...,
+        description="Posição relativa em cada indicador",
+    )
+
+
+class ComponenteScore(BaseModel):
+    """Componente de um score de eficiência decomposto."""
+
+    indicador_codigo: str = Field(..., description="Código do indicador")
+    indicador_nome: str = Field(..., description="Nome do indicador")
+    valor_bruto: Optional[float] = Field(None, description="Valor bruto do indicador")
+    valor_normalizado: Optional[float] = Field(
+        None, description="Valor normalizado (0-100)", ge=0, le=100,
+    )
+    peso: float = Field(..., description="Peso no score total (0-1)")
+    contribuicao: Optional[float] = Field(
+        None, description="Contribuição ao score total (normalizado × peso)",
+    )
+
+
+class ScoreEficienciaResponse(BaseModel):
+    """Score de eficiência operacional decomposto."""
+
+    id_instalacao: str = Field(..., description="ID da instalação portuária")
+    ano: int = Field(..., description="Ano de referência")
+    score_total: float = Field(
+        ..., description="Score total de eficiência (0-100)", ge=0, le=100,
+    )
+    ranking_posicao: int = Field(..., description="Posição no ranking (1 = melhor)", ge=1)
+    total_portos: int = Field(..., description="Total de portos avaliados")
+    componentes: List[ComponenteScore] = Field(
+        ...,
+        description="Decomposição do score por indicador",
+    )
+    nota_metodologica: str = Field(
+        default=(
+            "Score baseado em 6 indicadores temporais com normalização min-max "
+            "entre todos os portos no ano. Pesos: espera 20%, bruto 15%, "
+            "operação 15%, ocioso 20%, atracações 15%, paralisação 15%. "
+            "Diferente do IND-7.01 (Módulo 7) que usa volume (tonelagem)."
+        ),
+        description="Nota metodológica explicando o score",
+    )
 
 
 class AllIndicatorsResponse(BaseModel):

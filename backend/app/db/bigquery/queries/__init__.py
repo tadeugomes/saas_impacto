@@ -19,6 +19,9 @@ from app.db.bigquery.queries.module1_ship_operations import (
     query_numero_atracacoes,
     query_indice_paralisacao,
     query_resumo_operacoes_navios,
+    query_tendencia_operacional,
+    query_benchmarking_operacional,
+    query_score_eficiencia_decomposto,
     QUERIES_MODULE_1,
 )
 
@@ -155,6 +158,9 @@ __all__ = [
     "query_numero_atracacoes",
     "query_indice_paralisacao",
     "query_resumo_operacoes_navios",
+    "query_tendencia_operacional",
+    "query_benchmarking_operacional",
+    "query_score_eficiencia_decomposto",
     "QUERIES_MODULE_1",
     # Module 2 - Cargo Operations
     "query_carga_total_movimentada",

@@ -12,6 +12,8 @@ Referências:
 - Padrão ANTAQ: planejamento/docs/role_sql_antaq_bigquery/PADRAO_CALCULO_ANTAQ.md
 """
 
+from __future__ import annotations
+
 from typing import Optional
 
 
@@ -594,6 +596,475 @@ def query_resumo_operacoes_navios(
 
 
 # ============================================================================
+# Queries Analíticas — Inteligência Operacional para Investidores
+# ============================================================================
+
+def query_tendencia_operacional(
+    id_instalacao: Optional[str] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    Análise de tendência operacional por instalação.
+
+    Para cada indicador temporal (IND-1.01 a 1.06, 1.11, 1.12), calcula:
+    - Valor atual e anterior (YoY)
+    - Variação percentual ano a ano
+    - CAGR 3 anos
+    - Classificação: IMPROVING / STABLE / DETERIORATING
+
+    Polaridade: para tempos, queda = melhoria. Para atracações, crescimento = melhoria.
+    """
+    where_parts = [
+        "data_atracacao IS NOT NULL",
+        "data_chegada IS NOT NULL",
+        "data_chegada != 'nan'",
+        "data_desatracacao IS NOT NULL",
+        "data_inicio_operacao IS NOT NULL",
+        "data_termino_operacao IS NOT NULL",
+    ]
+    if id_instalacao:
+        where_parts.append(f"porto_atracacao = '{id_instalacao}'")
+    if ano_inicio and ano_fim:
+        where_parts.append(f"CAST(ano AS INT64) BETWEEN {ano_inicio} AND {ano_fim}")
+    elif ano_fim:
+        where_parts.append(f"CAST(ano AS INT64) BETWEEN {ano_fim - 5} AND {ano_fim}")
+
+    where_sql = " AND ".join(where_parts)
+
+    return f"""
+    WITH indicadores_anuais AS (
+        SELECT
+            porto_atracacao AS id_instalacao,
+            CAST(ano AS INT64) AS ano,
+            COUNT(DISTINCT idatracacao) AS ind_111_atracacoes,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    PARSE_DATETIME('%d/%m/%Y %H:%M:%S', data_chegada),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_101_espera,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%d/%m/%Y %H:%M:%S', data_chegada),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_102_porto,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_103_bruto,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_104_liquido,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) / 60.0
+            ), 2) AS ind_106_ocioso,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) * 100.0 / NULLIF(DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ), 0)
+            ), 2) AS ind_112_paralisacao
+        FROM `{VIEW_ATRACAO_VALIDADA}`
+        WHERE {where_sql}
+        GROUP BY porto_atracacao, ano
+        HAVING ind_101_espera > 0 AND ind_103_bruto > 0
+    ),
+    com_lag AS (
+        SELECT *,
+            LAG(ind_101_espera, 1) OVER w AS prev_101,
+            LAG(ind_102_porto, 1) OVER w AS prev_102,
+            LAG(ind_103_bruto, 1) OVER w AS prev_103,
+            LAG(ind_104_liquido, 1) OVER w AS prev_104,
+            LAG(ind_106_ocioso, 1) OVER w AS prev_106,
+            LAG(ind_111_atracacoes, 1) OVER w AS prev_111,
+            LAG(ind_112_paralisacao, 1) OVER w AS prev_112,
+            -- Para CAGR 3 anos
+            LAG(ind_101_espera, 3) OVER w AS prev3_101,
+            LAG(ind_103_bruto, 3) OVER w AS prev3_103,
+            LAG(ind_111_atracacoes, 3) OVER w AS prev3_111
+        FROM indicadores_anuais
+        WINDOW w AS (PARTITION BY id_instalacao ORDER BY ano)
+    )
+    SELECT
+        id_instalacao,
+        ano,
+        -- IND-1.01 Tempo Espera (inverso: queda = melhoria)
+        ind_101_espera AS valor_101,
+        prev_101 AS prev_101,
+        ROUND((ind_101_espera - prev_101) / NULLIF(prev_101, 0) * 100, 2) AS yoy_101,
+        CASE
+            WHEN prev_101 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_101_espera - prev_101) / NULLIF(prev_101, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_101_espera - prev_101) / NULLIF(prev_101, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_101,
+        -- IND-1.02 Tempo Porto (inverso)
+        ind_102_porto AS valor_102,
+        prev_102 AS prev_102,
+        ROUND((ind_102_porto - prev_102) / NULLIF(prev_102, 0) * 100, 2) AS yoy_102,
+        CASE
+            WHEN prev_102 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_102_porto - prev_102) / NULLIF(prev_102, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_102_porto - prev_102) / NULLIF(prev_102, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_102,
+        -- IND-1.03 Tempo Bruto (inverso)
+        ind_103_bruto AS valor_103,
+        prev_103 AS prev_103,
+        ROUND((ind_103_bruto - prev_103) / NULLIF(prev_103, 0) * 100, 2) AS yoy_103,
+        CASE
+            WHEN prev_103 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_103_bruto - prev_103) / NULLIF(prev_103, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_103_bruto - prev_103) / NULLIF(prev_103, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_103,
+        -- IND-1.04 Tempo Líquido (inverso)
+        ind_104_liquido AS valor_104,
+        prev_104 AS prev_104,
+        ROUND((ind_104_liquido - prev_104) / NULLIF(prev_104, 0) * 100, 2) AS yoy_104,
+        CASE
+            WHEN prev_104 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_104_liquido - prev_104) / NULLIF(prev_104, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_104_liquido - prev_104) / NULLIF(prev_104, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_104,
+        -- IND-1.06 Tempo Ocioso (inverso)
+        ind_106_ocioso AS valor_106,
+        prev_106 AS prev_106,
+        ROUND((ind_106_ocioso - prev_106) / NULLIF(prev_106, 0) * 100, 2) AS yoy_106,
+        CASE
+            WHEN prev_106 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_106_ocioso - prev_106) / NULLIF(prev_106, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_106_ocioso - prev_106) / NULLIF(prev_106, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_106,
+        -- IND-1.11 Atracações (direto: crescimento = melhoria)
+        ind_111_atracacoes AS valor_111,
+        prev_111 AS prev_111,
+        ROUND((ind_111_atracacoes - prev_111) / NULLIF(CAST(prev_111 AS FLOAT64), 0) * 100, 2) AS yoy_111,
+        CASE
+            WHEN prev_111 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_111_atracacoes - prev_111) / NULLIF(CAST(prev_111 AS FLOAT64), 0) > 0.05 THEN 'IMPROVING'
+            WHEN (ind_111_atracacoes - prev_111) / NULLIF(CAST(prev_111 AS FLOAT64), 0) < -0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_111,
+        -- IND-1.12 Paralisação (inverso)
+        ind_112_paralisacao AS valor_112,
+        prev_112 AS prev_112,
+        ROUND((ind_112_paralisacao - prev_112) / NULLIF(prev_112, 0) * 100, 2) AS yoy_112,
+        CASE
+            WHEN prev_112 IS NULL THEN 'SEM_DADOS'
+            WHEN (ind_112_paralisacao - prev_112) / NULLIF(prev_112, 0) < -0.05 THEN 'IMPROVING'
+            WHEN (ind_112_paralisacao - prev_112) / NULLIF(prev_112, 0) > 0.05 THEN 'DETERIORATING'
+            ELSE 'STABLE'
+        END AS class_112,
+        -- CAGR 3 anos (espera e atracações como exemplo)
+        CASE WHEN prev3_101 > 0 AND ind_101_espera > 0 THEN
+            ROUND((POWER(ind_101_espera / prev3_101, 1.0/3.0) - 1) * 100, 2)
+        ELSE NULL END AS cagr3_101,
+        CASE WHEN prev3_103 > 0 AND ind_103_bruto > 0 THEN
+            ROUND((POWER(ind_103_bruto / prev3_103, 1.0/3.0) - 1) * 100, 2)
+        ELSE NULL END AS cagr3_103,
+        CASE WHEN prev3_111 > 0 AND ind_111_atracacoes > 0 THEN
+            ROUND((POWER(CAST(ind_111_atracacoes AS FLOAT64) / CAST(prev3_111 AS FLOAT64), 1.0/3.0) - 1) * 100, 2)
+        ELSE NULL END AS cagr3_111
+    FROM com_lag
+    ORDER BY id_instalacao, ano DESC
+    """
+
+
+def query_benchmarking_operacional(
+    id_instalacao: str,
+    ano: int,
+) -> str:
+    """
+    Benchmarking de uma instalação contra todas as demais no mesmo ano.
+
+    Para cada indicador, retorna:
+    - Valor da instalação
+    - Mediana nacional
+    - Percentil 75 nacional
+    - Rank percentil da instalação (0-100)
+    - Classificação: ACIMA_MEDIA / NA_MEDIA / ABAIXO_MEDIA
+
+    Indicadores de tempo: percentil baixo = bom (menor tempo).
+    IND-1.11 atracações: percentil alto = bom.
+    """
+    return f"""
+    WITH metricas AS (
+        SELECT
+            porto_atracacao AS id_instalacao,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    PARSE_DATETIME('%d/%m/%Y %H:%M:%S', data_chegada),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_101,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%d/%m/%Y %H:%M:%S', data_chegada),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_102,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_103,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_104,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) / 60.0
+            ), 2) AS ind_106,
+            COUNT(DISTINCT idatracacao) AS ind_111,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) * 100.0 / NULLIF(DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ), 0)
+            ), 2) AS ind_112
+        FROM `{VIEW_ATRACAO_VALIDADA}`
+        WHERE CAST(ano AS INT64) = {ano}
+            AND data_atracacao IS NOT NULL
+            AND data_chegada IS NOT NULL
+            AND data_chegada != 'nan'
+            AND data_desatracacao IS NOT NULL
+            AND data_inicio_operacao IS NOT NULL
+            AND data_termino_operacao IS NOT NULL
+        GROUP BY porto_atracacao
+        HAVING ind_101 > 0 AND ind_103 > 0
+    ),
+    com_stats AS (
+        SELECT
+            m.*,
+            -- Percentis: para tempos, lower rank = menos espera = melhor
+            -- PERCENT_RANK: 0 = menor valor, 1 = maior valor
+            -- Para tempos: rank baixo (perto de 0) = pouco tempo = bom
+            -- Para atracações: rank alto (perto de 1) = muitas atracações = bom
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_101 ASC) * 100, 1) AS prank_101,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_102 ASC) * 100, 1) AS prank_102,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_103 ASC) * 100, 1) AS prank_103,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_104 ASC) * 100, 1) AS prank_104,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_106 ASC) * 100, 1) AS prank_106,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_111 ASC) * 100, 1) AS prank_111,
+            ROUND(PERCENT_RANK() OVER (ORDER BY ind_112 ASC) * 100, 1) AS prank_112,
+            -- Mediana e P75
+            ROUND(PERCENTILE_CONT(ind_101, 0.5) OVER (), 2) AS med_101,
+            ROUND(PERCENTILE_CONT(ind_101, 0.75) OVER (), 2) AS p75_101,
+            ROUND(PERCENTILE_CONT(ind_103, 0.5) OVER (), 2) AS med_103,
+            ROUND(PERCENTILE_CONT(ind_103, 0.75) OVER (), 2) AS p75_103,
+            ROUND(PERCENTILE_CONT(ind_104, 0.5) OVER (), 2) AS med_104,
+            ROUND(PERCENTILE_CONT(ind_104, 0.75) OVER (), 2) AS p75_104,
+            ROUND(PERCENTILE_CONT(ind_106, 0.5) OVER (), 2) AS med_106,
+            ROUND(PERCENTILE_CONT(ind_106, 0.75) OVER (), 2) AS p75_106,
+            ROUND(PERCENTILE_CONT(CAST(ind_111 AS FLOAT64), 0.5) OVER (), 0) AS med_111,
+            ROUND(PERCENTILE_CONT(CAST(ind_111 AS FLOAT64), 0.75) OVER (), 0) AS p75_111,
+            ROUND(PERCENTILE_CONT(ind_112, 0.5) OVER (), 2) AS med_112,
+            ROUND(PERCENTILE_CONT(ind_112, 0.75) OVER (), 2) AS p75_112,
+            COUNT(*) OVER () AS total_portos
+        FROM metricas m
+    )
+    SELECT *
+    FROM com_stats
+    WHERE id_instalacao = '{id_instalacao}'
+    """
+
+
+def query_score_eficiencia_decomposto(
+    id_instalacao: Optional[str] = None,
+    ano: int = 2023,
+) -> str:
+    """
+    Score de eficiência operacional decomposto (0-100).
+
+    Usa 6 indicadores temporais com normalização min-max e pesos:
+    - IND-1.01 Espera: 20% (inverso)
+    - IND-1.03 Bruto atracação: 15% (inverso)
+    - IND-1.04 Líquido operação: 15% (inverso)
+    - IND-1.05 não disponível com cálculo confiável, substituído por IND-1.02
+    - IND-1.06 Ocioso: 20% (inverso)
+    - IND-1.12 Paralisação: 15% (inverso)
+    - IND-1.11 Atracações: 15% (direto)
+
+    Diferente do M7 que usa volume (tonelagem + atracações).
+    Este score usa tempos operacionais = eficiência de processo.
+    """
+    instalacao_filter = f"AND porto_atracacao = '{id_instalacao}'" if id_instalacao else ""
+
+    return f"""
+    WITH metricas AS (
+        SELECT
+            porto_atracacao AS id_instalacao,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    PARSE_DATETIME('%d/%m/%Y %H:%M:%S', data_chegada),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_101,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_103,
+            ROUND(AVG(
+                DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                ) / 60.0
+            ), 2) AS ind_104,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) / 60.0
+            ), 2) AS ind_106,
+            COUNT(DISTINCT idatracacao) AS ind_111,
+            ROUND(AVG(
+                (DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ) - DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_termino_operacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_inicio_operacao),
+                    MINUTE
+                )) * 100.0 / NULLIF(DATETIME_DIFF(
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_desatracacao),
+                    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', data_atracacao),
+                    MINUTE
+                ), 0)
+            ), 2) AS ind_112
+        FROM `{VIEW_ATRACAO_VALIDADA}`
+        WHERE CAST(ano AS INT64) = {ano}
+            AND data_atracacao IS NOT NULL
+            AND data_chegada IS NOT NULL
+            AND data_chegada != 'nan'
+            AND data_desatracacao IS NOT NULL
+            AND data_inicio_operacao IS NOT NULL
+            AND data_termino_operacao IS NOT NULL
+            {instalacao_filter}
+        GROUP BY porto_atracacao
+        HAVING ind_101 > 0 AND ind_103 > 0
+    ),
+    limites AS (
+        SELECT
+            MIN(ind_101) AS min_101, MAX(ind_101) AS max_101,
+            MIN(ind_103) AS min_103, MAX(ind_103) AS max_103,
+            MIN(ind_104) AS min_104, MAX(ind_104) AS max_104,
+            MIN(ind_106) AS min_106, MAX(ind_106) AS max_106,
+            MIN(ind_111) AS min_111, MAX(ind_111) AS max_111,
+            MIN(ind_112) AS min_112, MAX(ind_112) AS max_112
+        FROM metricas
+    ),
+    normalizado AS (
+        SELECT
+            m.id_instalacao,
+            m.ind_101, m.ind_103, m.ind_104, m.ind_106, m.ind_111, m.ind_112,
+            -- Inverso: (max - valor) / (max - min) → menor tempo = score mais alto
+            ROUND((l.max_101 - m.ind_101) / NULLIF(l.max_101 - l.min_101, 0) * 100, 2) AS norm_101,
+            ROUND((l.max_103 - m.ind_103) / NULLIF(l.max_103 - l.min_103, 0) * 100, 2) AS norm_103,
+            ROUND((l.max_104 - m.ind_104) / NULLIF(l.max_104 - l.min_104, 0) * 100, 2) AS norm_104,
+            ROUND((l.max_106 - m.ind_106) / NULLIF(l.max_106 - l.min_106, 0) * 100, 2) AS norm_106,
+            -- Direto: mais atracações = melhor
+            ROUND((CAST(m.ind_111 AS FLOAT64) - l.min_111) / NULLIF(CAST(l.max_111 - l.min_111 AS FLOAT64), 0) * 100, 2) AS norm_111,
+            -- Inverso: menor paralisação = melhor
+            ROUND((l.max_112 - m.ind_112) / NULLIF(l.max_112 - l.min_112, 0) * 100, 2) AS norm_112
+        FROM metricas m
+        CROSS JOIN limites l
+    ),
+    score_final AS (
+        SELECT
+            n.*,
+            -- Pesos: espera 20%, bruto 15%, líquido 15%, ocioso 20%, atracações 15%, paralisação 15%
+            ROUND(
+                COALESCE(n.norm_101, 50) * 0.20 +
+                COALESCE(n.norm_103, 50) * 0.15 +
+                COALESCE(n.norm_104, 50) * 0.15 +
+                COALESCE(n.norm_106, 50) * 0.20 +
+                COALESCE(n.norm_111, 50) * 0.15 +
+                COALESCE(n.norm_112, 50) * 0.15
+            , 2) AS score_total,
+            ROW_NUMBER() OVER (ORDER BY
+                COALESCE(n.norm_101, 50) * 0.20 +
+                COALESCE(n.norm_103, 50) * 0.15 +
+                COALESCE(n.norm_104, 50) * 0.15 +
+                COALESCE(n.norm_106, 50) * 0.20 +
+                COALESCE(n.norm_111, 50) * 0.15 +
+                COALESCE(n.norm_112, 50) * 0.15
+            DESC) AS ranking_posicao,
+            COUNT(*) OVER () AS total_portos
+        FROM normalizado n
+    )
+    SELECT *
+    FROM score_final
+    ORDER BY ranking_posicao ASC
+    """
+
+
+# ============================================================================
 # Dicionário de Queries
 # ============================================================================
 
@@ -611,6 +1082,10 @@ QUERIES_MODULE_1 = {
     "IND-1.11": query_numero_atracacoes,
     "IND-1.12": query_indice_paralisacao,
     "RESUMO": query_resumo_operacoes_navios,
+    # Analíticos
+    "TENDENCIA": query_tendencia_operacional,
+    "BENCHMARKING": query_benchmarking_operacional,
+    "SCORE-EFICIENCIA": query_score_eficiencia_decomposto,
 }
 
 
