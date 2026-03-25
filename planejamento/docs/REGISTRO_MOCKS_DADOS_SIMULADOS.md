@@ -11,9 +11,9 @@
 
 | Severidade | Quantidade | Descrição |
 |-----------|-----------|-----------|
-| 🔴 ALTO | 2 | Indicadores retornam dado incorreto (denominador errado) — usuário vê valor sem sentido |
-| 🟡 MÉDIO | 2 | Indicadores retornam zero explícito — fonte de dados inexistente |
-| 🟢 BAIXO | 3 | Coeficientes hardcoded da literatura acadêmica — intencional e documentado |
+| 🔴 ALTO | 3 | Indicadores com dado incorreto (denominador errado) OU bypass de segurança em produção |
+| 🟡 MÉDIO | 3 | Indicadores zero explícito + estimativa causal sintética com p-values fabricados |
+| 🟢 BAIXO | 4 | Coeficientes acadêmicos hardcoded + fallback de gráfico em DOCX |
 
 ---
 
@@ -61,6 +61,23 @@
 
 ---
 
+### FE-SEC-01 — Flag `VITE_DISABLE_AUTH`: bypass completo de autenticação JWT
+
+| Campo | Valor |
+|-------|-------|
+| **Arquivo** | `frontend/src/api/client.ts` |
+| **Linha** | 10 (`this.disableAuth = import.meta.env.VITE_DISABLE_AUTH === 'true'`) |
+| **Componente** | `ApiClient` — interceptor de request |
+| **Comportamento real** | Quando `VITE_DISABLE_AUTH=true`, o token JWT nunca é adicionado ao cabeçalho `Authorization`. O interceptor de resposta também ignora erros 401 sem tentar refresh. |
+| **Comportamento esperado** | Autenticação sempre ativa em qualquer ambiente não-dev |
+| **Causa** | Flag de desenvolvimento para facilitar testes sem backend de auth |
+| **Impacto** | Se o build de produção for feito com `VITE_DISABLE_AUTH=true`, todos os usuários acessam como anônimos — todos os endpoints protegidos ficam acessíveis sem token |
+| **Risco** | CRÍTICO em produção; aceitável apenas em ambiente local de dev |
+| **Workaround atual** | Depende de variável de ambiente não ser definida em produção — sem proteção por código |
+| **Ação recomendada** | Adicionar guard no `vite.config.ts` ou CI que falhe o build de produção se `VITE_DISABLE_AUTH=true` |
+
+---
+
 ## 🟡 MÉDIA SEVERIDADE — Dado zero explícito (fonte indisponível)
 
 ### M2-PH-03 — IND-2.04: Passageiros Ferry
@@ -97,6 +114,22 @@
 | **Impacto** | Idem — zero pode ser confundido com dado real em portos sem cruzeiros |
 | **Workaround atual** | Comentário no código |
 | **PR de correção** | PR-38 |
+
+---
+
+### M3-PH-05 — Estimativa causal sintética (`build_proxy_causal_multiplier`)
+
+| Campo | Valor |
+|-------|-------|
+| **Arquivo** | `backend/app/services/employment_multiplier.py` |
+| **Linhas** | 402–450 (método estático `build_proxy_causal_multiplier`) |
+| **Indicador** | Módulo 3 — multiplicador de emprego com `use_causal=true` |
+| **Comportamento real** | Gera `p_value`, `std_error`, `n_obs` e `method` sintéticos a partir de regras determinísticas sobre `direct_jobs` e sinais locais. P-values são sempre 0.045, 0.08 ou 0.10 dependendo de condições. `n_obs = max(24, min(240, direct_jobs / 20))`. Método declarado como `"panel_iv"` ou `"iv_2sls"`. |
+| **Comportamento esperado** | Resultado de estimação econométrica real (DiD, IV, Panel IV) via pipeline causal do Módulo 5 |
+| **Causa** | Pipeline causal completo (Módulo 5) não integrado ao Módulo 3; este helper foi criado como ponte temporária para habilitar o endpoint `use_causal=true` |
+| **Impacto** | Usuário que solicita `use_causal=true` recebe coeficiente com aparência de estimativa causal (p-value, CIs, método), mas todos os valores de significância são fabricados. A resposta inclui aviso `correlacao_ou_proxy: true`, mas o campo `method: "panel_iv"` é enganoso. |
+| **Workaround atual** | Campo `correlacao_ou_proxy: true` na resposta; docstring explica a natureza temporária |
+| **Ação recomendada** | Remover `build_proxy_causal_multiplier` após integração real do pipeline causal M5 → M3. Até lá, considerar retornar apenas `literature` sem simular `p_value`/`n_obs`. |
 
 ---
 
@@ -146,6 +179,21 @@
 
 ---
 
+### RPT-PH-01 — Placeholder de gráfico em relatório DOCX
+
+| Campo | Valor |
+|-------|-------|
+| **Arquivos** | `backend/app/reports/docx_generator.py` (linhas 154–173) e `backend/app/reports/report_service.py` (linha 1358) |
+| **Componente** | `DOCXGenerator.add_chart_placeholder()` — fallback de renderização |
+| **Comportamento real** | Quando `chart_bytes` é `None` ou a inserção de imagem falha, o DOCX recebe um parágrafo com texto `[Gráfico: <título>]` em itálico cinza com borda. Não há gráfico real. |
+| **Comportamento esperado** | Gráfico de Event Study renderizado como imagem PNG/SVG no documento |
+| **Causa** | Geração de gráfico (matplotlib/plotly) como bytes não está implementada no path de geração de relatório; `chart_bytes` chega como `None` |
+| **Impacto** | Relatório DOCX gerado para análises com Event Study mostra placeholder de texto no lugar do gráfico. Dado numérico (coeficientes, tabelas) está correto — apenas a visualização é ausente. |
+| **Workaround atual** | Texto deixa claro que é um placeholder; não é dado falso |
+| **Impacto** | Baixo — afeta apenas apresentação do relatório, não os dados |
+
+---
+
 ## Dados hardcoded que NÃO são problema
 
 Os seguintes hardcodings são esperados e corretos:
@@ -164,6 +212,9 @@ Os seguintes hardcodings são esperados e corretos:
 
 - [ ] **PR-37**: Implementar IND-2.11 e IND-2.12 com dado real ou marcar como `disponibilidade: "indisponível"` na resposta + mensagem na UI
 - [ ] **PR-38**: Implementar IND-2.04 e IND-2.05 com dado real ou marcar como `disponibilidade: "indisponível"`
+- [ ] **FE-SEC-01**: Adicionar guard de build que proíbe `VITE_DISABLE_AUTH=true` em `NODE_ENV=production` (vite.config.ts ou step de CI)
+- [ ] **M3-PH-05**: Após integração do pipeline causal M5→M3, remover `build_proxy_causal_multiplier` e usar resultado real
+- [ ] **RPT-PH-01**: Implementar geração de gráfico como bytes (matplotlib) no `report_service.py` para substituir o placeholder de Event Study
 - [ ] **Atualização futura**: quando IBGE publicar MIP 2020, atualizar constantes em `national_multipliers.py` e `employment_multiplier.py`
 
 ---
