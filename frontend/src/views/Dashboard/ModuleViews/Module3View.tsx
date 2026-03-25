@@ -879,6 +879,15 @@ export function Module3View() {
           </div>
         </div>
 
+        {useCausalEstimate && impactData.length > 0 && !impactData[0]?.causal && (
+          <div className="mb-4 flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
+            <AlertCircle className="mt-0.5 w-3.5 h-3.5 flex-shrink-0" />
+            <span>
+              {impactData[0]?.causal_unavailable_reason ??
+                'Estimativa causal real não disponível. Exibindo multiplicadores de literatura como proxy.'}
+            </span>
+          </div>
+        )}
         {isImpactLoading ? (
           <div className="py-6"><LoadingSpinner /></div>
         ) : impactData.length === 0 ? (

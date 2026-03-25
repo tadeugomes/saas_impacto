@@ -72,22 +72,13 @@ async def get_multipliers(
         municipality_name=impact.municipality_name,
         year=impact.ano,
     )
-    causal_multiplier = service.build_proxy_causal_multiplier(
-        direct_jobs=impact.empregos_diretos,
-        participation_local=impact.participacao_emprego_local,
-        empregos_por_milhao_toneladas=impact.empregos_por_milhao_toneladas,
-        base_multiplier=multiplier,
-    )
-    causal_estimate = service.build_causal_estimate(
-        direct_jobs=impact.empregos_diretos,
-        causal=causal_multiplier,
-        municipality_id=impact.municipality_id,
-        municipality_name=impact.municipality_name,
-        year=impact.ano,
-    )
-    active_estimate = causal_estimate if use_causal else estimate
-
     response: dict[str, Any] = impact.model_dump()
+    causal_unavailable_reason = (
+        "Estimativa causal real não disponível no Módulo 3 (pipeline M5→M3 não integrado). "
+        "Exibindo multiplicadores de literatura como proxy."
+        if use_causal
+        else None
+    )
     response.update(
         {
             "municipality_id": impact.municipality_id,
@@ -107,20 +98,11 @@ async def get_multipliers(
                 "confidence": multiplier.confidence,
                 "year_published": multiplier.year_published,
             },
-            "causal": {
-                "source": "Estimativa causal aproximada (beta) com sinais locais RAIS + ANTAQ",
-                "method": causal_multiplier.method,
-                "n_obs": causal_multiplier.n_obs,
-                "r2": None,
-                "coefficient": causal_multiplier.coefficient,
-                "p_value": causal_multiplier.p_value,
-                "ci_lower": causal_multiplier.ci_lower,
-                "ci_upper": causal_multiplier.ci_upper,
-                "confidence": causal_multiplier.confidence,
-            },
+            "causal": None,
+            "causal_unavailable_reason": causal_unavailable_reason,
+            "causal_estimate": None,
             "estimate": estimate.model_dump(),
-            "causal_estimate": causal_estimate.model_dump(),
-            "active": active_estimate.model_dump(),
+            "active": estimate.model_dump(),
         }
     )
 

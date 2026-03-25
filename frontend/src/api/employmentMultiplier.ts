@@ -70,6 +70,7 @@ export interface EmploymentMultiplierResponse {
   data?: EmploymentMultiplierImpactRow[];
   literature: EmploymentMultiplierLiterature;
   causal?: EmploymentMultiplierCausal | null;
+  causal_unavailable_reason?: string | null;
   estimate: EmploymentMultiplierConfidenceEstimate;
   active?: EmploymentMultiplierConfidenceEstimate | null;
   causal_estimate?: EmploymentMultiplierConfidenceEstimate | null;

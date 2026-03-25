@@ -1423,7 +1423,7 @@ class ReportService:
         except Exception:
             return None
 
-        points = []
+        points: list[tuple[int, float, float | None, float | None]] = []
         for raw_item in coefficients:
             item = self._coerce_mapping(raw_item)
             rel_time = item.get("rel_time")
@@ -1436,22 +1436,42 @@ class ReportService:
             )
             if not isinstance(rel_time, (int, float)) or not isinstance(coef, (int, float)):
                 continue
-            points.append((int(rel_time), float(coef)))
+            ci_lower = item.get("ci_lower")
+            ci_upper = item.get("ci_upper")
+            ci_lower = float(ci_lower) if isinstance(ci_lower, (int, float)) else None
+            ci_upper = float(ci_upper) if isinstance(ci_upper, (int, float)) else None
+            points.append((int(rel_time), float(coef), ci_lower, ci_upper))
 
         if len(points) < 2:
             return None
 
-        x, y = zip(*sorted(points))
+        points_sorted = sorted(points, key=lambda p: p[0])
+        x = [p[0] for p in points_sorted]
+        y = [p[1] for p in points_sorted]
+        ci_lowers = [p[2] for p in points_sorted]
+        ci_uppers = [p[3] for p in points_sorted]
+        has_ci = all(lo is not None and hi is not None for lo, hi in zip(ci_lowers, ci_uppers))
 
         try:
             plt.figure(figsize=(6.0, 3.8))
-            plt.plot(x, y, marker="o", linewidth=2, color="#1f77b4")
+            if has_ci:
+                plt.fill_between(
+                    x,
+                    [lo for lo in ci_lowers],  # type: ignore[arg-type]
+                    [hi for hi in ci_uppers],  # type: ignore[arg-type]
+                    alpha=0.15,
+                    color="#1f77b4",
+                    label="IC 95%",
+                )
+            plt.plot(x, y, marker="o", linewidth=2, color="#1f77b4", label="Coeficiente")
             plt.axhline(0, linewidth=1, linestyle="--", color="gray")
-            plt.axvline(0, linewidth=1, linestyle=":", color="black")
+            plt.axvline(0, linewidth=1, linestyle=":", color="black", label="Tratamento")
             plt.title("Evolução do efeito por período")
             plt.xlabel("Período relativo ao tratamento")
             plt.ylabel("Coeficiente")
             plt.grid(axis="both", alpha=0.2)
+            if has_ci:
+                plt.legend(fontsize=8, loc="best")
 
             from io import BytesIO
 

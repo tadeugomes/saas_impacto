@@ -213,8 +213,8 @@ Os seguintes hardcodings são esperados e corretos:
 - [ ] **PR-37**: Implementar IND-2.11 e IND-2.12 com dado real ou marcar como `disponibilidade: "indisponível"` na resposta + mensagem na UI
 - [ ] **PR-38**: Implementar IND-2.04 e IND-2.05 com dado real ou marcar como `disponibilidade: "indisponível"`
 - [ ] **FE-SEC-01**: Adicionar guard de build que proíbe `VITE_DISABLE_AUTH=true` em `NODE_ENV=production` (vite.config.ts ou step de CI)
-- [ ] **M3-PH-05**: Após integração do pipeline causal M5→M3, remover `build_proxy_causal_multiplier` e usar resultado real
-- [ ] **RPT-PH-01**: Implementar geração de gráfico como bytes (matplotlib) no `report_service.py` para substituir o placeholder de Event Study
+- [x] **M3-PH-05**: Após integração do pipeline causal M5→M3, remover `build_proxy_causal_multiplier` e usar resultado real — ✅ resolvido: método removido de `employment_multiplier.py`; endpoint retorna `causal: null` + `causal_unavailable_reason` quando `use_causal=true`; frontend exibe banner informativo no lugar dos p-values fabricados
+- [x] **RPT-PH-01**: Implementar geração de gráfico como bytes (matplotlib) no `report_service.py` para substituir o placeholder de Event Study — ✅ resolvido: adicionadas bandas de IC (`fill_between` com `ci_lower`/`ci_upper`) ao gráfico Event Study; placeholder só persiste se `matplotlib` não estiver instalado
 - [ ] **Atualização futura**: quando IBGE publicar MIP 2020, atualizar constantes em `national_multipliers.py` e `employment_multiplier.py`
 
 ---
