@@ -1,6 +1,6 @@
 # Próximos Passos — SaaS Impacto Portuário
 
-> Atualizado: 2026-02-26 | PR-19 a PR-21 + PR-31 concluídos; Python 3.9 compat.
+> Atualizado: 2026-03-25 | Auditoria completa pós-sincronização com main
 
 ---
 
@@ -23,35 +23,81 @@
 | PR-13 | RBAC granular (tabela permissions, decorators, endpoints protegidos) | +35 | ✅ |
 | PR-14 | Audit log (tabela, AuditMiddleware, AuditService, admin endpoint) | +22 | ✅ |
 | PR-18 | CI/CD GitHub Actions (lint, test, build, deploy GCP Cloud Run) | — | ✅ |
-| PR-19 | Frontend: rota `/dashboard/module5` → `Module5View` | — | ✅ (já existia) |
+| PR-19 | Frontend: rota `/dashboard/module5` → `Module5View` | — | ✅ |
 | PR-20 | Relatório DOCX para análise causal (`ReportService`) | 16 | ✅ |
-| PR-21 | Logging estruturado structlog + compatibilidade Python 3.9 | 3 | ✅ |
-| PR-31 | Module3View: Painel de Impacto em Emprego (frontend) | — | ✅ |
+| PR-21 | Logging estruturado structlog + Python 3.9 compat | 3 | ✅ |
+| PR-22 | Purge automático `audit_logs` + Celery Beat scheduler | +8 | ✅ |
+| PR-23 | Terraform/IaC para GCP staging + produção | — | ✅ |
+| PR-24 | Notificações webhook + email ao fim de análise | +10 | ✅ |
+| PR-25 | SCM real (ASCM: ridge regression + placebos de espaço/tempo) | +30 | ✅ |
+| PR-26 | Matching automático PSM/CEM para seleção de controles | +15 | ✅ |
+| PR-27 | Hotfixes auth: password reset + JWT blacklist Redis | +13 | ✅ |
+| PR-28 | Admin CRUD de tenants + gestão de usuários | +20 | ✅ |
+| PR-29 | OpenTelemetry + métricas Prometheus | +8 | ✅ |
+| PR-30 | API docs OpenAPI + versionamento + SDK generation | +5 | ✅ |
+| PR-31 | Module3View: Painel de Impacto em Emprego + IND-3.13-3.16 | — | ✅ |
+| PR-32 | Exportação avançada: PDF + Excel para indicadores | — | ✅ |
+| PR-33 | Dashboard analítico do tenant (admin) | — | ✅ |
+| PR-34 | i18n PT/EN + mobile responsiveness + component tests | — | ✅ |
+| PR-35 | PWA + manifest + service worker | — | ✅ |
+| PR-36 | Onboarding self-service (tenant + admin user em uma transação) | — | ✅ |
+| PR-X  | M1: Analytics operacional (tendência, benchmarking, score) | +12 | ✅ |
+| PR-X  | M1: Frontend aba Benchmarking Nacional | — | ✅ |
+| PR-X  | M3: MIP IBGE 2015 + QL RAIS + benchmark Paranaguá | +8 | ✅ |
+| PR-X  | M3/M5: DOCX enriquecido (simulação + diagnósticos causais) | — | ✅ |
 
-**Total acumulado:** 296 testes unitários passando, 0 falhas
+**Total acumulado:** ~370 testes unitários, stack completa
 
-**Stack atual em produção:**
+**Stack atual:**
 - FastAPI + asyncpg + SQLAlchemy 2.0 + Alembic (5 migrations)
-- Celery + Redis (broker + cache + rate limit)
+- Celery + Redis (broker + cache + rate limit + beat scheduler)
 - BigQuery (81 indicadores, 7 módulos)
 - RBAC + RLS + Audit + Rate Limit
-- CI/CD → Cloud Run (api + worker)
+- OpenTelemetry + Prometheus metrics
+- Terraform GCP (Cloud Run + Cloud SQL + Memorystore + GCS + Secret Manager)
+- CI/CD GitHub Actions → Cloud Run (api + worker + beat)
+- PWA + i18n PT/EN
+- 7 módulos frontend com analytics (M1: tendência/benchmarking/score; M3: simulador de emprego + MIP)
 
 ---
 
-## Gap analysis — o que ficou incompleto
+## Score de prontidão atual
 
-### Lacunas descobertas na auditoria
+| Dimensão | Score | Notas |
+|----------|-------|-------|
+| Backend API | 95% | Todos os módulos com BigQuery real; 4 indicadores M2 com placeholders documentados |
+| Frontend | 97% | 7 módulos completos; M1 com 4 abas analíticas; M3 com simulador |
+| Infraestrutura | 90% | Terraform pronto; CI/CD ativo; Celery Beat rodando |
+| Segurança | 92% | RBAC, RLS, audit, rate limit, JWT blacklist, password reset |
+| Observabilidade | 85% | structlog, OpenTelemetry, Prometheus; sem dashboard Grafana pré-configurado |
 
-| Item | Situação | Impacto |
-|------|----------|---------|
-| Rota `/dashboard/module5` ausente do `routes.tsx` | Componente `Module5View` existe mas está desconectado | Alto — feature invisível no frontend |
-| Relatório DOCX para análise de impacto causal | `ReportService` cobre indicadores; `result_full` da análise causal não é exportado | Alto — entrega core do produto |
-| Logging estruturado (structlog) | `logging` padrão, sem JSON fields; sem tenant_id/request_id no log | Médio — dificulta debugging em produção |
-| Purge periódico de audit_logs | Método `purge_expired()` existe mas não é chamado automaticamente | Médio — acumulo ilimitado no Postgres |
-| Terraform/IaC | CI/CD deploy existe mas infraestrutura criada manualmente | Médio — não reproduzível |
-| Notificações (webhook/email) | Não iniciado | Baixo — UX melhor para análises longas |
-| SCM/Augmented SCM port real | Stubs com NotImplementedError, aguardando `new_impacto` | Baixo — bloqueado por dependência externa |
+---
+
+## Gaps conhecidos e registrados
+
+### Dados simulados/placeholder em produção
+
+Ver `REGISTRO_MOCKS_DADOS_SIMULADOS.md` para inventário completo.
+
+Resumo dos gaps de dados:
+
+| Indicador | Módulo | Gap | Impacto |
+|-----------|--------|-----|---------|
+| IND-2.04 Passageiros Ferry | M2 | Retorna 0 — sem fonte de dados de passageiros no ANTAQ | Médio |
+| IND-2.05 Passageiros Cruzeiro | M2 | Retorna 0 — sem fonte de dados de passageiros no ANTAQ | Médio |
+| IND-2.11 Toneladas/Hectare | M2 | Retorna tonelagem total — sem dados de área do berço | Alto |
+| IND-2.12 Toneladas/Metro de Cais | M2 | Retorna tonelagem total — sem dados de extensão do cais | Alto |
+| Multiplicador de emprego | M3 | Coeficientes da literatura (MIP IBGE 2015) — intencional, documentado | Baixo |
+| Benchmark Paranaguá | M3 | Valor de referência hardcoded do TCC — intencional, documentado | Baixo |
+
+### Riscos operacionais
+
+| # | Gap | Risco | Esforço |
+|---|-----|-------|---------|
+| G1 | Dashboard Grafana não pré-configurado | Cego em produção para métricas customizadas | 3h |
+| G2 | IND-2.11 e IND-2.12 retornam dados sem denominador real | Usuário vê gráfico com dado incorreto | 4h + dados |
+| G3 | Sem testes E2E (Playwright/Cypress) | Regressões de integração não detectadas | 1d |
+| G4 | Alembic migration D7 (SCM stubs) ainda no changelog | Ruído histórico | 30 min |
 
 ---
 
@@ -59,211 +105,110 @@
 
 ---
 
-### PR-19 — Frontend: conectar Module5View + polish de UX
+### PR-37 — Dados reais para IND-2.11 e IND-2.12 (área/extensão de berços)
 
-**Prioridade:** Crítica | **Esforço:** Baixo
-**Objetivo:** Tornar o módulo de análise causal acessível no produto — sem isso, todo o backend de impacto é invisível ao usuário.
+**Prioridade:** Alta | **Esforço:** 4h + dados
+**Objetivo:** Substituir os placeholders dos indicadores de densidade operacional por denominadores reais.
 
 **Entregas:**
-- `router/routes.tsx`: adicionar rota `/dashboard/module5` → `Module5View` (lazy)
-- `DashboardHome.tsx`: card do Módulo 5 com link funcional (remover `disabled` ou placeholder)
-- Conectar `Module5View` ao hook de polling `useAnalysis(id)`:
-  - Intervalo: 2s enquanto `queued`, 5s enquanto `running`, parar em `success`/`failed`
-  - Status badge: queued (âmbar), running (azul), success (verde), failed (vermelho)
-- Componente `AnalysisResultCard` integrado ao resultado real da API (`result_summary`)
-- Componente `EventStudyChart` integrado quando `method = event_study`
-- Componente `MethodComparisonTable` integrado quando `method = compare`
-- Download: botão "Exportar CSV" (coeficientes) + "Exportar JSON" (result_full)
-- Formulário de criação: validação client-side (ano ≥ 2000, pelo menos 1 treated + 1 control)
-- Testes: React Testing Library para os 4 novos componentes + hook
+- Identificar fonte de dados de área (m²) e extensão de cais (m) por instalação no ANTAQ ou dados públicos da ANTAQ/Marinha
+- `module2_cargo_operations.py`: atualizar `query_toneladas_por_hectare` e `query_toneladas_por_metro_cais` com join real
+- Se fonte não disponível: marcar indicadores como `disponibilidade: "indisponível"` na resposta e exibir mensagem no frontend
+- Testes: 4 (retorno correto, fallback para indisponível)
 
-**Dependência:** Nenhuma — componentes já existem, só falta conectar.
+**Dependência:** Disponibilidade de dados — verificar ANTAQ/SNPq/dados abertos portuários
 
 ---
 
-### PR-20 — Relatório DOCX para análise de impacto causal
+### PR-38 — Dados de passageiros (IND-2.04 e IND-2.05)
 
-**Prioridade:** Alta | **Esforço:** Médio
-**Objetivo:** Entregar um produto tangível ao usuário após a análise — relatório em Word com metodologia, resultados e diagnósticos.
+**Prioridade:** Média | **Esforço:** 3h + dados
+**Objetivo:** Substituir zeros pelos dados reais de movimentação de passageiros.
 
 **Entregas:**
-- `reports/impact_report_service.py`: novo serviço específico para análise causal
-  - `generate_impact_report(analysis: EconomicImpactAnalysis) → bytes`
-  - Lê `result_full` (ou busca de `artifact_path` no GCS se payload grande)
-  - Renderiza seções: capa, resumo executivo, especificação do método, tabela de coeficientes, diagnósticos (p-valores, n_obs, R²), event study chart como imagem (matplotlib), notas metodológicas
-  - Suporte a todos os métodos: DiD, IV, Panel IV, Event Study, Compare
-- `reports/templates/impact_report.py`: constantes de formatação ABNT-compatible
-- Endpoint novo: `GET /impacto-economico/analises/{id}/report`
-  - Retorna Content-Disposition: attachment; filename=relatorio_impacto_{id}.docx
-  - Requer status = `success`; retorna 409 se ainda rodando, 404 se não encontrado
-  - Requer permissão `module5:read`
-- Upload para GCS (opcional): link temporário de 24h se habilitado
-- Testes: 12-15 (mock de `result_full` para cada método, geração de bytes válidos)
+- Identificar tabela ANTAQ com dados de passageiros (ferry e cruzeiro)
+- `module2_cargo_operations.py`: implementar queries reais
+- Se indisponível para a maioria dos portos: marcar como `disponibilidade: "parcial"` com nota
+- Testes: 3
 
-**Dependência:** PR-19 (botão de download no frontend)
+**Dependência:** Disponibilidade de dados no BigQuery ANTAQ
 
 ---
 
-### PR-21 — Logging estruturado com structlog
+### PR-39 — Testes E2E com Playwright
 
-**Prioridade:** Alta | **Esforço:** Baixo
-**Objetivo:** Logs legíveis por máquina no Cloud Logging do GCP — indispensável para debugging em produção multi-tenant.
+**Prioridade:** Alta | **Esforço:** 1d
+**Objetivo:** Detectar regressões de integração antes de chegar à produção.
 
 **Entregas:**
-- `pip install structlog` adicionado ao `requirements.txt`
-- `app/core/logging.py`: configuração do structlog
-  - Renderer: JSON em produção, ConsoleRenderer colorido em dev
-  - Processors padrão: add_log_level, add_timestamp, render_to_log_kwargs
-  - Processadores customizados: `inject_request_context` (request_id, tenant_id, user_id via contextvars)
-- `RequestTimingMiddleware` (atualizado): popula `structlog.contextvars` com request_id, tenant_id
-- Substituição de `logger.info(...)` por `structlog.get_logger().info(...)` nos módulos principais:
-  - `main.py`, `core/audit.py`, `services/impacto_economico/analysis_service.py`, `tasks/impacto_economico.py`
-- Worker Celery: `structlog` configurado com task_id como campo padrão
-- Testes: 5-8 (verificar que log contém campos obrigatórios)
+- `e2e/` na raiz do projeto com Playwright
+- Fluxos críticos:
+  - Login → seleção de instalação → visualização de indicador M1
+  - Login → criação de análise causal → polling de status → download DOCX
+  - Login → Module3View → simulação de impacto por tonelagem
+  - Onboarding: criação de tenant + primeiro acesso
+- CI: job `e2e` no workflow `ci.yml` (executa em staging com dados fixos)
+- Testes: 8-12 cenários
+
+**Dependência:** Ambiente staging estável (PR-23 Terraform)
+
+---
+
+### PR-40 — Dashboard Grafana pré-configurado
+
+**Prioridade:** Média | **Esforço:** 3h
+**Objetivo:** Visualização operacional pronta para usar no Cloud Monitoring / Grafana.
+
+**Entregas:**
+- `infra/grafana/dashboard_saas_impacto.json`: dashboard importável
+  - Painel: request rate por tenant, latência P50/P95/P99, error rate
+  - Painel: Celery tasks por status (queued/running/success/failed)
+  - Painel: BigQuery cache hit rate, custo estimado por dia
+  - Painel: análises causais por método/status
+- `infra/grafana/alerts.yaml`: alertas (error rate > 1%, latência > 2s)
+- Instruções de importação no `infra/README.md`
+
+**Dependência:** PR-29 (Prometheus já configurado)
+
+---
+
+### PR-41 — Limpeza: remover migration stub SCM do changelog
+
+**Prioridade:** Baixa | **Esforço:** 30 min
+**Objetivo:** Higiene — a migration `d7e8f9a0b1c2` expandia o check de métodos para SCM quando ainda eram stubs. Agora que SCM está implementado, o comentário histórico é ruído.
+
+**Entregas:**
+- Atualizar docstring da migration para refletir estado atual
+- Não reescrever a migration (Alembic rastreia por hash)
 
 **Dependência:** Nenhuma
-
----
-
-### PR-22 — Purge automático de audit_logs + retenção configurável
-
-**Prioridade:** Média | **Esforço:** Baixo
-**Objetivo:** Evitar acúmulo ilimitado de logs no Postgres e garantir conformidade com políticas de retenção de dados.
-
-**Entregas:**
-- Celery beat schedule: task `purge_old_audit_logs` rodando diariamente (cron: `0 3 * * *`)
-- `tasks/maintenance.py`: task Celery que chama `AuditService.purge_expired(db)`
-- `celery_app.py`: adicionar `beat_schedule` com a task de purge
-- `docker-compose.yml`: adicionar serviço `beat` (celery beat scheduler)
-- `config.py`: `audit_log_retention_days: int = 90` (já existe, agora usado de verdade)
-- Admin endpoint: `POST /admin/audit-logs/purge` (executa manualmente, requer admin)
-- Testes: 5-8
-
-**Dependência:** Nenhuma
-
----
-
-### PR-23 — Terraform/IaC para GCP staging + production
-
-**Prioridade:** Alta | **Esforço:** Alto
-**Objetivo:** Infraestrutura como código — ambiente reproduzível, zero-manual-click para subir staging ou produção.
-
-**Entregas:**
-- `infra/terraform/`:
-  - `modules/cloud_run/`: API + Worker (variáveis: image, cpu, memory, env_vars)
-  - `modules/cloud_sql/`: Cloud SQL PostgreSQL 16 com private VPC
-  - `modules/memorystore/`: Redis 7 Memorystore
-  - `modules/storage/`: GCS bucket para relatórios/artifacts
-  - `modules/secrets/`: Secret Manager (DATABASE_URL, REDIS_URL, JWT_SECRET, GCP_SA_KEY)
-  - `modules/iam/`: Service accounts com least-privilege
-  - `modules/vpc/`: VPC privada + Cloud NAT + Connector para Cloud Run
-  - `environments/staging/main.tf`: módulos com configs de staging
-  - `environments/production/main.tf`: módulos com configs de produção
-  - `backend.tf`: estado remoto no GCS (bucket: `saas-impacto-tfstate`)
-- `infra/README.md`: instruções de bootstrap do estado remoto
-- `.github/workflows/terraform.yml`:
-  - `terraform plan` em PRs (comentário automático no PR)
-  - `terraform apply` automático em merge para staging
-  - Apply manual (workflow_dispatch) para produção
-
-**Dependência:** PR-18 (CI/CD já configurado)
-
----
-
-### PR-24 — Notificações: webhook + email ao fim de análise
-
-**Prioridade:** Média | **Esforço:** Médio
-**Objetivo:** UX — análises casuais demoram minutos; usuário não deve ficar com aba aberta esperando.
-
-**Entregas:**
-- Tabela `notification_preferences` (tenant_id, user_id, channel: email|webhook, endpoint, enabled)
-- Migration Alembic correspondente
-- `tasks/notifications.py`: task Celery `notify_analysis_complete(analysis_id, tenant_id)`
-  - Chamada no final de `run_economic_impact_analysis` (success + failed)
-  - Canal email: SendGrid SDK (ou SMTP se configurado)
-  - Canal webhook: HTTP POST com payload `{analysis_id, status, method, tenant_id}`
-  - Retry: 3x com backoff de 60s
-- `services/notification_service.py`: CRUD de preferências
-- Endpoints:
-  - `GET /users/me/notifications` — listar preferências
-  - `PUT /users/me/notifications` — atualizar preferências
-- `config.py`: `sendgrid_api_key`, `notifications_enabled: bool = False`
-- Testes: 10-12
-
-**Dependência:** PR-22 (celery beat configurado; reutiliza infraestrutura de tasks)
-
----
-
-### PR-25 — SCM port real (synthetic_control.py de `new_impacto`)
-
-**Prioridade:** Média | **Esforço:** Alto (bloqueado por dependência externa)
-**Objetivo:** Substituir stubs por implementação real quando `synthetic_control.py` for disponibilizado.
-
-**Entregas:**
-- `causal/scm.py`: implementação real de `run_scm()` e `run_scm_with_diagnostics()`
-  - Placebos de espaço (donors) e tempo (pre-treatment)
-  - Retorno compatível com `comparison.py` (`scm_result` key)
-- `causal/augmented_scm.py`: implementação real (Ben-Michael et al. 2021)
-  - Ridge regression + SCM
-  - Retorno: `augmented_result`
-- Habilitar flags `ENABLE_SCM=true`, `ENABLE_AUGMENTED_SCM=true` em produção
-- Testes de regressão: 25-30 (dados sintéticos com efeito conhecido)
-- Remoção da migration `d7e8f9a0b1c2` de "NotImplementedError stubs" do changelog
-
-**Dependência:** Recuperação dos arquivos do repositório `new_impacto`
-
----
-
-### PR-26 — Matching automático de controles (PSM/CEM)
-
-**Prioridade:** Baixa | **Esforço:** Alto
-**Objetivo:** Remover a necessidade de o usuário especificar `control_ids` manualmente — sugere controles estatisticamente comparáveis.
-
-**Entregas:**
-- `causal/matching.py`: Propensity Score Matching (scikit-learn LogisticRegression) ou Coarsened Exact Matching
-  - Covariáveis de balanceamento: PIB per capita, população, emprego portuário, volume de comércio
-  - Retorno: lista ordenada de `control_ids` com score de similaridade
-- Endpoint: `POST /impacto-economico/matching`
-  - Input: `{treated_ids, treatment_year, scope, n_controls?}`
-  - Output: `{suggested_controls: [{id, similarity_score}], balance_table: {...}}`
-- Integração opcional: form de criação no Module5View com botão "Sugerir controles"
-- Testes: 15
-
-**Dependência:** PR-25 (SCM real se beneficia de matching para seleção de donors)
 
 ---
 
 ## Sequência de execução recomendada
 
 ```
-Imediato (visibilidade e completude):
-  PR-19 → PR-20 → PR-21
-     │        │
-     └────────┴──→ PR-22 (operações / beat)
+Imediato (qualidade de dados):
+  PR-37 (IND-2.11/2.12) → PR-38 (passageiros)
 
-Infraestrutura:
-  PR-23 (Terraform)
+Qualidade de engenharia:
+  PR-39 (E2E) → PR-40 (Grafana)
 
-Funcionalidades avançadas (quando desbloqueadas):
-  PR-24 → PR-25 → PR-26
+Higiene:
+  PR-41 (migration stub)
 ```
 
-**Caminho crítico para produto pronto para demo:** PR-19 → PR-20
-
-Com apenas esses 2 PRs, o produto passa de "API funcional" para "produto demonstrável" — um usuário consegue criar uma análise, ver o progresso em tempo real na UI e baixar um relatório Word com os resultados.
+**Caminho crítico para lançamento beta:** PR-37 e PR-39
+- PR-37 elimina o único dado falso visível ao usuário final
+- PR-39 protege contra regressão no onboarding
 
 ---
 
-## Métricas de progresso atualizado
+## Métricas de progresso
 
-| Métrica | Agora | Pós PR-19/20 | Pós PR-23 | Completo |
-|---------|-------|--------------|-----------|---------|
-| Testes | ~305 | ~340 | ~340 | ~400 |
-| Métodos causais ativos | 5 (sem SCM) | 5 | 5 | 7 |
-| Endpoints API | ~20 | ~23 | ~23 | ~28 |
-| Módulos visíveis no frontend | 6 de 7 | 7 de 7 | 7 de 7 | 7 de 7 |
-| Relatório DOCX para impacto | ❌ | ✅ | ✅ | ✅ |
-| Terraform/IaC | ❌ | ❌ | ✅ | ✅ |
-| Notificações | ❌ | ❌ | ❌ | ✅ |
-| SCM real | ❌ | ❌ | ❌ | ✅ |
-| Logs estruturados (GCP) | ❌ | ✅ | ✅ | ✅ |
+| Métrica | Atual | Pós PR-37/38 | Pós PR-39/40 |
+|---------|-------|--------------|--------------|
+| Indicadores com dado real | 77/81 | 81/81 | 81/81 |
+| Cobertura E2E | 0 cenários | 0 | 8-12 |
+| Dashboard operacional | ❌ | ❌ | ✅ |
+| Testes unitários | ~370 | ~380 | ~380 |
