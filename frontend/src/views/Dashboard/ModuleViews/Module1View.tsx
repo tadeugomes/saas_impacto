@@ -85,6 +85,27 @@ interface ScoreResponse {
   nota_metodologica: string;
 }
 
+type ClassificacaoBenchmark = 'ACIMA_MEDIA' | 'NA_MEDIA' | 'ABAIXO_MEDIA';
+
+interface BenchmarkItem {
+  indicador_codigo: string;
+  indicador_nome: string;
+  unidade: string;
+  valor_instalacao: number | null;
+  mediana_nacional: number | null;
+  p75_nacional: number | null;
+  percentil_rank: number | null;
+  classificacao: ClassificacaoBenchmark;
+  polaridade_inversa: boolean;
+}
+
+interface BenchmarkingResponse {
+  id_instalacao: string;
+  ano: number;
+  total_portos: number;
+  indicadores: BenchmarkItem[];
+}
+
 // --- Helpers de UI ---
 
 function trendIcon(cls: string): string {
@@ -114,6 +135,18 @@ function scoreBarColor(score: number): string {
   return 'bg-red-500';
 }
 
+function benchmarkBadge(cls: ClassificacaoBenchmark): { label: string; className: string } {
+  if (cls === 'ACIMA_MEDIA') return { label: 'Acima da média', className: 'text-green-700 bg-green-50 border-green-200' };
+  if (cls === 'ABAIXO_MEDIA') return { label: 'Abaixo da média', className: 'text-red-700 bg-red-50 border-red-200' };
+  return { label: 'Na média', className: 'text-yellow-700 bg-yellow-50 border-yellow-200' };
+}
+
+function benchmarkBarColor(cls: ClassificacaoBenchmark): string {
+  if (cls === 'ACIMA_MEDIA') return 'bg-green-500';
+  if (cls === 'ABAIXO_MEDIA') return 'bg-red-400';
+  return 'bg-yellow-400';
+}
+
 export function Module1View() {
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
@@ -125,8 +158,9 @@ export function Module1View() {
   // Analíticos
   const [tendencia, setTendencia] = useState<TendenciaResponse | null>(null);
   const [score, setScore] = useState<ScoreResponse | null>(null);
+  const [benchmarking, setBenchmarking] = useState<BenchmarkingResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'indicadores' | 'tendencia' | 'score'>('indicadores');
+  const [activeTab, setActiveTab] = useState<'indicadores' | 'tendencia' | 'benchmarking' | 'score'>('indicadores');
 
   useEffect(() => {
     const fetchIndicators = async () => {
@@ -168,17 +202,21 @@ export function Module1View() {
     if (!selectedInstallation || !selectedYear) {
       setTendencia(null);
       setScore(null);
+      setBenchmarking(null);
       return;
     }
 
     const fetchAnalytics = async () => {
       setAnalyticsLoading(true);
       try {
-        const [tendRes, scoreRes] = await Promise.allSettled([
+        const [tendRes, scoreRes, benchRes] = await Promise.allSettled([
           apiClient.get<TendenciaResponse[]>('/api/v1/indicators/module1/analise-tendencia', {
             params: { id_instalacao: selectedInstallation, ano_fim: selectedYear },
           }),
           apiClient.get<ScoreResponse[]>('/api/v1/indicators/module1/score-eficiencia', {
+            params: { id_instalacao: selectedInstallation, ano: selectedYear },
+          }),
+          apiClient.get<BenchmarkingResponse>('/api/v1/indicators/module1/benchmarking', {
             params: { id_instalacao: selectedInstallation, ano: selectedYear },
           }),
         ]);
@@ -193,6 +231,12 @@ export function Module1View() {
           setScore(scoreRes.value.data[0]);
         } else {
           setScore(null);
+        }
+
+        if (benchRes.status === 'fulfilled' && benchRes.value.data) {
+          setBenchmarking(benchRes.value.data as BenchmarkingResponse);
+        } else {
+          setBenchmarking(null);
         }
       } catch {
         // Silencioso: analíticos são complementares
@@ -254,6 +298,16 @@ export function Module1View() {
             onClick={() => setActiveTab('tendencia')}
           >
             Tendência Operacional
+          </button>
+          <button
+            className={`py-2 px-1 border-b-2 text-sm font-medium ${
+              activeTab === 'benchmarking'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => setActiveTab('benchmarking')}
+          >
+            Benchmarking Nacional
           </button>
           <button
             className={`py-2 px-1 border-b-2 text-sm font-medium ${
@@ -384,6 +438,101 @@ export function Module1View() {
                   <span className="font-semibold">Nota:</span>{' '}
                   Para indicadores de tempo, queda = melhoria operacional. Para atracações, crescimento = melhoria.
                   Classificação: variação {'>'} 5% = IMPROVING/DETERIORATING conforme polaridade.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Benchmarking Nacional */}
+      {activeTab === 'benchmarking' && (
+        <div className="mt-2">
+          {!selectedInstallation ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
+              Selecione uma instalação no filtro acima para ver o benchmarking nacional.
+            </div>
+          ) : analyticsLoading ? (
+            <LoadingSpinner />
+          ) : !benchmarking ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+              Sem dados de benchmarking para esta instalação/período.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-800">
+                  Benchmarking Nacional — {benchmarking.id_instalacao} ({benchmarking.ano})
+                </h2>
+                <span className="text-xs text-gray-500">
+                  Universo: {benchmarking.total_portos} instalações
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {benchmarking.indicadores.map((item) => {
+                  const badge = benchmarkBadge(item.classificacao);
+                  const barColor = benchmarkBarColor(item.classificacao);
+                  const percentil = item.percentil_rank ?? 0;
+                  // Para polaridade inversa (tempo), percentil baixo = melhor; inverter barra
+                  const barWidth = item.polaridade_inversa ? 100 - percentil : percentil;
+
+                  return (
+                    <div key={item.indicador_codigo} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <span className="text-xs text-gray-400 mr-2">{item.indicador_codigo}</span>
+                          <span className="text-sm font-medium text-gray-800">{item.indicador_nome}</span>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4 text-xs text-gray-600 mb-3">
+                        <div>
+                          <span className="block text-gray-400">Esta instalação</span>
+                          <span className="font-semibold text-gray-900">
+                            {item.valor_instalacao != null ? item.valor_instalacao.toFixed(1) : '—'} {item.unidade}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-gray-400">Mediana nacional</span>
+                          <span className="font-semibold">
+                            {item.mediana_nacional != null ? item.mediana_nacional.toFixed(1) : '—'} {item.unidade}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-gray-400">P75 nacional</span>
+                          <span className="font-semibold">
+                            {item.p75_nacional != null ? item.p75_nacional.toFixed(1) : '—'} {item.unidade}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${barColor}`}
+                            style={{ width: `${Math.min(barWidth, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-600 w-28 text-right">
+                          Percentil {item.percentil_rank != null ? item.percentil_rank.toFixed(0) : '—'}
+                          {item.polaridade_inversa && <span className="text-gray-400 ml-1">(↓ melhor)</span>}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  <span className="font-semibold">Nota:</span>{' '}
+                  Para indicadores de tempo (espera, porto, atracação), percentil baixo significa melhor desempenho.
+                  Para atracações e taxa de ocupação, percentil alto é favorável.
+                  Classificação: percentil acima de 60 = Acima da média; abaixo de 40 = Abaixo da média.
                 </p>
               </div>
             </>
