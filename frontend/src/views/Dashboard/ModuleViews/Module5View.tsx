@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useI18n } from '../../../i18n/I18nContext';
 import { ChevronDown, ChevronUp, Download, Play, RefreshCw, Search } from 'lucide-react';
 
 import { useFilterStore } from '../../../store/filterStore';
@@ -33,6 +34,9 @@ import type {
   AnalysisMethod,
   AnalysisScope,
   AnalysisResponse,
+  SimulationShockMode,
+  ImpactSimulationRequest,
+  ImpactSimulationResponse,
   MatchingResponse,
   IndicatorMetadata,
   IndicatorResponse,
@@ -508,6 +512,8 @@ const INDICATORS_INFO: Array<{
   { code: 'IND-5.21', name: 'Concentração da Atividade Portuária', unit: '0–100', desc: 'Índice composto de dependência econômica do porto', valueField: 'indice_concentracao_portuaria', interpretation: 'Use para comparação relativa entre municípios e para ranking de dependência portuária.', group: 'porto' },
 ];
 
+const IMPACT_SIMULATION_REFERENCE_DEFAULT = 'toneladas_antaq_log';
+
 
 function valueToString(value: unknown): string {
   return typeof value === 'undefined' ? '' : String(value);
@@ -978,6 +984,68 @@ function parseNumeric(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseImpactValue(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—';
+  }
+  const rounded = formatDecimal(value, 4);
+  if (rounded === '—') {
+    return '—';
+  }
+  const fixedSign = value > 0 ? `+${rounded}` : rounded;
+  return `${fixedSign}%`;
+}
+
+function formatImpactRange(
+  low: number | null | undefined,
+  high: number | null | undefined,
+): string {
+  if (
+    low === null
+    || low === undefined
+    || high === null
+    || high === undefined
+    || !Number.isFinite(low)
+    || !Number.isFinite(high)
+  ) {
+    return '—';
+  }
+  return `${parseImpactValue(low)} a ${parseImpactValue(high)}`;
+}
+
+function formatSimulationDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function buildSimulationConfidenceTag(confidence: ImpactSimulationResponse['projected_outcomes'][number]['confidence']): string {
+  if (confidence === 'forte') {
+    return '🟢 Forte';
+  }
+  if (confidence === 'moderada') {
+    return '🟡 Moderada';
+  }
+  return '🔴 Fraca';
+}
+
+function resolveSimulationOutcomes(detail: AnalysisDetail | null): string[] {
+  if (!detail?.result_full) {
+    return [];
+  }
+  if (detail.request_params && Array.isArray(detail.request_params.outcomes)) {
+    return (detail.request_params.outcomes as unknown[]).filter(
+      (outcome): outcome is string => typeof outcome === 'string' && outcome.trim().length > 0,
+    );
+  }
+  return Object.keys(detail.result_full as Record<string, unknown>);
+}
+
 function renderWarnings(
   warnings: unknown[],
   municipioLabels: MunicipioLabelMap,
@@ -1021,6 +1089,7 @@ function renderWarnings(
 }
 
 export function Module5View() {
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
 
   const [indicators, setIndicators] = useState<ModuleIndicatorStore>({});
@@ -1029,7 +1098,7 @@ export function Module5View() {
   const [implementationStatus, setImplementationStatus] = useState<Record<string, ImplementationStatus>>({});
 
   const [analysisMethod, setAnalysisMethod] = useState<AnalysisMethod>('did');
-  const [analysisTreated, setAnalysisTreated] = useState('');
+  const [analysisTreated, setAnalysisTreated] = useState('2111300');
   const [analysisControls, setAnalysisControls] = useState('');
   const [analysisOutcomes, setAnalysisOutcomes] = useState('pib_log');
   const [analysisScope, setAnalysisScope] = useState<AnalysisScope>('state');
@@ -1050,8 +1119,17 @@ export function Module5View() {
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResponse[]>([]);
   const [_analysesLoading, setAnalysesLoading] = useState(false);
   const [_analysesError, setAnalysesError] = useState<string | null>(null);
-  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const [reportFormat, setReportFormat] = useState<'docx' | 'pdf' | 'xlsx'>('docx');
   const [isMatchingControls, setIsMatchingControls] = useState(false);
+  const [simulationShockMode, setSimulationShockMode] = useState<SimulationShockMode>('movement');
+  const [simulationShockPct, setSimulationShockPct] = useState(10);
+  const [simulationInvestmentElasticity, setSimulationInvestmentElasticity] =
+    useState<number>(0.8);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [simulationResult, setSimulationResult] =
+    useState<ImpactSimulationResponse | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   const {
     analysis: polledAnalysis,
@@ -1198,13 +1276,19 @@ export function Module5View() {
       const activeIndicators = INDICATORS_INFO.filter(
         (ind) => implementationStatus[ind.code] !== 'technical_debt',
       );
+      // When no installation is selected but treated municipalities are set,
+      // use the first treated municipality to filter BLOCO C indicators
+      const treatedMunicipios = toSafeArray(analysisTreated);
+      const filterParams: Record<string, unknown> = { ano: selectedYear };
+      if (selectedInstallation) {
+        filterParams.id_instalacao = selectedInstallation;
+      } else if (treatedMunicipios.length > 0) {
+        filterParams.id_municipio = treatedMunicipios[0];
+      }
       const promises = activeIndicators.map((ind) =>
         indicatorsService.queryIndicator({
           codigo_indicador: ind.code,
-          params: {
-            ano: selectedYear,
-            id_instalacao: selectedInstallation || undefined,
-          },
+          params: filterParams,
         }).catch(() => createEmptyIndicatorResponse(ind.code)),
       );
       const results = await Promise.all(promises);
@@ -1223,7 +1307,7 @@ export function Module5View() {
     } finally {
       setIndicatorsLoading(false);
     }
-  }, [implementationStatus, selectedYear, selectedInstallation]);
+  }, [implementationStatus, selectedYear, selectedInstallation, analysisTreated]);
 
   const resolveMunicipioLabels = useCallback(async (rawIds: string[]) => {
     const ids = Array.from(
@@ -1290,15 +1374,23 @@ export function Module5View() {
     loadIndicators();
   }, [implementationStatus, loadIndicators]);
 
+  // Only set analysisEndYear from selectedYear on initial mount,
+  // not on every filter change (which would overwrite user input)
   useEffect(() => {
-    setAnalysisEndYear(selectedYear);
-  }, [selectedYear]);
+    setAnalysisEndYear((prev) => prev === 0 ? selectedYear : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (activeAnalysis && activeAnalysis.status === 'success') {
       loadRecentAnalyses();
     }
   }, [activeAnalysis, loadRecentAnalyses]);
+
+  useEffect(() => {
+    setSimulationResult(null);
+    setSimulationError(null);
+  }, [analysisToDisplay?.id]);
 
   const handleStartAnalysis = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1348,6 +1440,8 @@ export function Module5View() {
     setCreatingAnalysis(true);
     try {
       const created = await impactoEconomicoService.createAnalysis(payload);
+      setSimulationResult(null);
+      setSimulationError(null);
       setActiveAnalysisId(created.id);
       await loadRecentAnalyses();
     } catch (err: unknown) {
@@ -1397,7 +1491,68 @@ export function Module5View() {
     }
   };
 
+  const handleRunSimulation = async () => {
+    if (!analysisToDisplay) {
+      setSimulationError('Nenhuma análise carregada para simular.');
+      return;
+    }
+    if (analysisToDisplay.status !== 'success') {
+      setSimulationError('A análise precisa estar concluída para executar a simulação.');
+      return;
+    }
+
+    const shockInput = Number(simulationShockPct);
+    if (!Number.isFinite(shockInput)) {
+      setSimulationError('Informe uma intensidade de choque válida.');
+      return;
+    }
+
+    if (
+      simulationShockMode === 'investment'
+      && (!Number.isFinite(simulationInvestmentElasticity) || simulationInvestmentElasticity <= 0)
+    ) {
+      setSimulationError('Informe uma elasticidade maior que zero no modo investimento.');
+      return;
+    }
+
+    const request: ImpactSimulationRequest = {
+      shock_mode: simulationShockMode,
+      shock_intensity_pct: shockInput,
+      investment_to_movement_elasticity:
+        simulationShockMode === 'investment' ? simulationInvestmentElasticity : undefined,
+      reference_outcome: IMPACT_SIMULATION_REFERENCE_DEFAULT,
+      target_outcomes: simulationTargetOutcomes,
+    };
+    if (!request.target_outcomes || request.target_outcomes.length === 0) {
+      setSimulationError('Não há outcome disponível para simulação nesta análise.');
+      setSimulationLoading(false);
+      return;
+    }
+
+    setSimulationLoading(true);
+    setSimulationError(null);
+    try {
+      const response = await impactoEconomicoService.simulateImpact(
+        analysisToDisplay.id,
+        request,
+      );
+      setSimulationResult(response);
+    } catch (err: unknown) {
+      const errorResponse = err as ApiErrorLike;
+      const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao calcular simulação.';
+      setSimulationError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao calcular simulação.');
+      setSimulationResult(null);
+    } finally {
+      setSimulationLoading(false);
+    }
+  };
+
   // analysisMainRows: substituído por causalSummaryRows no painel técnico (Bloco B)
+
+  const simulationTargetOutcomes = useMemo(
+    () => resolveSimulationOutcomes(analysisToDisplay),
+    [analysisToDisplay],
+  );
 
   const compareData = useMemo(() => {
     if (!analysisToDisplay?.result_full || analysisToDisplay.method !== 'compare') {
@@ -1427,6 +1582,44 @@ export function Module5View() {
     }) as ComparisonPayload[];
   }, [analysisToDisplay]);
 
+  // SCM/ASCM: extract synthetic control data (weights, donors, fit metrics, time series)
+  const scmData = useMemo(() => {
+    if (!analysisToDisplay?.result_full) return [];
+    const method = analysisToDisplay.method;
+    if (method !== 'scm' && method !== 'augmented_scm') return [];
+    const result = analysisToDisplay.result_full as Record<string, unknown>;
+    return Object.entries(result).map(([outcome, payloadAny]) => {
+      const payload = payloadAny as Record<string, unknown> | null;
+      if (!payload || typeof payload !== 'object') return null;
+      const main = payload.main_result as Record<string, unknown> | null;
+      const placebo = payload.placebo_test as Record<string, unknown> | null;
+      const eventStudy = Array.isArray(payload.event_study) ? payload.event_study as Array<Record<string, unknown>> : [];
+      return {
+        outcome,
+        postAtt: main?.post_att as number | null ?? null,
+        preRmspe: main?.pre_rmspe as number | null ?? null,
+        postRmspe: main?.post_rmspe as number | null ?? null,
+        ratioPostPre: main?.ratio_post_pre as number | null ?? null,
+        weights: Array.isArray(main?.w_optimal) ? main.w_optimal as number[] : [],
+        donorUnits: Array.isArray(main?.donor_units) ? main.donor_units as string[] : [],
+        ridgeLambda: main?.ridge_lambda as number | null ?? null,
+        placeboP: placebo?.p_value as number | null ?? null,
+        timeSeries: eventStudy.map((pt) => ({
+          year: pt.year as number,
+          treated: pt.treated as number,
+          synthetic: pt.synthetic as number,
+          effect: pt.effect as number | null ?? null,
+        })),
+      };
+    }).filter(Boolean) as Array<{
+      outcome: string; postAtt: number | null; preRmspe: number | null;
+      postRmspe: number | null; ratioPostPre: number | null;
+      weights: number[]; donorUnits: string[]; ridgeLambda: number | null;
+      placeboP: number | null;
+      timeSeries: Array<{ year: number; treated: number; synthetic: number; effect: number | null }>;
+    }>;
+  }, [analysisToDisplay]);
+
   const causalSummaryRows = useMemo(() => buildCausalSummary(analysisToDisplay), [analysisToDisplay]);
   const eventStudyPayloads = useMemo(() => buildEventStudyPayloads(analysisToDisplay), [analysisToDisplay]);
   const causalNarratives = useMemo(
@@ -1450,20 +1643,24 @@ export function Module5View() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleDownloadDocx = async () => {
+  const handleDownloadReport = async (format: 'docx' | 'pdf' | 'xlsx' = reportFormat) => {
     if (!analysisToDisplay) {
       return;
     }
 
     setAnalysisError(null);
-    setIsDownloadingDocx(true);
+    setIsDownloadingReport(true);
+
+    const mimeTypes: Record<string, string> = {
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      pdf: 'application/pdf',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
 
     try {
-      const { blob, filename } = await impactoEconomicoService.getAnalysisReport(analysisToDisplay.id);
+      const { blob, filename } = await impactoEconomicoService.getAnalysisReport(analysisToDisplay.id, format);
       const url = window.URL.createObjectURL(
-        new Blob([blob], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        }),
+        new Blob([blob], { type: mimeTypes[format] || 'application/octet-stream' }),
       );
       const link = document.createElement('a');
       link.href = url;
@@ -1474,10 +1671,10 @@ export function Module5View() {
       window.URL.revokeObjectURL(url);
     } catch (err: unknown) {
       const errorResponse = err as ApiErrorLike;
-      const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao exportar relatório DOCX.';
-      setAnalysisError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao exportar relatório DOCX.');
+      const errorMessage = errorResponse?.response?.data?.detail || `Erro ao exportar relatório ${format.toUpperCase()}.`;
+      setAnalysisError(typeof errorMessage === 'string' ? errorMessage : `Erro ao exportar relatório ${format.toUpperCase()}.`);
     } finally {
-      setIsDownloadingDocx(false);
+      setIsDownloadingReport(false);
     }
   };
 
@@ -1525,10 +1722,195 @@ export function Module5View() {
             Avalie como a atividade portuária influencia a economia do município sob análise
           </p>
         </div>
-        <ExportButton moduleCode="5" />
+        <ExportButton
+          moduleCode="5"
+          analysisId={analysisToDisplay?.id}
+          compareAnalysisIds={
+            recentAnalyses
+              .filter((a) => a.status === 'success' && a.id !== analysisToDisplay?.id)
+              .slice(0, 5)
+              .map((a) => a.id)
+          }
+        />
       </div>
 
       <FilterBar />
+
+      {/* ══ Visão Executiva — Impacto Econômico ════════════════════════════ */}
+      {!indicatorsLoading && Object.keys(indicators).length > 0 && (
+        <div className="mb-2 rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Visão Executiva — Impacto Econômico Portuário</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Leitura orientada a investidores e tomadores de decisão · Dados {selectedYear}
+            {!selectedInstallation && ' · Visão Nacional (selecione um porto para detalhar)'}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* PIB Municipal */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.01'] || createEmptyIndicatorResponse('IND-5.01'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const totalPib = data.reduce((sum, d) => sum + (parseToNumber(d.pib_municipal) || 0), 0);
+              const topRow = data.slice().sort((a, b) => (parseToNumber(b.pib_municipal) || 0) - (parseToNumber(a.pib_municipal) || 0))[0];
+              const pibValue = isNacional ? totalPib : (parseToNumber(data[0]?.pib_municipal) || 0);
+              const pibLabel = pibValue >= 1e9
+                ? `R$ ${formatDecimal(pibValue / 1e9, 1)} bi`
+                : pibValue >= 1e6
+                ? `R$ ${formatDecimal(pibValue / 1e6, 0)} mi`
+                : `R$ ${formatDecimal(pibValue, 0)}`;
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Economia Local</h3>
+                  <p className="text-2xl font-bold text-gray-900">{pibLabel}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? `PIB agregado (${data.length} municípios)` : 'PIB Municipal'}
+                  </p>
+                  {isNacional && topRow && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Maior economia: {getLabelFromData(topRow as RawIndicatorRow, municipioLabels)}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Intensidade Portuária */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.08'] || createEmptyIndicatorResponse('IND-5.08'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const concEmprego = isNacional
+                ? data.reduce((sum, d) => sum + (parseToNumber(d.concentracao_emprego_pct) || 0), 0) / data.length
+                : (parseToNumber(data[0]?.concentracao_emprego_pct) || 0);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Dependência Portuária</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(concEmprego, 1)}%</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'empregos portuários no total (média nacional)' : 'empregos portuários no total local'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {concEmprego > 10
+                      ? 'Alta dependência — variações no fluxo portuário impactam diretamente o mercado de trabalho local.'
+                      : concEmprego > 3
+                      ? 'Dependência moderada — o porto é empregador relevante mas a economia é diversificada.'
+                      : 'Baixa dependência direta — impacto portuário se dá mais por cadeia produtiva do que por emprego direto.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Crescimento PIB */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.10'] || createEmptyIndicatorResponse('IND-5.10'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const crescPib = isNacional
+                ? data.reduce((sum, d) => sum + (parseToNumber(d.crescimento_pib_percentual) || 0), 0) / data.length
+                : (parseToNumber(data[0]?.crescimento_pib_percentual) || 0);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Dinamismo Econômico</h3>
+                  <p className={`text-2xl font-bold ${crescPib >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {crescPib >= 0 ? '+' : ''}{formatDecimal(crescPib, 1)}%
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'crescimento médio do PIB (média nacional)' : 'crescimento do PIB municipal'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {crescPib > 5
+                      ? 'Expansão acelerada — oportunidade para capturar valor da cadeia portuária em crescimento.'
+                      : crescPib > 0
+                      ? 'Crescimento estável — base sólida para investimentos de longo prazo no setor portuário.'
+                      : 'Retração econômica — cautela para novos investimentos; analisar causalidade com o método adequado.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Abertura Comercial */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.07'] || createEmptyIndicatorResponse('IND-5.07'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const intComercial = isNacional
+                ? data.reduce((sum, d) => sum + (parseToNumber(d.intensidade_comercial) || 0), 0) / data.length
+                : (parseToNumber(data[0]?.intensidade_comercial) || 0);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Abertura Comercial</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(intComercial, 2)}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'comércio exterior / PIB (média nacional)' : 'comércio exterior / PIB local'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {intComercial > 0.5
+                      ? 'Economia altamente integrada ao comércio exterior — porto é peça-chave para a competitividade local.'
+                      : intComercial > 0.1
+                      ? 'Integração comercial moderada — potencial para expansão das exportações via infraestrutura portuária.'
+                      : 'Baixa abertura comercial — o impacto portuário é mais logístico-doméstico do que voltado ao comércio exterior.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Crescimento da Movimentação */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.11'] || createEmptyIndicatorResponse('IND-5.11'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const crescTon = isNacional
+                ? data.reduce((sum, d) => sum + (parseToNumber(d.crescimento_tonelagem_pct) || 0), 0) / data.length
+                : (parseToNumber(data[0]?.crescimento_tonelagem_pct) || 0);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Movimentação Portuária</h3>
+                  <p className={`text-2xl font-bold ${crescTon >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {crescTon >= 0 ? '+' : ''}{formatDecimal(crescTon, 1)}%
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'variação anual de carga (média nacional)' : 'variação anual de carga'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {crescTon > 5
+                      ? 'Expansão robusta da movimentação — sinal de aquecimento que antecede impacto econômico positivo.'
+                      : crescTon > 0
+                      ? 'Crescimento moderado — sustentabilidade logística com tendência favorável.'
+                      : 'Queda na movimentação — investigar se há perda de competitividade ou efeito conjuntural.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Associação Carga × PIB */}
+            {(() => {
+              const data = toIndicatorRows(indicators['IND-5.14'] || createEmptyIndicatorResponse('IND-5.14'));
+              if (data.length === 0) return null;
+              const isNacional = !selectedInstallation && data.length > 1;
+              const corr = isNacional
+                ? data.reduce((sum, d) => sum + (parseToNumber(d.correlacao_tonelagem_pib) || 0), 0) / data.length
+                : (parseToNumber(data[0]?.correlacao_tonelagem_pib) || 0);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Associação Porto-PIB</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(corr, 2)}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'correlação carga × PIB (média nacional)' : 'correlação carga × PIB'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {Math.abs(corr) > 0.7
+                      ? 'Forte associação entre movimentação portuária e crescimento econômico — use a análise causal abaixo para verificar causalidade.'
+                      : Math.abs(corr) > 0.3
+                      ? 'Associação moderada — o porto influencia a economia local, mas outros fatores também são relevantes.'
+                      : 'Associação fraca — o impacto do porto pode ser indireto ou concentrado em setores específicos.'}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ══ BLOCO A — Sua Pergunta ══════════════════════════════════════════ */}
       <div className="card space-y-5">
@@ -1602,7 +1984,7 @@ export function Module5View() {
                   className="flex-shrink-0 inline-flex flex-col items-center gap-1 px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Search className="h-4 w-4" />
-                  {isMatchingControls ? 'Buscando...' : 'Sugerir automaticamente'}
+                  {isMatchingControls ? t('module5.matching.searching') : t('module5.matching.suggest')}
                 </button>
               </div>
               {toSafeArray(analysisControls).length > 0 && (
@@ -1893,6 +2275,207 @@ export function Module5View() {
                 </div>
               )}
 
+              {/* Simulador de impacto (cenário) */}
+              <div className="card">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Simulador de Impacto</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Projete cenário gerencial usando os coeficientes causais da análise ativa.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRunSimulation}
+                    disabled={simulationLoading || !analysisToDisplay || analysisToDisplay.method === 'compare'}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {simulationLoading ? 'Calculando...' : 'Calcular cenário'}
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-medium text-gray-700">Fonte do cenário:</p>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+                      <input
+                        type="radio"
+                        name="simulationShockMode"
+                        value="movement"
+                        checked={simulationShockMode === 'movement'}
+                        onChange={() => setSimulationShockMode('movement')}
+                        className="h-3.5 w-3.5 accent-indigo-600"
+                      />
+                      Choque de movimentação (%)
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs text-gray-600">
+                      <input
+                        type="radio"
+                        name="simulationShockMode"
+                        value="investment"
+                        checked={simulationShockMode === 'investment'}
+                        onChange={() => setSimulationShockMode('investment')}
+                        className="h-3.5 w-3.5 accent-indigo-600"
+                      />
+                      Choque de investimento (%)
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <label className="text-xs text-gray-600">
+                    {simulationShockMode === 'investment'
+                      ? 'Variação de investimento (%)'
+                      : 'Variação de movimentação (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min={-100}
+                    max={500}
+                    step={1}
+                    value={simulationShockPct}
+                    onChange={(e) => setSimulationShockPct(parseNumeric(e.target.value) || 0)}
+                    className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">Comparado ao cenário base</span>
+                </div>
+
+                {simulationShockMode === 'investment' && (
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <label className="text-xs text-gray-600">
+                      Elasticidade (Δmovimentação / Δinvestimento):
+                    </label>
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.01}
+                      value={simulationInvestmentElasticity}
+                      onChange={(e) => setSimulationInvestmentElasticity(parseNumeric(e.target.value) || 0)}
+                      className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-xs text-gray-500">
+                      Ex.: 0,8 = 10% investimento gera ~8% movimentação
+                    </span>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 mt-2">
+                  Referência fixa: <strong>{IMPACT_SIMULATION_REFERENCE_DEFAULT}</strong> (movimentação)
+                </p>
+
+                {simulationError && <ErrorAlert message={simulationError} />}
+
+                    {simulationResult ? (
+                      <>
+                        <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-700">
+                          {simulationResult.assumptions.map((item) => (
+                            <p key={item} className="leading-6">
+                          • {item}
+                        </p>
+                      ))}
+                        </div>
+
+                        <div className="mt-3 space-y-1.5 rounded-md border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+                          <p className="font-medium text-gray-800">Parâmetros técnicos</p>
+                          <p>
+                            Modelo: {simulationResult.simulation_metadata.model_version}
+                            {' '}| gerado em {formatSimulationDate(simulationResult.simulation_metadata.as_of)}
+                            {' '}| origem: {simulationResult.simulation_metadata.generated_by}
+                          </p>
+                          <p>
+                            Impacto referência para cenário de 100%: {parseImpactValue(simulationResult.reference_effect_100pct)} em {IMPACT_SIMULATION_REFERENCE_DEFAULT}
+                          </p>
+                          {simulationResult.simulation_metadata.notes.length > 0 && (
+                            <ul className="list-disc pl-4 space-y-1 mt-2">
+                              {simulationResult.simulation_metadata.notes.map((note) => (
+                                <li key={note}>{note}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        {simulationResult.projected_outcomes.length > 0 && (
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            {simulationResult.projected_outcomes.map((projection) => {
+                              const deltaText = parseImpactValue(projection.projected_delta_pct);
+                              const effect100Text = parseImpactValue(projection.treatment_effect_100pct);
+                              const effect100CiText = projection.treatment_effect_100pct_ci_lower !== null
+                                && projection.treatment_effect_100pct_ci_upper !== null
+                                ? `${parseImpactValue(projection.treatment_effect_100pct_ci_lower)} a ${parseImpactValue(projection.treatment_effect_100pct_ci_upper)}`
+                                : '—';
+                              const conservativeText = formatImpactRange(
+                                projection.projected_delta_pct_conservative,
+                                projection.projected_delta_pct_optimistic,
+                              );
+                              return (
+                                <div
+                                  key={projection.outcome}
+                                  className="rounded-lg border border-gray-200 p-3 space-y-2"
+                                >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-gray-800">{projection.outcome_label}</p>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                                  {buildSimulationConfidenceTag(projection.confidence)}
+                                </span>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">
+                                {deltaText}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Projeção para choque de {simulationResult.applied_shock_intensity_pct.toFixed(1)}%
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Efeito 100%: {effect100Text}.
+                                Método: {projection.method_used}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                IC 95% do efeito 100%: {effect100CiText}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Faixa conservador/otimista:
+                                {' '}
+                                {conservativeText}
+                              </p>
+                              {projection.warning && (
+                                <p className="text-xs text-amber-700">{projection.warning}</p>
+                              )}
+                              <p className="text-xs text-gray-400">
+                                Resultado em português: {simulationResult.applied_shock_intensity_pct.toFixed(1)}% de choque de movimentação equivalente pode alterar {projection.outcome_label}
+                                {' '}em {deltaText}.
+                              </p>
+                              {projection.notes.length > 0 && (
+                                <ul className="list-disc pl-4 text-xs text-gray-500 space-y-1">
+                                  {projection.notes.map((note) => (
+                                    <li key={`${projection.outcome}-${note}`}>{note}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {simulationResult.executive_summary.length > 0 && (
+                      <div className="mt-4 space-y-1.5">
+                        <p className="text-sm font-medium text-gray-800">Resumo executivo</p>
+                        <ul className="list-disc pl-5 text-xs text-gray-600 space-y-1">
+                          {simulationResult.executive_summary.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  !simulationLoading && (
+                    <p className="text-xs text-gray-400 mt-3">
+                      Execute o cálculo para visualizar a simulação de impacto com base na análise ativa.
+                    </p>
+                  )
+                )}
+              </div>
+
               {/* Gráfico comparativo de efeitos */}
               {causalSummaryRows.length > 1 && analysisToDisplay.method !== 'compare' && (
                 <div className="card">
@@ -1945,14 +2528,254 @@ export function Module5View() {
                 </div>
               )}
 
-              {/* Comparação de métodos */}
+              {/* SCM / ASCM — controle sintético */}
+              {scmData.length > 0 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      {analysisToDisplay.method === 'augmented_scm' ? 'Controle Sintético Aumentado (ASCM)' : 'Controle Sintético (SCM)'}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Constroi um contrafactual ponderando municípios doadores para replicar a trajetória pré-tratamento do município tratado.
+                    </p>
+                  </div>
+
+                  {scmData.map((scm) => {
+                    const outcomeMeta = getOutcomeMeta(scm.outcome);
+                    const fitOk = scm.preRmspe !== null && scm.preRmspe < 0.1;
+                    const placeboOk = scm.placeboP !== null && scm.placeboP < 0.1;
+
+                    return (
+                      <div key={`scm-${scm.outcome}`} className="card space-y-4">
+                        <h4 className="text-sm font-semibold text-gray-800">{outcomeMeta.label}</h4>
+
+                        {/* Métricas principais */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="text-center p-3 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Efeito (ATT)</p>
+                            <p className={`text-lg font-bold ${scm.postAtt !== null && scm.postAtt > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {scm.postAtt !== null ? `${scm.postAtt > 0 ? '+' : ''}${formatDecimal(scm.postAtt, 3)}` : '--'}
+                            </p>
+                          </div>
+                          <div className="text-center p-3 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Ajuste pré (RMSPE)</p>
+                            <p className={`text-lg font-bold ${fitOk ? 'text-green-600' : 'text-amber-600'}`}>
+                              {scm.preRmspe !== null ? formatDecimal(scm.preRmspe, 4) : '--'}
+                            </p>
+                          </div>
+                          <div className="text-center p-3 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Ratio pós/pré</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              {scm.ratioPostPre !== null ? `${formatDecimal(scm.ratioPostPre, 1)}x` : '--'}
+                            </p>
+                          </div>
+                          <div className="text-center p-3 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-500">Placebo p-valor</p>
+                            <p className={`text-lg font-bold ${placeboOk ? 'text-green-600' : scm.placeboP !== null ? 'text-red-500' : 'text-gray-400'}`}>
+                              {scm.placeboP !== null ? formatDecimal(scm.placeboP, 3) : '--'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Pesos dos doadores */}
+                        {scm.donorUnits.length > 0 && scm.weights.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-600 mb-2">Composição do controle sintético</p>
+                            <div className="flex flex-wrap gap-2">
+                              {scm.donorUnits.map((donorId, idx) => {
+                                const w = scm.weights[idx] ?? 0;
+                                const label = resolveMunicipioLabel(donorId, municipioLabels);
+                                return (
+                                  <span key={donorId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gray-200 bg-white text-xs">
+                                    <span className="font-medium text-gray-800">{label}</span>
+                                    <span className="text-gray-400">|</span>
+                                    <span className="font-semibold text-blue-600">{formatDecimal(w * 100, 1)}%</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Série temporal: tratado vs sintético */}
+                        {scm.timeSeries.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-600 mb-2">Tratado vs. Controle Sintético</p>
+                            <div className="h-52">
+                              <BarChart
+                                labels={scm.timeSeries.map((pt) => String(pt.year))}
+                                datasets={[
+                                  { label: 'Tratado', data: scm.timeSeries.map((pt) => pt.treated), backgroundColor: '#3b82f6' },
+                                  { label: 'Sintético', data: scm.timeSeries.map((pt) => pt.synthetic), backgroundColor: '#d1d5db' },
+                                ]}
+                                yAxisLabel={outcomeMeta.label}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {scm.ridgeLambda !== null && (
+                          <p className="text-xs text-gray-400">Ridge λ = {formatDecimal(scm.ridgeLambda, 3)} (regularização ASCM)</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Diagnósticos causais — qualidade da estimativa */}
+              {analysisToDisplay.method !== 'compare' && analysisToDisplay.result_full && (() => {
+                const result = analysisToDisplay.result_full as Record<string, unknown>;
+                const diagnostics: Array<{ outcome: string; label: string; items: Array<{ name: string; value: string; ok: boolean | null }> }> = [];
+                for (const [outcome, payloadAny] of Object.entries(result)) {
+                  const payload = payloadAny as Record<string, unknown> | null;
+                  if (!payload || typeof payload !== 'object') continue;
+                  const main = (payload.main_result ?? payload) as Record<string, unknown>;
+                  const items: Array<{ name: string; value: string; ok: boolean | null }> = [];
+
+                  // N observations
+                  if (main.n_obs != null) items.push({ name: t('module5.diagnostics.observations'), value: String(main.n_obs).replace(/\B(?=(\d{3})+(?!\d))/g, '.'), ok: (main.n_obs as number) >= 30 });
+                  // R²
+                  if (main.r2 != null) items.push({ name: 'R²', value: formatDecimal(main.r2 as number, 3), ok: (main.r2 as number) > 0.1 });
+                  // First-stage F-stat (IV)
+                  if (main.f_stat != null) items.push({ name: 'F-stat (1º estágio)', value: formatDecimal(main.f_stat as number, 1), ok: (main.f_stat as number) > 10 });
+                  // Parallel trends p-value
+                  if (main.parallel_trends_p != null) items.push({ name: t('module5.diagnostics.parallelTrends'), value: formatDecimal(main.parallel_trends_p as number, 3), ok: (main.parallel_trends_p as number) > 0.05 });
+                  // Pre-RMSPE (SCM)
+                  if (main.pre_rmspe != null) items.push({ name: 'Pre-RMSPE', value: formatDecimal(main.pre_rmspe as number, 4), ok: (main.pre_rmspe as number) < 0.1 });
+                  // Placebo
+                  const placebo = payload.placebo_test as Record<string, unknown> | null;
+                  if (placebo?.p_value != null) items.push({ name: 'Placebo (p)', value: formatDecimal(placebo.p_value as number, 3), ok: (placebo.p_value as number) < 0.1 });
+
+                  if (items.length > 0) {
+                    diagnostics.push({ outcome, label: getOutcomeMeta(outcome).label, items });
+                  }
+                }
+                if (diagnostics.length === 0) return null;
+                return (
+                  <div className="card">
+                    <h3 className="font-semibold text-gray-900 mb-1">{t('module5.diagnostics.title')}</h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Métricas de qualidade estatística — verde indica condição satisfeita, vermelho indica cautela.
+                    </p>
+                    <div className="space-y-3">
+                      {diagnostics.map((diag) => (
+                        <div key={`diag-${diag.outcome}`}>
+                          <p className="text-xs font-medium text-gray-700 mb-1.5">{diag.label}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {diag.items.map((item) => (
+                              <span key={item.name} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
+                                item.ok === true ? 'bg-green-50 border-green-200 text-green-700'
+                                  : item.ok === false ? 'bg-red-50 border-red-200 text-red-600'
+                                  : 'bg-gray-50 border-gray-200 text-gray-600'
+                              }`}>
+                                {item.ok === true ? '✓' : item.ok === false ? '✗' : '–'} {item.name}: {item.value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Comparação de métodos — visão executiva para investidores */}
               {analysisToDisplay.method === 'compare' && compareData.length > 0 && (
-                <div className="card">
-                  <h3 className="font-semibold text-gray-900 mb-1">Diferentes métodos chegam à mesma conclusão?</h3>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Quando múltiplos métodos apontam na mesma direção, a evidência é mais robusta (semáforo 🟢).
+                <div className="space-y-4">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Validação Cruzada de Resultados
+                  </h2>
+                  <p className="text-sm text-gray-600 -mt-2">
+                    Para cada indicador, dois métodos independentes (DiD e IV) foram executados. Quando ambos
+                    apontam na mesma direção e magnitude, a evidência é considerada robusta para decisão.
                   </p>
-                  <MethodComparisonTable items={compareData} />
+
+                  {/* Cards executivos por outcome */}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {compareData.map((item) => {
+                      const rows = item.comparison_table || [];
+                      const allSignificant = rows.length > 0 && rows.every((r) => r.Significant === 'Yes');
+                      const someSignificant = rows.some((r) => r.Significant === 'Yes');
+                      const estimates = rows.map((r) => r.Estimate).filter((e): e is number => e !== null);
+                      const sameDirection = estimates.length >= 2 && estimates.every((e) => e > 0) || estimates.every((e) => e < 0);
+                      const consistent = sameDirection && someSignificant;
+                      const robust = consistent && allSignificant;
+
+                      const level = robust ? 'strong' : consistent ? 'moderate' : 'weak';
+                      const conf = CONFIDENCE_CONFIG[level];
+                      const outcomeMeta = getOutcomeMeta(item.outcome);
+                      const avgEstimate = estimates.length > 0 ? estimates.reduce((a, b) => a + b, 0) / estimates.length : null;
+                      const effectStr = avgEstimate !== null
+                        ? formatCausalEffectValue(avgEstimate, outcomeMeta).short
+                        : '--';
+                      const isPositive = avgEstimate !== null && avgEstimate > 0;
+                      const isNegative = avgEstimate !== null && avgEstimate < 0;
+
+                      const consistencyText = item.consistency_assessment
+                        ? String(item.consistency_assessment)
+                        : robust
+                          ? 'Ambos os metodos concordam na direcao e significancia.'
+                          : consistent
+                            ? 'Metodos apontam na mesma direcao, mas nem todos sao significativos.'
+                            : 'Metodos divergem — resultado requer cautela.';
+
+                      return (
+                        <div
+                          key={`compare-card-${item.outcome}`}
+                          className={`rounded-xl border-2 p-5 space-y-3 ${conf.border} ${conf.bg}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                Impacto em
+                              </p>
+                              <p className="text-base font-semibold text-gray-900 mt-0.5">
+                                {outcomeMeta.label}
+                              </p>
+                            </div>
+                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${conf.border} ${conf.bg} ${conf.color}`}>
+                              {level === 'strong' ? '🟢' : level === 'moderate' ? '🟡' : '🔴'} {conf.label}
+                            </span>
+                          </div>
+
+                          <div className="flex items-end gap-2">
+                            <span className={`text-3xl font-bold tabular-nums ${
+                              isPositive ? 'text-emerald-700' : isNegative ? 'text-red-600' : 'text-gray-700'
+                            }`}>
+                              {isPositive ? '+' : ''}{effectStr}
+                            </span>
+                            <span className="text-xs text-gray-500 mb-1">media entre metodos</span>
+                          </div>
+
+                          <p className="text-sm text-gray-700">{consistencyText}</p>
+
+                          {item.recommendation && (
+                            <p className="text-xs text-gray-600 bg-white/60 rounded p-2 border border-gray-200">
+                              Recomendacao: {item.recommendation}
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {rows.map((r) => (
+                              <span key={r.Method} className="text-xs px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
+                                {r.Method}: {r.Significant === 'Yes' ? 'significativo' : 'nao significativo'}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tabela técnica detalhada */}
+                  <div className="card">
+                    <h3 className="font-semibold text-gray-900 mb-1">Detalhes da Comparacao</h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Tabela completa com coeficientes, erros padrao e intervalos de confianca por metodo.
+                    </p>
+                    <MethodComparisonTable items={compareData} />
+                  </div>
                 </div>
               )}
 
@@ -2005,7 +2828,7 @@ export function Module5View() {
                       </div>
                     )}
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={handleDownloadCsv}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
@@ -2013,13 +2836,22 @@ export function Module5View() {
                         <Download className="h-3.5 w-3.5" />
                         Exportar dados (CSV)
                       </button>
+                      <select
+                        value={reportFormat}
+                        onChange={(e) => setReportFormat(e.target.value as 'docx' | 'pdf' | 'xlsx')}
+                        className="h-8 rounded-lg border border-gray-300 text-xs text-gray-700 pl-2 pr-6 bg-white"
+                      >
+                        <option value="docx">DOCX</option>
+                        <option value="pdf">PDF</option>
+                        <option value="xlsx">XLSX</option>
+                      </select>
                       <button
-                        onClick={handleDownloadDocx}
-                        disabled={isDownloadingDocx || analysisToDisplay?.status !== 'success'}
+                        onClick={() => { void handleDownloadReport(); }}
+                        disabled={isDownloadingReport || analysisToDisplay?.status !== 'success'}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Download className="h-3.5 w-3.5" />
-                        {isDownloadingDocx ? 'Gerando...' : 'Relatório completo (DOCX)'}
+                        {isDownloadingReport ? t('module5.report.generating') : `${t('module5.report.button')} (${reportFormat.toUpperCase()})`}
                       </button>
                     </div>
                   </div>
@@ -2034,9 +2866,19 @@ export function Module5View() {
       {shouldRenderIndicators && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Perfil Econômico do Município</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {selectedInstallation
+                ? 'Perfil Econômico do Município'
+                : selectedTreatedMunicipios.length > 0
+                  ? `Perfil Econômico — ${resolveMunicipioLabel(selectedTreatedMunicipios[0], municipioLabels)}`
+                  : 'Perfil Econômico — Visão Nacional'}
+            </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Indicadores descritivos para contextualizar o resultado da análise — não mostram causalidade por si só.
+              {selectedInstallation
+                ? 'Indicadores descritivos para contextualizar o resultado da análise — não mostram causalidade por si só.'
+                : selectedTreatedMunicipios.length > 0
+                  ? 'Indicadores filtrados pelo município tratado da análise causal — contexto econômico local.'
+                  : 'Dados agregados de todos os municípios. Selecione um porto nos filtros para ver o perfil de um município específico.'}
             </p>
           </div>
 

@@ -8,7 +8,7 @@ e fornece uma interface type-safe para acessá-las em toda a aplicação.
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 # Caminho base do projeto
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
-    redis_password: str | None = None
+    redis_password: Optional[str] = None
     redis_cache_ttl: int = 3600
     bq_cache_ttl_seconds: int = 3600
     bq_cache_enabled: bool = True
@@ -98,10 +98,10 @@ class Settings(BaseSettings):
     # Storage (S3/GCS)
     storage_backend: str = "gcs"
     gcs_bucket_name: str = "saas-impacto-reports"
-    gcs_project_id: str | None = None
-    aws_access_key_id: str | None = None
-    aws_secret_access_key: str | None = None
-    aws_s3_bucket: str | None = None
+    gcs_project_id: Optional[str] = None
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_s3_bucket: Optional[str] = None
 
     # Observability
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
 
     # Notificações
     notifications_enabled: bool = False
-    sendgrid_api_key: str | None = None
+    sendgrid_api_key: Optional[str] = None
     sendgrid_from_email: str = "noreply@saas-impacto.local"
 
     # Rate limiting
@@ -129,24 +129,11 @@ class Settings(BaseSettings):
     # Audit logs
     audit_log_retention_days: int = 90
 
-    # Feature Flags — Métodos Causais Experimentais
-    # ──────────────────────────────────────────────
-    # Desabilitados por padrão até que os módulos correspondentes
-    # sejam portados do repositório new_impacto e validados.
-    #
-    # Para habilitar SCM quando synthetic_control.py estiver disponível:
-    #   ENABLE_SCM=true
-    #
-    # Para habilitar Augmented SCM quando synthetic_augmented.py estiver disponível:
-    #   ENABLE_AUGMENTED_SCM=true
-    enable_scm: bool = False
-    enable_augmented_scm: bool = False
-
     # Observabilidade / exposição
     otel_enabled: bool = False
     otel_exporter: str = "console"
     metrics_enabled: bool = True
-    docs_access_token: str | None = None
+    docs_access_token: Optional[str] = None
 
     # Internacionalização backend
     default_language: str = "pt-BR"

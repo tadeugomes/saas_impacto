@@ -3,6 +3,7 @@ Dependencies para endpoints FastAPI.
 
 Funções reutilizáveis para injeção de dependências.
 """
+from __future__ import annotations
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, List, Optional, Union
 import os
 import uuid
 
@@ -67,14 +68,14 @@ def _fallback_test_user(tenant_id: uuid.UUID) -> User:
     )
 
 
-def _normalize_plan(plan: str | None) -> str:
+def _normalize_plan(plan: Optional[str]) -> str:
     normalized = (plan or "basic").lower().strip()
     if normalized not in {"basic", "pro", "enterprise"}:
         return "basic"
     return normalized
 
 
-def _indicator_module_from_code(codigo: str) -> int | None:
+def _indicator_module_from_code(codigo: str) -> Optional[int]:
     if not codigo:
         return None
 
@@ -96,7 +97,7 @@ def _tenant_plan(current_user: User) -> str:
     return _normalize_plan(getattr(tenant, "plano", None))
 
 
-def _normalize_roles(roles: list[str] | str | None) -> list[str]:
+def _normalize_roles(roles: Union[List[str], str, None]) -> List[str]:
     if not roles:
         return []
     if isinstance(roles, str):
@@ -105,7 +106,7 @@ def _normalize_roles(roles: list[str] | str | None) -> list[str]:
 
 
 def _role_has_action(
-    permissions: list[dict[str, str]] | None,
+    permissions: Optional[List[dict]],
     module_number: int,
     action: str,
 ) -> bool:
@@ -211,7 +212,7 @@ async def _get_user_from_token(
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security_optional),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     db: AsyncSession = Depends(get_db),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
 ) -> User:
@@ -256,10 +257,10 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security_optional),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     db: AsyncSession = Depends(get_db),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-) -> User | None:
+) -> Optional[User]:
     """
     Retorna o usuário autenticado quando houver token válido. Caso não haja token,
     retorna None.
@@ -282,7 +283,7 @@ async def get_current_user_optional(
     return await _get_user_from_token(credentials, db, tenant_id)
 
 
-def require_permission(module_number: int | None, action: str) -> Callable:
+def require_permission(module_number: Optional[int], action: str) -> Callable:
     """
     Dependency factory para validação de permissão de módulo+ação.
     """

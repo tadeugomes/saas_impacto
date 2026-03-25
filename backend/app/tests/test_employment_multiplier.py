@@ -41,13 +41,16 @@ class TestLiteratureMultiplier:
         m = service.get_literature_multiplier(sector="port_operations")
         assert m.coefficient == MULTIPLIER_DEFAULTS["port_operations"]["coefficient"]
 
-    def test_port_logistics(self, service):
-        m = service.get_literature_multiplier(sector="port_logistics")
-        assert m.coefficient == MULTIPLIER_DEFAULTS["port_logistics"]["coefficient"]
+    def test_port_type_i(self, service):
+        # Tipo I conservador — efeito induzido = 0
+        m = service.get_literature_multiplier(sector="port_type_i")
+        assert m.coefficient == MULTIPLIER_DEFAULTS["port_type_i"]["coefficient"]
+        assert m.breakdown_induced == 0.0
 
-    def test_brazil_region(self, service):
+    def test_brazil_region_uses_mip(self, service):
+        # O parâmetro region é aceito mas todos os setores agora usam MIP Brasil
         m = service.get_literature_multiplier(region="Brasil")
-        assert "Ministério" in m.source or "UNCTAD" in m.source
+        assert "Vale & Perobelli" in m.source or "MIP" in m.source
 
     def test_unknown_sector_fallback(self, service):
         m = service.get_literature_multiplier(sector="xyz")
@@ -112,8 +115,8 @@ class TestImpactQuery:
             side_effect=[
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_portuarios": 1200}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
-                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 10.0}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "tonelagem_total": 2500000, "ton_por_empregado": 2083.33}],
+                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 56_160_000.0}],
             ]
         )
         rows = await service.get_impacto_emprego("3548500", ano=2023)
@@ -121,10 +124,20 @@ class TestImpactQuery:
         item = rows[0]
         assert item.empregos_diretos == 1200
         assert item.empregos_totais == 12000
+        # Participação calculada diretamente: 1200/12000 * 100 = 10.0
         assert item.participacao_emprego_local == 10.0
-        assert item.metodo == "multiplicador_literatura"
+        assert item.metodo == "mip_ql_ajustado"
+        # QL calculado via compute_location_quotient()
+        assert item.ql_estimado is not None
+        assert item.ql_estimado > 1.0  # 10% vs ~4.3% nacional → QL > 2
         assert item.empregos_por_milhao_toneladas is not None
         assert item.empregos_por_milhao_toneladas > 0
+        # Produção/renda calculados com dados RAIS reais
+        assert item.dados_producao_renda_disponiveis is True
+        assert item.renda_direta_brl == 56_160_000.0
+        assert item.producao_direta_brl is not None
+        assert item.producao_direta_brl > 0
+        assert "RAIS" in (item.nota_dados_producao_renda or "")
 
     @pytest.mark.asyncio
     async def test_get_impacto_emprego_with_scenario(self, service):
@@ -132,8 +145,8 @@ class TestImpactQuery:
             side_effect=[
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_portuarios": 1000}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "empregos_totais": 12000}],
-                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "participacao_emprego_local": 8.3}],
                 [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "ton_por_empregado": 2000.0}],
+                [{"id_municipio": "3548500", "nome_municipio": "Santos", "ano": 2023, "massa_salarial_anual": 46_800_000.0}],
             ]
         )
         rows = await service.get_impacto_emprego("3548500", ano=2023, delta_tonelagem_pct=10.0)

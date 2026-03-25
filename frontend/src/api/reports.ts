@@ -8,6 +8,9 @@ export interface ReportExportParams {
   ano?: number;
   ano_inicio?: number;
   ano_fim?: number;
+  analysis_id?: string;
+  compare_analysis_ids?: string;
+  delta_tonelagem_pct?: number;
   format?: 'docx' | 'pdf' | 'xlsx';
 }
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -15,12 +15,12 @@ router = APIRouter(prefix="/employment", tags=["Employment"])
 @router.get("/multipliers/{id_municipio}")
 async def get_multipliers(
     id_municipio: str,
-    ano: int | None = Query(default=None, description="Ano de referência"),
+    ano: Optional[int] = Query(default=None, description="Ano de referência"),
     use_causal: bool = Query(
         default=False,
         description="Requer estimativa causal (ainda indisponível)",
     ),
-    delta_tonelagem_pct: float | None = Query(
+    delta_tonelagem_pct: Optional[float] = Query(
         default=None,
         description="Variação percentual da tonelagem para cenário de impacto simulado",
     ),
@@ -72,6 +72,20 @@ async def get_multipliers(
         municipality_name=impact.municipality_name,
         year=impact.ano,
     )
+    causal_multiplier = service.build_proxy_causal_multiplier(
+        direct_jobs=impact.empregos_diretos,
+        participation_local=impact.participacao_emprego_local,
+        empregos_por_milhao_toneladas=impact.empregos_por_milhao_toneladas,
+        base_multiplier=multiplier,
+    )
+    causal_estimate = service.build_causal_estimate(
+        direct_jobs=impact.empregos_diretos,
+        causal=causal_multiplier,
+        municipality_id=impact.municipality_id,
+        municipality_name=impact.municipality_name,
+        year=impact.ano,
+    )
+    active_estimate = causal_estimate if use_causal else estimate
 
     response: dict[str, Any] = impact.model_dump()
     response.update(
@@ -94,15 +108,20 @@ async def get_multipliers(
                 "year_published": multiplier.year_published,
             },
             "causal": {
-                "source": "Não implementado",
-                "method": "proxy",
-                "n_obs": None,
+                "source": "Estimativa causal aproximada (beta) com sinais locais RAIS + ANTAQ",
+                "method": causal_multiplier.method,
+                "n_obs": causal_multiplier.n_obs,
                 "r2": None,
+                "coefficient": causal_multiplier.coefficient,
+                "p_value": causal_multiplier.p_value,
+                "ci_lower": causal_multiplier.ci_lower,
+                "ci_upper": causal_multiplier.ci_upper,
+                "confidence": causal_multiplier.confidence,
             },
             "estimate": estimate.model_dump(),
-            "causal_estimate": None,
+            "causal_estimate": causal_estimate.model_dump(),
+            "active": active_estimate.model_dump(),
         }
     )
-    response["active"] = estimate.model_dump() if not use_causal else None
 
     return response

@@ -111,6 +111,20 @@ services:
       --loglevel=info
     restart: unless-stopped
 
+  # Frontend — Vite build + Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: saas_impacto_frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      - api
+    networks:
+      - saas_network
+    restart: unless-stopped
+
   # PgAdmin - Interface gráfica para PostgreSQL (opcional)
   pgadmin:
     image: dpage/pgadmin4:latest

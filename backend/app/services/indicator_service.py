@@ -28,6 +28,9 @@ from app.db.bigquery.queries import (
     query_numero_atracacoes,
     query_indice_paralisacao,
     query_resumo_operacoes_navios,
+    query_tendencia_operacional,
+    query_benchmarking_operacional,
+    query_score_eficiencia_decomposto,
 )
 from app.schemas.indicators import (
     TempoMedioEsperaResponse,
@@ -46,6 +49,15 @@ from app.schemas.indicators import (
     OperacoesNaviosResumoResponse,
     OperacoesNaviosResumoItem,
     OperacoesNaviosRequest,
+    # Analíticos
+    ClassificacaoTendencia,
+    TendenciaItem,
+    TendenciaOperacionalResponse,
+    ClassificacaoBenchmark,
+    BenchmarkItem,
+    BenchmarkingResponse,
+    ComponenteScore,
+    ScoreEficienciaResponse,
 )
 
 
@@ -608,6 +620,230 @@ class ShipOperationsIndicatorService:
             )
             for row in results
         ]
+
+    # ========================================================================
+    # Analíticos — Inteligência Operacional para Investidores
+    # ========================================================================
+
+    # Mapeamento indicador → metadados para tendência/benchmarking
+    _TREND_INDICATORS = [
+        ("IND-1.01", "101", True),
+        ("IND-1.02", "102", True),
+        ("IND-1.03", "103", True),
+        ("IND-1.04", "104", True),
+        ("IND-1.06", "106", True),
+        ("IND-1.11", "111", False),   # atracações: crescimento = melhoria
+        ("IND-1.12", "112", True),
+    ]
+
+    async def get_tendencia_operacional(
+        self,
+        id_instalacao: Optional[str] = None,
+        ano_inicio: Optional[int] = None,
+        ano_fim: Optional[int] = None,
+    ) -> List[TendenciaOperacionalResponse]:
+        """
+        Análise de tendência operacional.
+
+        Retorna variação YoY, CAGR 3 anos e classificação
+        (IMPROVING/STABLE/DETERIORATING) para cada indicador temporal.
+        """
+        results = await self._execute_query(
+            query_tendencia_operacional,
+            id_instalacao=id_instalacao,
+            ano_inicio=ano_inicio,
+            ano_fim=ano_fim,
+        )
+
+        if not results:
+            return []
+
+        # Agrupa por instalação — retorna apenas o ano mais recente por default
+        grouped: dict = {}
+        for row in results:
+            inst = row["id_instalacao"]
+            ano = int(row["ano"])
+            if inst not in grouped or ano > grouped[inst]["ano"]:
+                items = []
+                for code, suffix, inv in self._TREND_INDICATORS:
+                    meta = INDICATOR_METADATA.get(code, {})
+                    val = row.get(f"valor_{suffix}")
+                    prev = row.get(f"prev_{suffix}")
+                    yoy = row.get(f"yoy_{suffix}")
+                    cls_str = row.get(f"class_{suffix}", "SEM_DADOS")
+                    cagr = row.get(f"cagr3_{suffix}")
+                    items.append(TendenciaItem(
+                        indicador_codigo=code,
+                        indicador_nome=meta.get("nome", code),
+                        unidade=meta.get("unidade", ""),
+                        valor_atual=float(val) if val is not None else None,
+                        valor_anterior=float(prev) if prev is not None else None,
+                        variacao_yoy_pct=float(yoy) if yoy is not None else None,
+                        cagr_3y_pct=float(cagr) if cagr is not None else None,
+                        classificacao=ClassificacaoTendencia(cls_str),
+                        polaridade_inversa=inv,
+                    ))
+                grouped[inst] = {
+                    "ano": ano,
+                    "response": TendenciaOperacionalResponse(
+                        id_instalacao=inst,
+                        ano=ano,
+                        indicadores=items,
+                    ),
+                }
+
+        return [v["response"] for v in grouped.values()]
+
+    async def get_benchmarking(
+        self,
+        id_instalacao: str,
+        ano: int,
+    ) -> Optional[BenchmarkingResponse]:
+        """
+        Benchmarking de uma instalação contra todos os portos no ano.
+
+        Retorna percentil, mediana, P75 e classificação para cada indicador.
+        """
+        results = await self._execute_query(
+            query_benchmarking_operacional,
+            id_instalacao=id_instalacao,
+            ano=ano,
+        )
+
+        if not results:
+            return None
+
+        row = results[0]
+        total = int(row.get("total_portos", 0))
+
+        # Para tempos: percentil rank baixo = pouco tempo = BOM
+        # Para atracações: percentil rank alto = muitas atracações = BOM
+        benchmark_defs = [
+            ("IND-1.01", "101", True),
+            ("IND-1.03", "103", True),
+            ("IND-1.04", "104", True),
+            ("IND-1.06", "106", True),
+            ("IND-1.11", "111", False),
+            ("IND-1.12", "112", True),
+        ]
+
+        items = []
+        for code, suffix, inversa in benchmark_defs:
+            meta = INDICATOR_METADATA.get(code, {})
+            valor = row.get(f"ind_{suffix}")
+            prank = row.get(f"prank_{suffix}")
+            med = row.get(f"med_{suffix}")
+            p75 = row.get(f"p75_{suffix}")
+
+            # Classificação: para indicadores inversos (tempo),
+            # rank baixo = menos tempo = ACIMA_MEDIA (melhor performance)
+            if prank is not None:
+                prank_f = float(prank)
+                if inversa:
+                    # Rank baixo = bom para tempos
+                    if prank_f <= 33:
+                        cls = ClassificacaoBenchmark.ACIMA_MEDIA
+                    elif prank_f <= 66:
+                        cls = ClassificacaoBenchmark.NA_MEDIA
+                    else:
+                        cls = ClassificacaoBenchmark.ABAIXO_MEDIA
+                else:
+                    # Rank alto = bom para atracações
+                    if prank_f >= 66:
+                        cls = ClassificacaoBenchmark.ACIMA_MEDIA
+                    elif prank_f >= 33:
+                        cls = ClassificacaoBenchmark.NA_MEDIA
+                    else:
+                        cls = ClassificacaoBenchmark.ABAIXO_MEDIA
+            else:
+                cls = ClassificacaoBenchmark.NA_MEDIA
+
+            items.append(BenchmarkItem(
+                indicador_codigo=code,
+                indicador_nome=meta.get("nome", code),
+                unidade=meta.get("unidade", ""),
+                valor_instalacao=float(valor) if valor is not None else None,
+                mediana_nacional=float(med) if med is not None else None,
+                p75_nacional=float(p75) if p75 is not None else None,
+                percentil_rank=float(prank) if prank is not None else None,
+                classificacao=cls,
+                polaridade_inversa=inversa,
+            ))
+
+        return BenchmarkingResponse(
+            id_instalacao=id_instalacao,
+            ano=ano,
+            total_portos=total,
+            indicadores=items,
+        )
+
+    async def get_score_eficiencia(
+        self,
+        ano: int,
+        id_instalacao: Optional[str] = None,
+    ) -> List[ScoreEficienciaResponse]:
+        """
+        Score de eficiência operacional decomposto (0-100).
+
+        Sem id_instalacao → retorna ranking de todos os portos.
+        Com id_instalacao → retorna apenas o porto solicitado.
+        """
+        results = await self._execute_query(
+            query_score_eficiencia_decomposto,
+            id_instalacao=id_instalacao,
+            ano=ano,
+        )
+
+        if not results:
+            return []
+
+        # Pesos correspondentes ao SQL
+        pesos = {
+            "IND-1.01": 0.20,
+            "IND-1.03": 0.15,
+            "IND-1.04": 0.15,
+            "IND-1.06": 0.20,
+            "IND-1.11": 0.15,
+            "IND-1.12": 0.15,
+        }
+
+        componentes_def = [
+            ("IND-1.01", "101"),
+            ("IND-1.03", "103"),
+            ("IND-1.04", "104"),
+            ("IND-1.06", "106"),
+            ("IND-1.11", "111"),
+            ("IND-1.12", "112"),
+        ]
+
+        responses = []
+        for row in results:
+            comps = []
+            for code, suffix in componentes_def:
+                meta = INDICATOR_METADATA.get(code, {})
+                bruto = row.get(f"ind_{suffix}")
+                norm = row.get(f"norm_{suffix}")
+                peso = pesos[code]
+                contrib = round(float(norm) * peso, 2) if norm is not None else None
+                comps.append(ComponenteScore(
+                    indicador_codigo=code,
+                    indicador_nome=meta.get("nome", code),
+                    valor_bruto=float(bruto) if bruto is not None else None,
+                    valor_normalizado=float(norm) if norm is not None else None,
+                    peso=peso,
+                    contribuicao=contrib,
+                ))
+
+            responses.append(ScoreEficienciaResponse(
+                id_instalacao=row["id_instalacao"],
+                ano=ano,
+                score_total=float(row.get("score_total", 0)),
+                ranking_posicao=int(row.get("ranking_posicao", 1)),
+                total_portos=int(row.get("total_portos", 0)),
+                componentes=comps,
+            ))
+
+        return responses
 
     # ========================================================================
     # Resumo Consolidado

@@ -61,7 +61,7 @@ class EmploymentImpactResult(BaseModel):
     """Resultado central de impacto de emprego para leitura de negócio."""
 
     municipality_id: str = Field(..., description="id_municipio IBGE (7 dígitos)")
-    municipality_name: str | None = Field(default=None, description="nome do município")
+    municipality_name: Optional[str] = Field(default=None, description="nome do município")
     ano: int = Field(..., description="ano da estimativa")
     empregos_diretos: int = Field(..., ge=0, description="empregos diretos no setor portuário")
     empregos_totais: Optional[int] = Field(
@@ -102,6 +102,68 @@ class EmploymentImpactResult(BaseModel):
     scenario: Optional["EmploymentShockScenario"] = Field(
         default=None,
         description="simulação de choque de tonelagem",
+    )
+
+    # ------------------------------------------------------------------
+    # Impacto econômico — produção (VBP) e renda (MIP IBGE 2015)
+    # ------------------------------------------------------------------
+    producao_direta_brl: Optional[float] = Field(
+        default=None, description="VBP direto estimado (R$)",
+    )
+    producao_indireta_brl: Optional[float] = Field(
+        default=None, description="VBP indireto estimado (R$)",
+    )
+    producao_induzida_brl: Optional[float] = Field(
+        default=None, description="VBP induzido estimado (R$)",
+    )
+    producao_total_brl: Optional[float] = Field(
+        default=None, description="VBP total estimado (R$)",
+    )
+    renda_direta_brl: Optional[float] = Field(
+        default=None, description="renda direta estimada — massa salarial (R$)",
+    )
+    renda_indireta_brl: Optional[float] = Field(
+        default=None, description="renda indireta estimada (R$)",
+    )
+    renda_induzida_brl: Optional[float] = Field(
+        default=None, description="renda induzida estimada (R$)",
+    )
+    renda_total_brl: Optional[float] = Field(
+        default=None, description="renda total estimada (R$)",
+    )
+
+    # Multiplicadores aplicados (transparência)
+    multiplicador_emprego_tipo_ii: Optional[float] = Field(
+        default=None,
+        description="MEII (Tipo II) — empregos totais / emprego direto",
+    )
+    multiplicador_producao_tipo_ii: Optional[float] = Field(
+        default=None,
+        description="MPTT (Tipo II) — VBP total / VBP direto",
+    )
+    multiplicador_renda_tipo_ii: Optional[float] = Field(
+        default=None,
+        description="MRII (Tipo II) — renda total / renda direta",
+    )
+    ql_estimado: Optional[float] = Field(
+        default=None,
+        description="Quociente Locacional estimado para o setor Transporte",
+    )
+
+    # Transparência sobre disponibilidade dos dados de produção/renda
+    dados_producao_renda_disponiveis: bool = Field(
+        default=False,
+        description=(
+            "True se o cálculo de produção/renda foi realizado. "
+            "False se os campos producao_* e renda_* estão None."
+        ),
+    )
+    nota_dados_producao_renda: Optional[str] = Field(
+        default=None,
+        description=(
+            "Mensagem legível sobre a origem dos dados de produção/renda: "
+            "proxy MIP, dados reais RAIS/ANTAQ, ou indisponível."
+        ),
     )
 
     @field_validator("municipality_id")

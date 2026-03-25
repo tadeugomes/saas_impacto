@@ -1,4 +1,5 @@
 """Testes de robustez para o Épico 5 (E3) - contrato de execução/qualidade estática."""
+from __future__ import annotations
 
 import inspect
 import re

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pydantic import AnyHttpUrl, BaseModel, EmailStr, Field, TypeAdapter, field_validator
-from typing import Literal
+from typing import Literal, Optional
 
 
 class NotificationPreferenceCreate(BaseModel):
@@ -38,7 +38,7 @@ class NotificationPreferenceResponse(BaseModel):
 
     id: str
     channel: str
-    endpoint: str | None
+    endpoint: Optional[str]
     enabled: bool
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None

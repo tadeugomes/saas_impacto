@@ -1,1589 +1,1417 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Users, TrendingUp, Building2, BookOpen } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../../../i18n/I18nContext';
+import { AlertCircle } from 'lucide-react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
-import { ExportButton } from '../../../components/common/ExportButton';
 import { ChartCard } from '../../../components/charts/ChartCard';
-import { LineChart } from '../../../components/charts/LineChart';
+import { BarChart } from '../../../components/charts/BarChart';
+import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
-import {
-  type MunicipioLabelMap,
-  isLikelyIdNameMismatch,
-  normalizeMunicipioId,
-  toMunicipioLabel,
-} from '../../../utils/municipioLabels';
 import { indicatorsService } from '../../../api/indicators';
-import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
-import type { IndicatorResponse } from '../../../types/api';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
-import {
-  employmentMultiplierService,
-  type EmploymentMultiplierResponse,
-  type EmploymentMultiplierConfidenceEstimate,
-  type EmploymentMultiplierImpactRow,
+import { employmentMultiplierService } from '../../../api/employmentMultiplier';
+import type {
+  EmploymentMultiplierConfidenceEstimate,
+  EmploymentMultiplierResponse,
 } from '../../../api/employmentMultiplier';
+import { formatCurrency, formatDecimal, formatQuantity } from '../../../utils/numberFormat';
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// Indicadores especiais com dados agrupados (visualização dedicada)
+const GROUPED_INDICATORS = [
+  { code: 'IND-3.03', name: 'Paridade de Gênero por Categoria Profissional' },
+  { code: 'IND-3.09', name: 'Distribuição por Escolaridade' },
+];
 
-interface IndicatorConfig {
-  code: string;
-  name: string;
-  unit: string;
-  desc: string;
-  chartType: 'bar' | 'pie' | 'metric';
-  valueField: string;
-  labelField?: string;
-  interpretation?: string;
-}
-
-interface TrendIndicatorConfig {
-  code: string;
-  name: string;
-  unit: string;
-  valueField: string;
-  valueAlias?: string;
-  description: string;
-}
-
-type IndicatorBlock = 'A' | 'C';
-
-type RawIndicatorRow = Record<string, unknown>;
-type ModuleIndicatorResponse = IndicatorResponse<RawIndicatorRow>;
-type IndicatorMap = Record<string, ModuleIndicatorResponse>;
-type IndicatorErrorMap = Record<string, string | null>;
-type IndicatorWarningMap = Record<string, string[]>;
-
-const TREND_YEARS = 5;
-const SIMULATION_MIN_DELTA = -50;
-const SIMULATION_MAX_DELTA = 100;
-const QUICK_SIMULATION_DELTAS = [-50, -25, -10, 0, 10, 25, 50, 100] as const;
-
-// IND-3.09 usa grau_instrucao como dimensão; IND-3.03 foi removido
-const DIMENSION_LABEL_FIELDS: Record<string, string> = {
-  'IND-3.09': 'grau_instrucao',
+const CATEGORIA_LABELS: Record<string, string> = {
+  GESTAO_TECNICO: 'Gestão / Técnico',
+  ADMINISTRATIVO: 'Administrativo',
+  OPERACIONAL: 'Operacional',
 };
 
-const TREND_INDICATORS: TrendIndicatorConfig[] = [
-  {
-    code: 'IND-3.01',
-    name: 'Evolução de Empregos Diretos',
-    unit: 'Empregos',
-    valueField: 'empregos_portuarios',
-    description: 'Série anual para o município selecionado.',
-  },
-  {
-    code: 'IND-3.05',
-    name: 'Evolução do Salário Médio',
-    unit: 'R$',
-    valueField: 'salario_medio',
-    description: 'Série anual da remuneração média.',
-  },
-  {
-    code: 'IND-3.06',
-    name: 'Evolução da Massa Salarial',
-    unit: 'R$',
-    valueField: 'massa_salarial_anual',
-    description: 'Série anual da massa salarial do trabalho portuário.',
-  },
-  {
-    code: 'IND-3.11',
-    name: 'Evolução da Variação de Empregos',
-    unit: '%',
-    valueField: 'variacao_percentual',
-    description: 'Série anual da variação percentual de empregos.',
-  },
+// Indicadores do Módulo 3 - Recursos Humanos (RAIS)
+const INDICATORS_INFO = [
+  { code: 'IND-3.01', name: 'Empregos Portuários', unit: 'Empregos', desc: 'Total de empregos no setor portuário (RAIS)', valueField: 'empregos_portuarios' },
+  { code: 'IND-3.02', name: 'Paridade de Gênero', unit: '%', desc: 'Percentual de mulheres no setor portuário', valueField: 'percentual_feminino' },
+  { code: 'IND-3.04', name: 'Taxa Emprego Temporário', unit: '%', desc: 'Percentual de contratos temporários no setor portuário', valueField: 'taxa_temporario' },
+  { code: 'IND-3.05', name: 'Salário Médio', unit: 'R$', desc: 'Remuneração média mensal', valueField: 'salario_medio' },
+  { code: 'IND-3.06', name: 'Massa Salarial', unit: 'R$', desc: 'Massa salarial anual estimada', valueField: 'massa_salarial_anual' },
+  { code: 'IND-3.07', name: 'Produtividade', unit: 'ton/emp', desc: 'Toneladas movimentadas por empregado portuário', valueField: 'ton_por_empregado' },
+  { code: 'IND-3.08', name: 'Receita por Empregado', unit: 'R$/emp', desc: 'PIB por empregado portuário (proxy)', valueField: 'pib_por_empregado_portuario' },
+  { code: 'IND-3.10', name: 'Idade Média', unit: 'Anos', desc: 'Idade média dos trabalhadores portuários', valueField: 'idade_media' },
+  { code: 'IND-3.11', name: 'Variação Anual Empregos', unit: '%', desc: 'Variação percentual anual de empregos', valueField: 'variacao_percentual' },
+  { code: 'IND-3.12', name: 'Participação Emprego Local', unit: '%', desc: 'Participação do setor portuário no emprego total do município', valueField: 'participacao_emprego_local' },
 ];
 
-// ── Constants: Bloco A — Empregos Diretos ────────────────────────────────────
-// IND-3.03 removido: paridade por categoria não identificável na RAIS com filtro CNAE portuário
-
-const BLOCK_A_INDICATORS: (IndicatorConfig & { block: IndicatorBlock })[] = [
-  {
-    block: 'A', code: 'IND-3.01',
-    name: 'Empregos Diretos Portuários', unit: 'Empregos',
-    desc: 'Total de empregos formais no setor portuário (RAIS, vínculos ativos em 31/12)',
-    chartType: 'bar', valueField: 'empregos_portuarios', labelField: 'id_municipio',
-    interpretation: 'Quanto maior, maior a capacidade de geração de emprego formal do porto no município.',
-  },
-  {
-    block: 'A', code: 'IND-3.05',
-    name: 'Salário Médio Portuário', unit: 'R$',
-    desc: 'Remuneração média mensal dos trabalhadores portuários',
-    chartType: 'bar', valueField: 'salario_medio', labelField: 'id_municipio',
-    interpretation: 'Compara a remuneração do setor portuário com a média municipal. Valores altos indicam emprego qualificado.',
-  },
-  {
-    block: 'A', code: 'IND-3.06',
-    name: 'Massa Salarial Anual', unit: 'R$',
-    desc: 'Total de remuneração paga ao setor portuário no ano',
-    chartType: 'bar', valueField: 'massa_salarial_anual', labelField: 'id_municipio',
-    interpretation: 'Mede a injeção direta de renda do porto na economia local. Quanto maior, maior o efeito multiplicador sobre consumo.',
-  },
-  {
-    block: 'A', code: 'IND-3.08',
-    name: 'Receita por Empregado (proxy PIB)', unit: 'R$/emp',
-    desc: 'PIB municipal por empregado portuário — proxy de produtividade econômica (dados indisponíveis diretamente na RAIS)',
-    chartType: 'bar', valueField: 'pib_por_empregado_portuario', labelField: 'id_municipio',
-    interpretation: 'Proxy de valor gerado por trabalhador portuário. Requer cruzamento com dados de PIB; pode estar indisponível para alguns municípios.',
-  },
-  {
-    block: 'A', code: 'IND-3.12',
-    name: 'Participação no Emprego Local', unit: '%',
-    desc: 'Peso do emprego portuário no total de empregos formais do município',
-    chartType: 'bar', valueField: 'participacao_emprego_local', labelField: 'id_municipio',
-    interpretation: 'Quanto maior, mais o município depende economicamente da atividade portuária para gerar empregos.',
-  },
-  {
-    block: 'A', code: 'IND-3.11',
-    name: 'Variação Anual de Empregos', unit: '%',
-    desc: 'Variação percentual do emprego portuário em relação ao ano anterior',
-    chartType: 'bar', valueField: 'variacao_percentual', labelField: 'id_municipio',
-    interpretation: 'Valores positivos indicam expansão do mercado de trabalho portuário; negativos indicam retração.',
-  },
-  {
-    block: 'A', code: 'IND-3.07',
-    name: 'Produtividade — Toneladas/Empregado', unit: 'ton/emp',
-    desc: 'Volume de carga movimentado por trabalhador portuário (RAIS + ANTAQ)',
-    chartType: 'bar', valueField: 'ton_por_empregado', labelField: 'id_municipio',
-    interpretation: 'Mede a eficiência operacional. Valores altos podem indicar alta mecanização ou operação de granéis. Requer cruzamento RAIS+ANTAQ; pode estar indisponível para alguns municípios.',
-  },
+const REMUNERATION_CHART_INDICATORS = [
+  { code: 'IND-3.13', name: 'Remuneração por Escolaridade e Sexo' },
+  { code: 'IND-3.14', name: 'Remuneração por Raça/Cor e Sexo' },
+  { code: 'IND-3.15', name: 'Remuneração por Escolaridade, Raça/Cor e Sexo' },
+  { code: 'IND-3.16', name: 'Remuneração Média com Referência Nacional' },
 ];
 
-// ── Constants: Bloco C — Perfil do Trabalhador ───────────────────────────────
-// IND-3.03 removido: paridade por categoria não identificável na RAIS com filtro CNAE portuário
+const ESCOLARIDADE_CATEGORIES = [
+  { key: 'FUNDAMENTAL_INCOMPLETO', label: 'Fundamental Incompleto' },
+  { key: 'FUNDAMENTAL_COMPLETO', label: 'Fundamental Completo' },
+  { key: 'MEDIO_INCOMPLETO', label: 'Médio Incompleto' },
+  { key: 'MEDIO_COMPLETO', label: 'Médio Completo' },
+  { key: 'SUPERIOR_INCOMPLETO', label: 'Superior Incompleto' },
+  { key: 'SUPERIOR_COMPLETO', label: 'Superior Completo' },
+  { key: 'MESTRADO', label: 'Mestrado' },
+  { key: 'DOUTORADO', label: 'Doutorado' },
+] as const;
 
-const BLOCK_C_INDICATORS: (IndicatorConfig & { block: IndicatorBlock })[] = [
-  {
-    block: 'C', code: 'IND-3.02',
-    name: 'Participação de Mulheres', unit: '%',
-    desc: 'Percentual de mulheres no emprego portuário formal',
-    chartType: 'bar', valueField: 'percentual_feminino', labelField: 'id_municipio',
-    interpretation: 'Valores baixos indicam possível barreira de entrada. A média nacional do setor gira em torno de 15-20%.',
-  },
-  {
-    block: 'C', code: 'IND-3.04',
-    name: 'Taxa de Emprego Temporário', unit: '%',
-    desc: 'Percentual de contratos temporários no setor portuário (dados podem ser escassos na RAIS formal)',
-    chartType: 'bar', valueField: 'taxa_temporario', labelField: 'id_municipio',
-    interpretation: 'Valores elevados podem indicar sazonalidade operacional ou precarização do vínculo empregatício.',
-  },
-  {
-    block: 'C', code: 'IND-3.09',
-    name: 'Distribuição por Escolaridade', unit: '%',
-    desc: 'Distribuição dos trabalhadores portuários por nível de escolaridade (selecione um município para ver o detalhamento por grau)',
-    chartType: 'bar', valueField: 'percentual', labelField: 'id_municipio',
-    interpretation: 'Mostra o perfil educacional da força de trabalho portuária e a demanda por qualificação.',
-  },
-  {
-    block: 'C', code: 'IND-3.10',
-    name: 'Idade Média do Trabalhador', unit: 'Anos',
-    desc: 'Idade média dos trabalhadores formais do setor portuário',
-    chartType: 'bar', valueField: 'idade_media', labelField: 'id_municipio',
-    interpretation: 'Idades médias altas podem sinalizar dificuldade de renovação da força de trabalho.',
-  },
-];
+const RACA_CATEGORIES = [
+  { key: 'BRANCA', label: 'Branca' },
+  { key: 'PARDA', label: 'Parda' },
+  { key: 'INDIGENA', label: 'Indígena' },
+  { key: 'PRETA', label: 'Preta' },
+  { key: 'AMARELA', label: 'Amarela' },
+] as const;
 
-const ALL_INDICATORS = [...BLOCK_A_INDICATORS, ...BLOCK_C_INDICATORS];
+type SexoOption = 'MASCULINO' | 'FEMININO';
 
-// ── Confidence semaphore ─────────────────────────────────────────────────────
-
-type ConfidenceLevel = 'strong' | 'moderate' | 'weak';
-
-const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { color: string; bg: string; border: string; label: string; desc: string }> = {
-  strong:   { color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Evidência forte', desc: 'Multiplicador amplamente validado na literatura internacional' },
-  moderate: { color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Evidência moderada', desc: 'Baseado em estudos com amostra limitada ou contexto regional' },
-  weak:     { color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Evidência fraca', desc: 'Estimativa com alta incerteza ou amostra insuficiente' },
-};
-
-interface EmploymentSimulation {
-  deltaTonelagem: number;
-  baselineTonelagemMilhoes: number | null;
-  targetTonelagemMilhoes: number | null;
-  diretos: number;
-  diretosDelta: number;
-  indiretos: number;
-  indiretosDelta: number;
-  induzidos: number;
-  induzidosDelta: number;
-  total: number;
-  totalDelta: number;
+interface InstallationMunicipioResolutionState {
+  municipioId: string | null;
+  message: string | null;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorResponse => ({
-  codigo_indicador: codigoIndicador,
-  nome: codigoIndicador,
-  unidade: '',
-  unctad: false,
-  data: [],
-});
-
-function toIndicatorRows(response: ModuleIndicatorResponse): RawIndicatorRow[] {
-  return response.data.filter((item): item is RawIndicatorRow => item !== null && typeof item === 'object');
+interface RemuneracaoEscolaridadeSexoRow {
+  escolaridade: string;
+  ordem_escolaridade: number;
+  sexo: SexoOption;
+  remuneracao_media: number;
 }
 
-function parseNumber(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
+interface RemuneracaoRacaSexoRow {
+  raca_cor: string;
+  ordem_raca: number;
+  sexo: SexoOption;
+  remuneracao_media: number;
+}
 
-  if (typeof value === 'string') {
-    const normalized = value
-      .trim()
-      .replace(/\s/g, '')
-      .replace(/\./g, '')
-      .replace(',', '.');
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
+interface RemuneracaoEscolaridadeRacaSexoRow {
+  escolaridade: string;
+  ordem_escolaridade: number;
+  raca_cor: string;
+  ordem_raca: number;
+  sexo: SexoOption;
+  combinacao: string;
+  remuneracao_media: number;
+}
 
+interface RemuneracaoComparativoRow {
+  nome_municipio?: string;
+  id_municipio?: string;
+  remuneracao_media: number;
+  media_nacional: number;
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function normalizeMunicipioCode(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 6) return `0${digits}`;
+  return digits.length === 7 ? digits : null;
+}
+
+function normalizeEscolaridade(value: unknown): string | null {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  if (raw.includes('FUNDAMENTAL') && raw.includes('INCOMPL')) return 'FUNDAMENTAL_INCOMPLETO';
+  if (raw.includes('FUNDAMENTAL') && raw.includes('COMPLETO')) return 'FUNDAMENTAL_COMPLETO';
+  if (raw.includes('MEDIO') && raw.includes('INCOMPL')) return 'MEDIO_INCOMPLETO';
+  if (raw.includes('MEDIO') && raw.includes('COMPLETO')) return 'MEDIO_COMPLETO';
+  if (raw.includes('SUPERIOR') && raw.includes('INCOMPL')) return 'SUPERIOR_INCOMPLETO';
+  if (raw.includes('SUPERIOR') && raw.includes('COMPLETO')) return 'SUPERIOR_COMPLETO';
+  if (raw.includes('MESTRADO')) return 'MESTRADO';
+  if (raw.includes('DOUTORADO') || raw.includes('DOUTOR')) return 'DOUTORADO';
   return null;
 }
 
-function parseYear(value: unknown): number | null {
-  if (typeof value === 'number') {
-    const year = Number.isFinite(value) ? Math.trunc(value) : null;
-    return year;
-  }
-
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
+function normalizeRacaCor(value: unknown): string | null {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  if (raw.includes('BRANCA')) return 'BRANCA';
+  if (raw.includes('PARDA')) return 'PARDA';
+  if (raw.includes('INDIG') || raw.includes('INDIGENA')) return 'INDIGENA';
+  if (raw.includes('PRETA') || raw.includes('NEGRA')) return 'PRETA';
+  if (raw.includes('AMAREL') || raw.includes('ASIAT')) return 'AMARELA';
   return null;
 }
 
-function getValueFromRow(row: RawIndicatorRow, field: string): number | null {
-  return parseNumber(row[field]);
+function normalizeSexo(value: unknown): SexoOption | null {
+  const sexo = normalizeText(value);
+  if (sexo === 'MASCULINO') return 'MASCULINO';
+  if (sexo === 'FEMININO') return 'FEMININO';
+  if (sexo === '1') return 'MASCULINO';
+  if (sexo === '2') return 'FEMININO';
+  if (sexo === 'M') return 'MASCULINO';
+  if (sexo === 'F') return 'FEMININO';
+  if (sexo.startsWith('MALE')) return 'MASCULINO';
+  if (sexo.startsWith('FEMALE')) return 'FEMININO';
+  return null;
 }
 
-type TrendSeries = {
-  labels: string[];
-  values: number[];
-};
+function getEscolaridadeLabel(escolaridade: string): string {
+  const found = ESCOLARIDADE_CATEGORIES.find((item) => item.key === escolaridade);
+  return found?.label || escolaridade;
+}
 
-function buildTrendSeries(rows: Array<{ row: RawIndicatorRow; value: number }>): TrendSeries | null {
-  const byYear: Array<{ year: number; value: number }> = rows
-    .map((entry) => ({ year: parseYear(entry.row.ano), value: entry.value }))
-    .filter((entry): entry is { year: number; value: number } => entry.year !== null);
+function getRacaLabel(racaCor: string): string {
+  const found = RACA_CATEGORIES.find((item) => item.key === racaCor);
+  return found?.label || racaCor;
+}
 
-  if (!byYear.length) {
-    return null;
+function parseRemuneracaoEscolaridadeSexoRows(raw: any[]): RemuneracaoEscolaridadeSexoRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const sexo = normalizeSexo(row?.sexo);
+      const escolaridade = normalizeEscolaridade(row?.escolaridade) || String(row?.escolaridade || '').toUpperCase();
+      if (!sexo || !escolaridade) return null;
+      return {
+        sexo,
+        escolaridade,
+        ordem_escolaridade: toNumber(row?.ordem_escolaridade),
+        remuneracao_media: toNumber(row?.remuneracao_media),
+      };
+    })
+    .filter((row): row is RemuneracaoEscolaridadeSexoRow => row !== null);
+}
+
+function parseRemuneracaoRacaSexoRows(raw: any[]): RemuneracaoRacaSexoRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const sexo = normalizeSexo(row?.sexo);
+      const racaCor = normalizeRacaCor(row?.raca_cor) || String(row?.raca_cor || '').toUpperCase();
+      if (!sexo || !racaCor) return null;
+      return {
+        sexo,
+        raca_cor: racaCor,
+        ordem_raca: toNumber(row?.ordem_raca),
+        remuneracao_media: toNumber(row?.remuneracao_media),
+      };
+    })
+    .filter((row): row is RemuneracaoRacaSexoRow => row !== null);
+}
+
+function parseRemuneracaoEscolaridadeRacaSexoRows(raw: any[]): RemuneracaoEscolaridadeRacaSexoRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const sexo = normalizeSexo(row?.sexo);
+      const escolaridade = normalizeEscolaridade(row?.escolaridade) || String(row?.escolaridade || '').toUpperCase();
+      const racaCor = normalizeRacaCor(row?.raca_cor) || String(row?.raca_cor || '').toUpperCase();
+      if (!sexo || !escolaridade || !racaCor) return null;
+      return {
+        sexo,
+        escolaridade,
+        ordem_escolaridade: toNumber(row?.ordem_escolaridade),
+        raca_cor: racaCor,
+        ordem_raca: toNumber(row?.ordem_raca),
+        combinacao: String(row?.combinacao || `${escolaridade} | ${racaCor}`),
+        remuneracao_media: toNumber(row?.remuneracao_media),
+      };
+    })
+    .filter((row): row is RemuneracaoEscolaridadeRacaSexoRow => row !== null);
+}
+
+function parseRemuneracaoComparativoRows(raw: any[]): RemuneracaoComparativoRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => ({
+    nome_municipio: row?.nome_municipio,
+    id_municipio: row?.id_municipio,
+    remuneracao_media: toNumber(row?.remuneracao_media),
+    media_nacional: toNumber(row?.media_nacional),
+  }));
+}
+
+function renderDataStatus(hasError?: string, helperText?: string) {
+  return (
+    <div className="h-64 flex flex-col items-center justify-center text-gray-400">
+      {hasError ? (
+        <>
+          <p className="text-red-500 mb-2">Erro ao carregar dados</p>
+          <p className="text-sm text-gray-500">{hasError}</p>
+          {helperText && <p className="text-xs text-gray-400 mt-2 text-center max-w-xs">{helperText}</p>}
+        </>
+      ) : (
+        <>
+          <p>Dados não disponíveis</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Verifique os filtros ou aguarde disponibilização dos dados RAIS
+          </p>
+          {helperText && <p className="text-xs text-gray-400 mt-2 text-center max-w-xs">{helperText}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Extrai os IDs de município válidos do resultado do IND-3.01,
+// ordenados por volume de emprego (maiores primeiro), máximo 3.
+function extractMunicipioIds(data: any[]): string[] {
+  return (data || [])
+    .filter((d: any) => /^\d{6,7}$/.test(String(d.id_municipio || '')))
+    .sort((a: any, b: any) => (b.empregos_portuarios || 0) - (a.empregos_portuarios || 0))
+    .slice(0, 3)
+    .map((d: any) => String(d.id_municipio));
+}
+
+function getValueFromData(item: any, valueField: string): number {
+  return item[valueField] ?? item.valor ?? item.total ?? 0;
+}
+
+function getLabelFromData(item: any): string {
+  return item.nome_municipio || item.municipio || item.id_municipio || item.id_instalacao || 'N/A';
+}
+
+function isLikelyMunicipioCode(value: string | null | undefined): value is string {
+  if (!value) return false;
+  return /^\d{6,7}$/.test(value.trim());
+}
+
+function resolveImpactEstimate(
+  response: EmploymentMultiplierResponse,
+  preferCausal: boolean,
+): EmploymentMultiplierConfidenceEstimate | null {
+  if (preferCausal) {
+    return response.active ?? response.causal_estimate ?? response.estimate ?? null;
   }
-
-  const dedup = new Map<number, number>();
-  for (const item of byYear) {
-    dedup.set(item.year, item.value);
-  }
-
-  const ordered = Array.from(dedup.entries()).sort((a, b) => a[0] - b[0]);
-
-  if (ordered.length < 2) {
-    return null;
-  }
-
-  return {
-    labels: ordered.map(([year]) => String(year)),
-    values: ordered.map(([, value]) => value),
-  };
+  return response.active ?? response.estimate ?? response.causal_estimate ?? null;
 }
-
-function computeGrowth(values: number[]): number | null {
-  if (values.length < 2) {
-    return null;
-  }
-
-  const first = values[0];
-  const last = values[values.length - 1];
-  if (!Number.isFinite(first) || !Number.isFinite(last) || first === undefined || last === undefined || first === 0) {
-    return null;
-  }
-
-  return ((last - first) / first) * 100;
-}
-
-function formatTonelagem(value: number): string {
-  return `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} mi t`;
-}
-
-function parseSimulationBaseline(row: EmploymentMultiplierImpactRow | undefined): number | null {
-  return parseNumber(row?.tonelagem_antaq_milhoes);
-}
-
-function buildSimulation(
-  estimate: EmploymentMultiplierConfidenceEstimate | null,
-  baseTonelagemMilhoes: number | null,
-  deltaTonelagemPercent: number,
-  scenarioRow?: EmploymentMultiplierImpactRow | null,
-): EmploymentSimulation | null {
-  if (!estimate) return null;
-  const factor = 1 + (Number(deltaTonelagemPercent) || 0) / 100;
-  const safeFactor = Math.max(0, factor);
-  const clampNonNegative = (value: number): number => Number(Math.max(0, value).toFixed(2));
-  const scenario = scenarioRow?.scenario;
-  const hasScenario = scenario !== null
-    && scenario !== undefined
-    && Math.abs(scenario.delta_tonelagem_pct - deltaTonelagemPercent) < 0.0001;
-
-  if (baseTonelagemMilhoes === null) {
-    return {
-      deltaTonelagem: deltaTonelagemPercent,
-      baselineTonelagemMilhoes: null,
-      targetTonelagemMilhoes: null,
-      diretos: hasScenario
-        ? clampNonNegative(estimate.direct_jobs + scenario.delta_empregos_diretos)
-        : Math.max(0, Math.round(estimate.direct_jobs * safeFactor)),
-      diretosDelta: hasScenario
-        ? Number(scenario.delta_empregos_diretos.toFixed(2))
-        : Number((Math.max(0, Math.round(estimate.direct_jobs * safeFactor)) - estimate.direct_jobs).toFixed(2)),
-      indiretos: hasScenario
-        ? clampNonNegative(estimate.indirect_estimated + scenario.delta_empregos_indiretos)
-        : Number((estimate.indirect_estimated * safeFactor).toFixed(2)),
-      indiretosDelta: hasScenario
-        ? Number(scenario.delta_empregos_indiretos.toFixed(2))
-        : Number((Number((estimate.indirect_estimated * safeFactor).toFixed(2)) - estimate.indirect_estimated).toFixed(2)),
-      induzidos: hasScenario
-        ? clampNonNegative(estimate.induced_estimated + scenario.delta_empregos_induzidos)
-        : Number((estimate.induced_estimated * safeFactor).toFixed(2)),
-      induzidosDelta: hasScenario
-        ? Number(scenario.delta_empregos_induzidos.toFixed(2))
-        : Number((Number((estimate.induced_estimated * safeFactor).toFixed(2)) - estimate.induced_estimated).toFixed(2)),
-      total: hasScenario
-        ? clampNonNegative(estimate.total_impact + scenario.delta_emprego_total)
-        : Number((estimate.direct_jobs * safeFactor + estimate.indirect_estimated * safeFactor + estimate.induced_estimated * safeFactor).toFixed(2)),
-      totalDelta: hasScenario
-        ? Number(scenario.delta_emprego_total.toFixed(2))
-        : Number((Number((estimate.direct_jobs * safeFactor + estimate.indirect_estimated * safeFactor + estimate.induced_estimated * safeFactor).toFixed(2)) - estimate.total_impact).toFixed(2)),
-    };
-  }
-
-  const projectedTonelagem = Number((baseTonelagemMilhoes * safeFactor).toFixed(3));
-
-  const diretos = hasScenario
-    ? clampNonNegative(estimate.direct_jobs + scenario.delta_empregos_diretos)
-    : Math.max(0, Math.round(estimate.direct_jobs * safeFactor));
-  const indiretos = hasScenario
-    ? clampNonNegative(estimate.indirect_estimated + scenario.delta_empregos_indiretos)
-    : Math.max(0, Number((estimate.indirect_estimated * safeFactor).toFixed(2)));
-  const induzidos = hasScenario
-    ? clampNonNegative(estimate.induced_estimated + scenario.delta_empregos_induzidos)
-    : Math.max(0, Number((estimate.induced_estimated * safeFactor).toFixed(2)));
-  const total = hasScenario
-    ? clampNonNegative(estimate.total_impact + scenario.delta_emprego_total)
-    : Math.max(0, Number((estimate.direct_jobs * safeFactor + estimate.indirect_estimated * safeFactor + estimate.induced_estimated * safeFactor).toFixed(2)));
-
-  const diretosDelta = hasScenario
-    ? Number(scenario.delta_empregos_diretos.toFixed(2))
-    : Number((diretos - estimate.direct_jobs).toFixed(2));
-  const indiretosDelta = hasScenario
-    ? Number(scenario.delta_empregos_indiretos.toFixed(2))
-    : Number((indiretos - estimate.indirect_estimated).toFixed(2));
-  const induzidosDelta = hasScenario
-    ? Number(scenario.delta_empregos_induzidos.toFixed(2))
-    : Number((induzidos - estimate.induced_estimated).toFixed(2));
-  const totalDelta = hasScenario
-    ? Number(scenario.delta_emprego_total.toFixed(2))
-    : Number((total - estimate.total_impact).toFixed(2));
-
-  return {
-    deltaTonelagem: deltaTonelagemPercent,
-    baselineTonelagemMilhoes: baseTonelagemMilhoes,
-    targetTonelagemMilhoes: projectedTonelagem,
-    diretos,
-    diretosDelta,
-    indiretos,
-    indiretosDelta,
-    induzidos,
-    induzidosDelta,
-    total,
-    totalDelta,
-  };
-}
-
-function formatDelta(value: number): string {
-  const prefix = value > 0 ? '+' : value < 0 ? '−' : '';
-  return `${prefix}${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
-}
-
-function formatDeltaBadgeClass(value: number): string {
-  if (value > 0) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (value < 0) return 'text-red-700 bg-red-50 border-red-200';
-  return 'text-gray-700 bg-gray-50 border-gray-200';
-}
-
-function formatNumber(value: number, type: 'integer' | 'currency' | 'percent' | 'decimal' = 'integer'): string {
-  if (type === 'currency') {
-    if (value >= 1_000_000_000) return `R$ ${(value / 1_000_000_000).toFixed(1).replace('.', ',')} bi`;
-    if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1).replace('.', ',')} mi`;
-    if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(1).replace('.', ',')} mil`;
-    return `R$ ${value.toFixed(0)}`;
-  }
-  if (type === 'percent') return `${value.toFixed(1).replace('.', ',')}%`;
-  if (type === 'decimal') return value.toFixed(1).replace('.', ',');
-  return value.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-}
-
-function getTopMunicipio(indicatorsMap: IndicatorMap, code: string, valueField: string): { value: number; name: string } | null {
-  const indicator = indicatorsMap[code];
-  if (!indicator) return null;
-  const rows = toIndicatorRows(indicator);
-  if (!rows.length) return null;
-  let best: { value: number; name: string } | null = null;
-  for (const row of rows) {
-    const val = parseNumber(row[valueField]);
-    if (val === null) continue;
-    if (!best || val > best.value) {
-      best = { value: val, name: typeof row.nome_municipio === 'string' ? row.nome_municipio : String(row.id_municipio ?? '') };
-    }
-  }
-  return best;
-}
-
-// ── Component ────────────────────────────────────────────────────────────────
 
 export function Module3View() {
-  const { selectedYear } = useFilterStore();
-  const [indicators, setIndicators] = useState<IndicatorMap>({});
-  const [trendIndicators, setTrendIndicators] = useState<IndicatorMap>({});
-  const [indicatorErrors, setIndicatorErrors] = useState<IndicatorErrorMap>({});
-  const [indicatorWarnings, setIndicatorWarnings] = useState<IndicatorWarningMap>({});
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const { selectedYear, selectedInstallation } = useFilterStore();
+  const [indicators, setIndicators] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [trendLoading, setTrendLoading] = useState(false);
-  const [trendError, setTrendError] = useState<string | null>(null);
-  const [tableSearch, setTableSearch] = useState('');
-  const [municipioLabelIndex, setMunicipioLabelIndex] = useState<MunicipioLabelMap>({});
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [selectedMunicipio, setSelectedMunicipio] = useState('');
-  const [salaryQueryInput, setSalaryQueryInput] = useState('');
-  const [salaryComparisonText, setSalaryComparisonText] = useState('');
-  const [simulationDelta, setSimulationDelta] = useState<number>(0);
-
-  // Bloco B — multiplicador
-  const [multiplierData, setMultiplierData] = useState<EmploymentMultiplierResponse | null>(null);
-  const [multiplierLoading, setMultiplierLoading] = useState(false);
-  const [_multiplierError, setMultiplierError] = useState<string | null>(null);
-  const [simulationMultiplierData, setSimulationMultiplierData] = useState<EmploymentMultiplierResponse | null>(null);
-  const [simulationMultiplierLoading, setSimulationMultiplierLoading] = useState(false);
-  const [_simulationMultiplierError, setSimulationMultiplierError] = useState<string | null>(null);
-  const [showCausalEstimate, setShowCausalEstimate] = useState(false);
-
-  // Detecta hint de ano RAIS a partir dos warnings retornados
-  // Quando RAIS 2023 não está disponível, a API retorna warning indicando o último ano disponível
-  const [raisYearHint, setRaisYearHint] = useState<number | null>(null);
-
-  const formatIndicatorError = (err: unknown): string | null => {
-    const errorLike = err as {
-      response?: { data?: { detail?: string | Array<string> | Record<string, string> } };
-      message?: string;
-    };
-
-    const detail = errorLike?.response?.data?.detail;
-    if (typeof detail === 'string' && detail.trim()) {
-      const detailText = detail.trim();
-      if (detailText.includes('Quota exceeded')) {
-        return 'Consulta indisponível temporariamente: limite de cota de processamento do BigQuery atingido.';
-      }
-      return detailText;
-    }
-    if (Array.isArray(detail) && detail.length > 0) {
-      return detail.join('; ');
-    }
-    if (typeof detail === 'object' && detail !== null) {
-      const detailText = JSON.stringify(detail);
-      return detailText.length ? detailText : 'Erro desconhecido ao carregar indicador';
-    }
-    if (typeof errorLike.message === 'string' && errorLike.message.trim()) {
-      return errorLike.message;
-    }
-    return 'Erro ao carregar indicador';
-  };
-
-  // ── Municipality labels ──────────────────────────────────────────────
-
-  const resolveMunicipioLabels = useCallback(
-    async (rawIds: string[]) => {
-      const ids = Array.from(
-        new Set(
-          rawIds
-            .map((id) => normalizeMunicipioId(id))
-            .filter((id) => id && id.length >= 2 && !municipioLabelIndex[id]),
-        ),
-      );
-      if (!ids.length) return;
-      try {
-        const response = await indicatorsService.getMunicipioLookup(ids);
-        const nextLabels: MunicipioLabelMap = {};
-        response.municipios.forEach((item) => {
-          const municipioId = normalizeMunicipioId(item.id_municipio);
-          const nomeMunicipio = item.nome_municipio?.trim();
-          if (municipioId && nomeMunicipio) nextLabels[municipioId] = nomeMunicipio;
-        });
-        if (Object.keys(nextLabels).length > 0) {
-          setMunicipioLabelIndex((current) => ({ ...current, ...nextLabels }));
-        }
-      } catch {
-        // Falha de lookup é não-bloqueante
-      }
-    },
-    [municipioLabelIndex],
-  );
-
-  const municipioLabelsFromIndicators = useMemo(() => {
-    const lookup: MunicipioLabelMap = {};
-    Object.values(indicators).forEach((indicator) => {
-      toIndicatorRows(indicator).forEach((item) => {
-        const id = normalizeMunicipioId(item.id_municipio);
-        const nome = item.nome_municipio;
-        if (id && typeof nome === 'string' && nome.trim() && !isLikelyIdNameMismatch(id, nome) && !normalizeMunicipioId(nome)) {
-          lookup[id] = nome.trim();
-        }
-      });
-    });
-    return lookup;
-  }, [indicators]);
-
-  const municipioLabels = useMemo(
-    () => ({ ...municipioLabelIndex, ...municipioLabelsFromIndicators }),
-    [municipioLabelIndex, municipioLabelsFromIndicators],
-  );
-
-  const municipioCatalogIds = useMemo(() => {
-    const ids = new Set<string>(Object.keys(municipioLabels));
-    Object.values(indicators).forEach((indicator) => {
-      toIndicatorRows(indicator).forEach((item) => {
-        const id = normalizeMunicipioId(item.id_municipio);
-        if (id) ids.add(id);
-      });
-    });
-    return Array.from(ids);
-  }, [indicators, municipioLabels]);
-
-  const municipioOptions = useMemo(
-    () => {
-      const options = Array.from(new Set(municipioCatalogIds))
-        .map((id) => ({
-          value: id,
-          label: toMunicipioLabel(id, municipioLabels, { showCode: false }),
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-      return [{ value: '', label: 'Todos os municípios' }, ...options];
-    },
-    [municipioCatalogIds, municipioLabels],
-  );
+  const [installationMunicipioResolution, setInstallationMunicipioResolution] = useState<InstallationMunicipioResolutionState>({
+    municipioId: null,
+    message: null,
+  });
+  const [isResolvingMunicipio, setIsResolvingMunicipio] = useState(false);
+  const [municipioResolutionError, setMunicipioResolutionError] = useState<string | null>(null);
+  const [impactData, setImpactData] = useState<EmploymentMultiplierResponse[]>([]);
+  const [isImpactLoading, setIsImpactLoading] = useState(false);
+  const [deltaPct, setDeltaPct] = useState<number>(10);
+  const [scenarioDeltas, setScenarioDeltas] = useState<number[]>([10]);
+  const [useCausalEstimate, setUseCausalEstimate] = useState(false);
+  const [selectedSexoChart3, setSelectedSexoChart3] = useState<SexoOption>('MASCULINO');
 
   useEffect(() => {
-    void resolveMunicipioLabels(municipioCatalogIds);
-  }, [municipioCatalogIds, resolveMunicipioLabels]);
-
-  const getMunicipioLabel = useCallback(
-    (item: RawIndicatorRow) => {
-      const idMunicipio = normalizeMunicipioId(item.id_municipio);
-      if (idMunicipio) return toMunicipioLabel(idMunicipio, municipioLabels);
-      return typeof item.nome_municipio === 'string' && item.nome_municipio.trim()
-        ? item.nome_municipio.trim() : 'N/A';
-    },
-    [municipioLabels],
-  );
-
-  const getLabelAccessor = useCallback(
-    (code: string) => {
-      const dimensionField = DIMENSION_LABEL_FIELDS[code];
-      if (dimensionField) {
-        // Usa a dimensão própria do indicador (ex.: grau_instrucao para IND-3.09)
-        // quando um município está selecionado, ou quando os dados são de dimensão múltipla
-        // (IND-3.09 retorna linhas por grau_instrucao, não por município)
-        if (selectedMunicipio) {
-          return (item: RawIndicatorRow) => {
-            const dimensionValue = item[dimensionField];
-            if (typeof dimensionValue === 'string' && dimensionValue.trim()) {
-              return dimensionValue.trim();
-            }
-            return getMunicipioLabel(item);
-          };
-        }
-        // Sem município selecionado: IND-3.09 retorna linhas por município+grau_instrucao.
-        // Mostra "Município — Grau" para distinguir linhas com mesmo município.
-        return (item: RawIndicatorRow) => {
-          const dimensionValue = item[dimensionField];
-          const municipio = getMunicipioLabel(item);
-          if (typeof dimensionValue === 'string' && dimensionValue.trim()) {
-            return `${municipio} — ${dimensionValue.trim()}`;
-          }
-          return municipio;
-        };
-      }
-      return getMunicipioLabel;
-    },
-    [selectedMunicipio, getMunicipioLabel],
-  );
-
-  const getSingleIndicatorValue = useCallback(
-    (code: string, field: string): number | null => {
-      const response = indicators[code];
-      if (!response) return null;
-      const rows = toIndicatorRows(response);
-      if (!rows.length) return null;
-
-      if (!selectedMunicipio) {
-        return getValueFromRow(rows[0], field);
-      }
-
-      for (const row of rows) {
-        const rowMunicipio = normalizeMunicipioId(row.id_municipio);
-        if (rowMunicipio === selectedMunicipio) {
-          const value = getValueFromRow(row, field);
-          if (value !== null) return value;
-        }
-      }
-
-      return getValueFromRow(rows[0], field);
-    },
-    [indicators, selectedMunicipio],
-  );
-
-  // ── Fetch indicadores + multiplicador ──────────────────────────────────
-
-  useEffect(() => {
-    const fetchAll = async () => {
+    let isActive = true;
+    const resolveInstallationMunicipio = async () => {
+      setIsResolvingMunicipio(true);
       setIsLoading(true);
-      setError(null);
-      setIndicatorErrors({});
-      setIndicatorWarnings({});
-      setMultiplierData(null);
-      setSimulationMultiplierData(null);
-      try {
-        const promises = ALL_INDICATORS.map((ind) => (
-          indicatorsService
-            .queryIndicator<RawIndicatorRow>({
-              codigo_indicador: ind.code,
-              params: {
-                ano: selectedYear,
-                ...(selectedMunicipio ? { id_municipio: selectedMunicipio } : {}),
-              },
-            })
-            .then((response) => ({ code: ind.code, response, error: null as string | null }))
-            .catch((err: unknown) => ({
-              code: ind.code,
-              response: createEmptyIndicatorResponse(ind.code),
-              error: formatIndicatorError(err),
-            }))
-        ));
-        const results = await Promise.all(promises);
-        const mapped: IndicatorMap = {};
-        const errors: IndicatorErrorMap = {};
-        const warnings: IndicatorWarningMap = {};
-        results.forEach((result) => {
-          mapped[result.code] = result.response;
-          if (result.error) {
-            errors[result.code] = result.error;
-          }
-          const responseWarnings = result.response.warnings?.map((item) => item.mensagem).filter(
-            (message): message is string => typeof message === 'string' && message.trim().length > 0,
-          ) ?? [];
-          if (responseWarnings.length) {
-            warnings[result.code] = responseWarnings;
-          }
-        });
-        setIndicators(mapped);
-        setIndicatorErrors(errors);
-        setIndicatorWarnings(warnings);
-        if (Object.keys(errors).length > 0) {
-          setError('Alguns indicadores não puderam ser carregados. Verifique os detalhes por card.');
+      setMunicipioResolutionError(null);
+
+      if (!selectedInstallation) {
+        if (isActive) {
+          setInstallationMunicipioResolution({ municipioId: null, message: null });
+          setIsResolvingMunicipio(false);
         }
-
-        // Detecta se a RAIS não tem dados para o ano selecionado
-        // A API retorna warning "ano_apos_cobertura" com o último ano disponível
-        const allEmpty = results.every((r) => r.response.data.length === 0);
-        if (allEmpty) {
-          // Tenta extrair o ano máximo disponível dos warnings
-          let detectedMaxYear: number | null = null;
-          for (const result of results) {
-            const warn = result.response.warnings ?? [];
-            for (const w of warn) {
-              if (typeof w.mensagem === 'string') {
-                const match = w.mensagem.match(/[Úú]ltimo ano com dados[:\s]+(\d{4})/);
-                if (match) {
-                  const yr = Number(match[1]);
-                  if (!detectedMaxYear || yr > detectedMaxYear) detectedMaxYear = yr;
-                }
-              }
-            }
-          }
-          setRaisYearHint(detectedMaxYear);
-        } else {
-          setRaisYearHint(null);
-        }
-
-        // Tentar buscar multiplicador para o município selecionado, ou no agregado geral.
-        const allEmploymentRows = toIndicatorRows(mapped['IND-3.01'] ?? createEmptyIndicatorResponse('IND-3.01'));
-        const selectedEmploymentRows = selectedMunicipio
-          ? allEmploymentRows.filter((row) => normalizeMunicipioId(row.id_municipio) === selectedMunicipio)
-          : allEmploymentRows;
-        const employmentRows = selectedEmploymentRows.length > 0 ? selectedEmploymentRows : allEmploymentRows;
-
-        if (employmentRows.length > 0) {
-          const topRow = employmentRows.reduce((best, curr) => {
-            const bestVal = Number(best.empregos_portuarios ?? 0);
-            const currVal = Number(curr.empregos_portuarios ?? 0);
-            return currVal > bestVal ? curr : best;
-          }, employmentRows[0]);
-          const munId = normalizeMunicipioId(topRow.id_municipio);
-          if (munId) {
-            setMultiplierLoading(true);
-            try {
-              const multResp = await employmentMultiplierService.getMultiplierEstimate(
-                munId, selectedYear ?? undefined, false,
-              );
-              setMultiplierData(multResp);
-              setSimulationMultiplierData(multResp);
-            } catch {
-              setMultiplierError('Multiplicador indisponível');
-              setSimulationMultiplierData(null);
-            } finally {
-              setMultiplierLoading(false);
-            }
-          }
-        }
-      } catch (err: unknown) {
-        const errorResponse = err as { response?: { data?: { detail?: unknown } } };
-        const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao carregar indicadores';
-        setError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao carregar indicadores');
-        setIndicatorWarnings({});
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchAll();
-  }, [selectedYear, selectedMunicipio]);
-
-  useEffect(() => {
-    const fetchTrendIndicators = async () => {
-      if (!selectedMunicipio) {
-        setTrendIndicators({});
-        setTrendLoading(false);
-        setTrendError(null);
         return;
       }
 
-      setTrendLoading(true);
-      setTrendError(null);
+        if (isLikelyMunicipioCode(selectedInstallation)) {
+          const normalizedMunicipio = normalizeMunicipioCode(selectedInstallation);
+          if (isActive) {
+            setInstallationMunicipioResolution({
+              municipioId: normalizedMunicipio,
+              message: `Município selecionado diretamente por código IBGE: ${normalizedMunicipio}.`,
+            });
+            setIsResolvingMunicipio(false);
+          }
+          return;
+        }
+
       try {
-        const startYear = selectedYear - TREND_YEARS;
-        const trendParams = {
-          id_municipio: selectedMunicipio,
-          ano_inicio: startYear,
-          ano_fim: selectedYear,
-        };
-        const promises = TREND_INDICATORS.map((indicator) =>
-          indicatorsService
-            .queryIndicator<RawIndicatorRow>({
-              codigo_indicador: indicator.code,
-              params: trendParams,
-            })
-            .then((response) => ({ code: indicator.code, response, error: null as string | null }))
-            .catch((err: unknown) => ({
-              code: indicator.code,
-              response: createEmptyIndicatorResponse(indicator.code),
-              error: formatIndicatorError(err),
-            })),
+        const response = await indicatorsService.resolveInstallationToMunicipio(selectedInstallation);
+        if (!isActive) {
+          return;
+        }
+        const resolvedMunicipio = normalizeMunicipioCode(response.id_municipio);
+        setInstallationMunicipioResolution({
+          municipioId: resolvedMunicipio,
+          message: response.message,
+        });
+        if (!response.municipio_found) {
+          setMunicipioResolutionError(response.message);
+        }
+      } catch (err: any) {
+        if (!isActive) {
+          return;
+        }
+        setInstallationMunicipioResolution({
+          municipioId: null,
+          message: 'Não foi possível validar a associação porto-município.',
+        });
+        setMunicipioResolutionError(
+          err?.response?.data?.detail || err?.message || 'Falha ao associar porto ao município.'
+        );
+      } finally {
+        if (isActive) {
+          setIsResolvingMunicipio(false);
+        }
+      }
+    };
+
+    void resolveInstallationMunicipio();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedInstallation]);
+
+  useEffect(() => {
+    if (selectedInstallation && isResolvingMunicipio) {
+      return;
+    }
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null);
+      setImpactData([]);
+
+      try {
+        const requestCodes = [
+          ...INDICATORS_INFO.map((ind) => ind.code),
+          ...GROUPED_INDICATORS.map((ind) => ind.code),
+          ...REMUNERATION_CHART_INDICATORS.map((ind) => ind.code),
+        ];
+
+        const promises = requestCodes.map((code) =>
+          indicatorsService.queryIndicator({
+            codigo_indicador: code,
+            params: {
+              ano: selectedYear,
+              id_instalacao: selectedInstallation || undefined,
+              id_municipio: installationMunicipioResolution.municipioId || undefined,
+            },
+          }).catch((err) => {
+            console.error(`Erro ao buscar indicador ${code}:`, err);
+            return { data: [], error: err.response?.data?.detail || err.message };
+          })
         );
 
         const results = await Promise.all(promises);
-        const nextIndicators: IndicatorMap = {};
-        const nextWarnings: IndicatorWarningMap = {};
-        const nextErrors: IndicatorErrorMap = {};
-
-        results.forEach((result) => {
-          nextIndicators[result.code] = result.response;
-          if (result.error) {
-            nextErrors[result.code] = result.error;
-          }
-          const responseWarnings = result.response.warnings?.map((item) => item.mensagem).filter(
-            (message): message is string => typeof message === 'string' && message.trim().length > 0,
-          ) ?? [];
-          if (responseWarnings.length) {
-            nextWarnings[result.code] = responseWarnings;
-          }
+        const mapped: Record<string, any> = {};
+        results.forEach((result, i) => {
+          mapped[requestCodes[i]] = result;
         });
+        setIndicators(mapped);
+        setIsLoading(false);
 
-        setTrendIndicators(nextIndicators);
-        if (Object.keys(nextErrors).length > 0) {
-          setTrendError('Alguns indicadores de tendência não puderam ser carregados.');
+        // Extrai IDs de município do IND-3.01 para o painel de impacto
+        const municipioIds = extractMunicipioIds(mapped['IND-3.01']?.data || []);
+        if (municipioIds.length > 0) {
+          setIsImpactLoading(true);
+          try {
+            const impactPromises = municipioIds.map((id) =>
+              employmentMultiplierService.getMultiplierEstimate(id, selectedYear, useCausalEstimate)
+                .catch(() => null)
+            );
+            const raw = await Promise.all(impactPromises);
+            const valid: EmploymentMultiplierResponse[] = [];
+            for (const r of raw) {
+              if (r !== null && Array.isArray(r.data) && r.data.length > 0) {
+                valid.push(r as unknown as EmploymentMultiplierResponse);
+              }
+            }
+            setImpactData(valid);
+          } catch {
+            // falha no painel de impacto não bloqueia o restante da página
+          } finally {
+            setIsImpactLoading(false);
+          }
         }
-      } catch (err: unknown) {
-        const errorResponse = err as { response?: { data?: { detail?: unknown } } };
-        const msg = errorResponse?.response?.data?.detail || 'Erro ao carregar séries temporais.';
-        setTrendError(typeof msg === 'string' ? msg : 'Erro ao carregar séries temporais.');
-      } finally {
-        setTrendLoading(false);
+      } catch (err: any) {
+        console.error('Erro ao carregar indicadores do Módulo 3:', err);
+        setError(err.response?.data?.detail || 'Erro ao carregar indicadores');
+        setIsLoading(false);
       }
     };
 
-    void fetchTrendIndicators();
-  }, [selectedMunicipio, selectedYear]);
+    fetchData();
+  }, [selectedYear, selectedInstallation, installationMunicipioResolution.municipioId, isResolvingMunicipio, useCausalEstimate]);
 
-  // ── Derived data ───────────────────────────────────────────────────────
-
-  const topDirectJobs = useMemo(() => getTopMunicipio(indicators, 'IND-3.01', 'empregos_portuarios'), [indicators]);
-  const topSalary = useMemo(() => getTopMunicipio(indicators, 'IND-3.05', 'salario_medio'), [indicators]);
-  const topPayroll = useMemo(() => getTopMunicipio(indicators, 'IND-3.06', 'massa_salarial_anual'), [indicators]);
-  const topShare = useMemo(() => getTopMunicipio(indicators, 'IND-3.12', 'participacao_emprego_local'), [indicators]);
-  const municipalitySummary = useMemo(() => ({
-    jobs: getSingleIndicatorValue('IND-3.01', 'empregos_portuarios'),
-    salary: getSingleIndicatorValue('IND-3.05', 'salario_medio'),
-    payroll: getSingleIndicatorValue('IND-3.06', 'massa_salarial_anual'),
-    participation: getSingleIndicatorValue('IND-3.12', 'participacao_emprego_local'),
-  }), [getSingleIndicatorValue]);
-
-  const trendSeries = useMemo(() => {
-    const result: Record<string, TrendSeries | null> = {};
-
-    TREND_INDICATORS.forEach((indicator) => {
-      const response = trendIndicators[indicator.code];
-      const rows = toIndicatorRows(response ?? createEmptyIndicatorResponse(indicator.code));
-      const entries = rows
-        .map((row) => ({ row, value: getValueFromRow(row, indicator.valueField) }))
-        .filter((entry): entry is { row: RawIndicatorRow; value: number } => entry.value !== null);
-      result[indicator.code] = buildTrendSeries(entries);
-    });
-
-    return result;
-  }, [trendIndicators]);
-
-  const trendGrowth = useMemo(() => {
-    const result: Record<string, number | null> = {};
-    TREND_INDICATORS.forEach((indicator) => {
-      const series = trendSeries[indicator.code];
-      result[indicator.code] = series ? computeGrowth(series.values) : null;
-    });
-    return result;
-  }, [trendSeries]);
-
-  const activeEstimate = useMemo((): EmploymentMultiplierConfidenceEstimate | null => {
-    if (!multiplierData) return null;
-    if (showCausalEstimate && multiplierData.causal_estimate) return multiplierData.causal_estimate;
-    return multiplierData.estimate;
-  }, [multiplierData, showCausalEstimate]);
-
-  const multiplierImpactRow = useMemo<EmploymentMultiplierImpactRow | null>(() => {
-    const data = multiplierData?.data?.[0];
-    return data ?? null;
-  }, [multiplierData]);
-
-  const baselineTonelagemMilhoes = useMemo(
-    () => parseSimulationBaseline(multiplierImpactRow),
-    [multiplierImpactRow],
-  );
-
-  const simulationData = useMemo(
-    () => simulationMultiplierData ?? multiplierData,
-    [simulationMultiplierData, multiplierData],
-  );
-  const simulationImpactRow = useMemo<EmploymentMultiplierImpactRow | null>(() => {
-    const data = simulationData?.data?.[0];
-    return data ?? null;
-  }, [simulationData]);
-
-  useEffect(() => {
-    setSimulationDelta(0);
-    setSimulationMultiplierData(multiplierData);
-    setSimulationMultiplierError(null);
-    setSimulationMultiplierLoading(false);
-  }, [activeEstimate?.municipality_id, selectedYear]);
-
-  useEffect(() => {
-    const municipalityId = multiplierData?.municipality_id;
-    if (!municipalityId) {
-      setSimulationMultiplierData(null);
-      setSimulationMultiplierError(null);
-      setSimulationMultiplierLoading(false);
-      return;
+  const installationScopeLabel = useMemo(() => {
+    if (!selectedInstallation) {
+      return 'Todas as instalações';
     }
 
-    if (simulationDelta === 0) {
-      setSimulationMultiplierData(multiplierData);
-      setSimulationMultiplierError(null);
-      setSimulationMultiplierLoading(false);
-      return;
+    if (isResolvingMunicipio) {
+      return `Selecionado: ${selectedInstallation} (associando ao município...)`;
     }
 
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setSimulationMultiplierLoading(true);
-        setSimulationMultiplierError(null);
-        try {
-          const scenarioResponse = await employmentMultiplierService.getMultiplierEstimate(
-            municipalityId,
-            selectedYear ?? undefined,
-            false,
-            simulationDelta,
-          );
-          if (!cancelled) {
-            setSimulationMultiplierData(scenarioResponse);
-          }
-        } catch {
-          if (!cancelled) {
-            setSimulationMultiplierError('Não foi possível atualizar o cenário agora. Exibindo projeção local.');
-            setSimulationMultiplierData(multiplierData);
-          }
-        } finally {
-          if (!cancelled) {
-            setSimulationMultiplierLoading(false);
-          }
-        }
-      })();
-    }, 260);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [multiplierData, selectedYear, simulationDelta]);
-
-  const simulation = useMemo(
-    () => {
-      const effectiveEstimate = simulationData?.estimate;
-      return buildSimulation(
-        effectiveEstimate ?? activeEstimate,
-        baselineTonelagemMilhoes,
-        simulationDelta,
-        simulationImpactRow,
+    if (municipioResolutionError || !installationMunicipioResolution.municipioId) {
+      return (
+        `Selecionado: ${selectedInstallation}. Não foi possível associar ao município cadastrado.` +
+        ' O resultado pode refletir recorte agregado por instalação não aplicado.'
       );
-    },
-    [activeEstimate, baselineTonelagemMilhoes, simulationDelta, simulationData, simulationImpactRow],
-  );
-  const simulationBaseEstimate = useMemo(
-    () => simulationData?.estimate ?? activeEstimate,
-    [simulationData, activeEstimate],
+    }
+
+    return `Selecionado: ${selectedInstallation} → Município ${installationMunicipioResolution.municipioId}.`;
+  }, [selectedInstallation, isResolvingMunicipio, municipioResolutionError, installationMunicipioResolution.municipioId]);
+
+  const chartMunicipioHint = useMemo<string | undefined>(() => {
+    if (!selectedInstallation) {
+      return undefined;
+    }
+    if (isResolvingMunicipio) {
+      return 'Aguarde, associando a instalação selecionada ao município IBGE...';
+    }
+    if (municipioResolutionError || !installationMunicipioResolution.municipioId) {
+      return 'Sem associação porto-município disponível para este recorte. Os dados podem ser retornados de forma agregada.';
+    }
+    return `Recorte aplicado por município: ${installationMunicipioResolution.municipioId}.`;
+  }, [isResolvingMunicipio, municipioResolutionError, selectedInstallation, installationMunicipioResolution.municipioId]);
+
+  const remEscolSexoRows = useMemo(
+    () => parseRemuneracaoEscolaridadeSexoRows(indicators['IND-3.13']?.data || []),
+    [indicators]
   );
 
-  const tonelagemDeltaPercent = useMemo<number | null>(() => {
-    if (!simulation || simulation.baselineTonelagemMilhoes === null || simulation.targetTonelagemMilhoes === null) {
-      return null;
-    }
-    if (simulation.baselineTonelagemMilhoes === 0) {
-      return null;
-    }
-    return Number(
-      (((simulation.targetTonelagemMilhoes - simulation.baselineTonelagemMilhoes) / simulation.baselineTonelagemMilhoes) * 100).toFixed(2),
-    );
-  }, [simulation]);
+  const remRacaSexoRows = useMemo(
+    () => parseRemuneracaoRacaSexoRows(indicators['IND-3.14']?.data || []),
+    [indicators]
+  );
 
-  const simulationCurve = useMemo(() => {
-    const lines = QUICK_SIMULATION_DELTAS.map((delta) => {
-      const simulated = buildSimulation(activeEstimate, baselineTonelagemMilhoes, delta);
-      return {
-        delta,
-        total: simulated ? simulated.total : null,
-      };
+  const remEscolRacaSexoRows = useMemo(
+    () => parseRemuneracaoEscolaridadeRacaSexoRows(indicators['IND-3.15']?.data || []),
+    [indicators]
+  );
+
+  const remComparativoRows = useMemo(
+    () => parseRemuneracaoComparativoRows(indicators['IND-3.16']?.data || []),
+    [indicators]
+  );
+
+  const chart1Data = useMemo(() => {
+    const values = new Map<string, number>();
+    remEscolSexoRows.forEach((row) => {
+      values.set(`${row.escolaridade}|${row.sexo}`, row.remuneracao_media);
     });
 
     return {
-      labels: lines.map((line) => `${line.delta > 0 ? '+' : ''}${line.delta}%`),
-      values: lines.map((line) => line.total),
+      labels: ESCOLARIDADE_CATEGORIES.map((item) => item.label),
+      masculino: ESCOLARIDADE_CATEGORIES.map((item) => values.get(`${item.key}|MASCULINO`) || 0),
+      feminino: ESCOLARIDADE_CATEGORIES.map((item) => values.get(`${item.key}|FEMININO`) || 0),
     };
-  }, [activeEstimate, baselineTonelagemMilhoes]);
+  }, [remEscolSexoRows]);
 
-  const selectedMunicipioLabel = useMemo(
-    () => (selectedMunicipio ? toMunicipioLabel(selectedMunicipio, municipioLabels, { showCode: false }) : null),
-    [selectedMunicipio, municipioLabels],
-  );
+  const chart2Data = useMemo(() => {
+    const values = new Map<string, number>();
+    remRacaSexoRows.forEach((row) => {
+      values.set(`${row.raca_cor}|${row.sexo}`, row.remuneracao_media);
+    });
 
-  const runSalaryComparison = useCallback(async () => {
-    const salary = parseNumber(salaryQueryInput);
-    if (!selectedMunicipio) {
-      setSalaryComparisonText('Selecione um município para comparar seu salário.');
-      return;
-    }
-    if (salary === null) {
-      setSalaryComparisonText('Digite um valor numérico válido para salário.');
-      return;
-    }
+    return {
+      labels: RACA_CATEGORIES.map((item) => item.label),
+      masculino: RACA_CATEGORIES.map((item) => values.get(`${item.key}|MASCULINO`) || 0),
+      feminino: RACA_CATEGORIES.map((item) => values.get(`${item.key}|FEMININO`) || 0),
+    };
+  }, [remRacaSexoRows]);
 
-    const municipalSalary = getSingleIndicatorValue('IND-3.05', 'salario_medio');
-    if (municipalSalary === null) {
-      setSalaryComparisonText('Sem série de salário médio disponível para o município selecionado.');
-      return;
-    }
-
-    try {
-      const baselineResponse = await indicatorsService.queryIndicator<RawIndicatorRow>({
-        codigo_indicador: 'IND-3.05',
-        params: { ano: selectedYear },
+  const chart3Data = useMemo(() => {
+    const filtered = remEscolRacaSexoRows
+      .filter((row) => row.sexo === selectedSexoChart3)
+      .sort((a, b) => {
+        if (a.ordem_escolaridade !== b.ordem_escolaridade) {
+          return a.ordem_escolaridade - b.ordem_escolaridade;
+        }
+        return a.ordem_raca - b.ordem_raca;
       });
-      const baselineRows = toIndicatorRows(baselineResponse);
-      const baselineValues = baselineRows
-        .map((row) => getValueFromRow(row, 'salario_medio'))
-        .filter((value): value is number => value !== null);
-      const baseline = baselineValues.length
-        ? baselineValues.reduce((acc, value) => acc + value, 0) / baselineValues.length
-        : null;
 
-      if (baseline === null || !Number.isFinite(baseline)) {
-        setSalaryComparisonText('Não foi possível calcular a média nacional do setor para comparação.');
-        return;
-      }
+    return {
+      labels: filtered.map((row) => `${getEscolaridadeLabel(row.escolaridade)} · ${getRacaLabel(row.raca_cor)}`),
+      values: filtered.map((row) => row.remuneracao_media),
+    };
+  }, [remEscolRacaSexoRows, selectedSexoChart3]);
 
-      const municipalGap = ((salary - municipalSalary) / municipalSalary) * 100;
-      const nationalGap = ((salary - baseline) / baseline) * 100;
-      const comparison = [
-        `Salário informado: ${formatNumber(salary, 'currency')}.`,
-        `Média municipal em ${selectedMunicipioLabel ?? 'município selecionado'}: ${formatNumber(municipalSalary, 'currency')}.`,
-        `Média do setor no ano (${selectedYear}): ${formatNumber(baseline, 'currency')}.`,
-        `Diferença vs município: ${formatNumber(municipalGap, 'percent')} (${municipalGap >= 0 ? 'acima' : 'abaixo'}).`,
-        `Diferença vs média do setor: ${formatNumber(nationalGap, 'percent')} (${nationalGap >= 0 ? 'acima' : 'abaixo'}).`,
-      ];
+  const chart4Data = useMemo(() => {
+    const sorted = [...remComparativoRows]
+      .sort((a, b) => b.remuneracao_media - a.remuneracao_media)
+      .slice(0, 12);
 
-      setSalaryComparisonText(comparison.join(' '));
-    } catch {
-      setSalaryComparisonText('Não foi possível carregar o benchmark nacional no momento.');
-    }
-  }, [selectedMunicipio, selectedMunicipioLabel, salaryQueryInput, selectedYear, getSingleIndicatorValue]);
+    const mediaNacional = sorted.length > 0 ? sorted[0].media_nacional : null;
 
-
-  // ── Loading state ──────────────────────────────────────────────────────
+    return {
+      labels: sorted.map((row) => row.nome_municipio || row.id_municipio || 'N/A'),
+      values: sorted.map((row) => row.remuneracao_media),
+      mediaNacional,
+    };
+  }, [remComparativoRows]);
 
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Emprego e Renda Portuária</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Módulo 3 - Recursos Humanos</h1>
         <LoadingSpinner />
       </div>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
-
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div>
+      <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Users className="h-8 w-8 text-amber-600" />
-            Emprego e Renda Portuária
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Módulo 3 — Capital Humano e Emprego Portuário</h1>
           <p className="text-gray-500 mt-1">
-            Analise como a atividade portuária gera empregos diretos, indiretos e renda para os trabalhadores
+            Indicadores de emprego, remuneração, produtividade e diversidade para decisão de investimento — dados RAIS + ANTAQ
           </p>
         </div>
-        <ExportButton moduleCode="3" />
+        <ExportButton
+          moduleCode="3"
+          municipioId={installationMunicipioResolution.municipioId ?? undefined}
+          deltaTonelagemPct={scenarioDeltas.length > 0 ? scenarioDeltas[0] : undefined}
+        />
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <FilterBar showInstallation={false} />
-        <div className="flex items-center gap-2">
-          <label htmlFor="module3-municipio" className="text-sm font-medium text-gray-700">
-            Município
-          </label>
-          <select
-            id="module3-municipio"
-            value={selectedMunicipio}
-            onChange={(e) => setSelectedMunicipio(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-700"
-          >
-            {municipioOptions.map((option) => (
-              <option key={option.value || 'all'} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <FilterBar />
+      <p className="text-sm text-gray-600 mb-4">
+        <span className="font-medium">Filtro ativo:</span>{' '}
+        {installationScopeLabel}
+      </p>
+      {municipioResolutionError && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          {municipioResolutionError}
+        </p>
+      )}
+      {installationMunicipioResolution.message && !municipioResolutionError && (
+        <p className="text-sm text-gray-500 mb-4">{installationMunicipioResolution.message}</p>
+      )}
 
-      {error && <ErrorAlert message={error} className="mb-4" />}
+      {error && <ErrorAlert message={error} className="mb-6" />}
 
-      {/* Banner: ano RAIS indisponível */}
-      {raisYearHint !== null && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
-          <span className="text-amber-500 text-lg leading-none mt-0.5">⚠️</span>
-          <div>
-            <p className="text-sm font-medium text-amber-800">
-              Dados da RAIS não disponíveis para {selectedYear}
-            </p>
-            <p className="text-sm text-amber-700 mt-0.5">
-              {raisYearHint
-                ? <>O último ano com dados da RAIS disponíveis é <strong>{raisYearHint}</strong>. Selecione esse ano no filtro acima para visualizar os indicadores.</>
-                : <>Os dados da RAIS para o ano selecionado ainda não foram publicados. Tente um ano anterior (ex.: 2022).</>}
-            </p>
+      {/* ── Alertas de qualidade de dados ────────────────────────────────────── */}
+      {(() => {
+        const allWarnings: Array<{ code: string; msg: string }> = [];
+        for (const [code, indResp] of Object.entries(indicators)) {
+          if (!indResp?.warnings || !Array.isArray(indResp.warnings)) continue;
+          for (const w of indResp.warnings) {
+            const msg = typeof w === 'string' ? w : typeof w?.mensagem === 'string' ? w.mensagem : null;
+            if (msg) allWarnings.push({ code, msg });
+          }
+        }
+        if (allWarnings.length === 0) return null;
+        return (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-800 mb-1">{t('module3.warnings.title')} ({allWarnings.length})</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              {allWarnings.slice(0, 10).map((w, i) => (
+                <li key={`w-${i}`} className="text-xs text-amber-700">
+                  <span className="font-medium">{w.code}</span>: {w.msg}
+                </li>
+              ))}
+              {allWarnings.length > 10 && (
+                <li className="text-xs text-amber-600 italic">… e mais {allWarnings.length - 10} observações</li>
+              )}
+            </ul>
+          </div>
+        );
+      })()}
+
+      {/* ── Visão Executiva: Indicadores-Chave para Investidores ─────────────── */}
+      {!isLoading && (
+        <div className="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Visão Executiva — Capital Humano Portuário</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Leitura orientada a investidores e tomadores de decisão · Dados RAIS {selectedYear}
+            {!selectedInstallation && ' · Visão Nacional (selecione um porto para detalhar)'}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Emprego e dependência econômica */}
+            {(() => {
+              const empData = indicators['IND-3.01']?.data;
+              const partData = indicators['IND-3.12']?.data;
+              if (!Array.isArray(empData) || empData.length === 0) return null;
+              const isNacional = !selectedInstallation && empData.length > 1;
+              const totalEmpregos = empData.reduce((sum: number, d: any) => sum + toNumber(d.empregos_portuarios), 0);
+              const topMunicipio = empData.length === 1 ? empData[0] : empData.slice().sort((a: any, b: any) => toNumber(b.empregos_portuarios) - toNumber(a.empregos_portuarios))[0];
+              const participacao = Array.isArray(partData) && partData.length > 0
+                ? toNumber(partData[0]?.participacao_emprego_local)
+                : null;
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Geração de Emprego</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatQuantity(totalEmpregos)}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional
+                      ? `empregos diretos no setor portuário (${empData.length} municípios)`
+                      : `empregos diretos no setor portuário`}
+                  </p>
+                  {isNacional && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Maior empregador: {getLabelFromData(topMunicipio)} com {formatQuantity(toNumber(topMunicipio?.empregos_portuarios))} empregos.
+                    </p>
+                  )}
+                  {!isNacional && participacao != null && participacao > 0 && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      {participacao >= 10
+                        ? `Alta dependência: o porto representa ${formatDecimal(participacao, 1)}% do emprego local em ${getLabelFromData(topMunicipio)}, sinalizando risco de concentração econômica.`
+                        : participacao >= 5
+                        ? `Relevância moderada: ${formatDecimal(participacao, 1)}% do emprego local vinculado ao porto em ${getLabelFromData(topMunicipio)}.`
+                        : `Participação de ${formatDecimal(participacao, 1)}% no emprego local — espaço para crescimento da cadeia portuária.`}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Remuneração e competitividade */}
+            {(() => {
+              const salData = indicators['IND-3.05']?.data;
+              const compData = indicators['IND-3.16']?.data;
+              if (!Array.isArray(salData) || salData.length === 0) return null;
+              const isNacional = !selectedInstallation && salData.length > 1;
+              // Para visão nacional: média ponderada não disponível, usar média simples dos municípios
+              const salMedio = isNacional
+                ? salData.reduce((sum: number, d: any) => sum + toNumber(d.salario_medio), 0) / salData.length
+                : toNumber(salData[0]?.salario_medio);
+              const compRow = Array.isArray(compData) && compData.length > 0 ? compData[0] : null;
+              const mediaNacional = compRow ? toNumber(compRow.media_nacional) : null;
+              const premiumPct = mediaNacional && mediaNacional > 0
+                ? ((salMedio - mediaNacional) / mediaNacional) * 100
+                : null;
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Competitividade Salarial</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(salMedio)}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'remuneração média mensal (média nacional)' : 'remuneração média mensal'}
+                  </p>
+                  {!isNacional && premiumPct != null && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      {premiumPct > 5
+                        ? `Salários ${formatDecimal(premiumPct, 1)}% acima da média nacional portuária — indica capacidade de retenção de talentos e produtividade superior.`
+                        : premiumPct < -5
+                        ? `Salários ${formatDecimal(Math.abs(premiumPct), 1)}% abaixo da média nacional — risco de perda de mão-de-obra qualificada para portos concorrentes.`
+                        : `Alinhado à média nacional portuária — condições competitivas equilibradas para atração de talentos.`}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Produtividade e eficiência operacional */}
+            {(() => {
+              const prodData = indicators['IND-3.07']?.data;
+              if (!Array.isArray(prodData) || prodData.length === 0) return null;
+              const isNacional = !selectedInstallation && prodData.length > 1;
+              const tonEmp = isNacional
+                ? prodData.reduce((sum: number, d: any) => sum + toNumber(d.ton_por_empregado), 0) / prodData.filter((d: any) => toNumber(d.ton_por_empregado) > 0).length
+                : toNumber(prodData[0]?.ton_por_empregado);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Eficiência Operacional</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(tonEmp, 0)}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'toneladas por empregado/ano (média nacional)' : 'toneladas por empregado/ano'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {tonEmp > 5000
+                      ? 'Alta produtividade por trabalhador — indica operação mecanizada e eficiente, favorecendo o retorno sobre investimentos em infraestrutura.'
+                      : tonEmp > 1000
+                      ? 'Produtividade intermediária — há espaço para ganhos de eficiência via automação e capacitação.'
+                      : 'Operação intensiva em mão-de-obra — investimentos em modernização podem gerar saltos significativos de produtividade.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Dinâmica de emprego */}
+            {(() => {
+              const varData = indicators['IND-3.11']?.data;
+              if (!Array.isArray(varData) || varData.length === 0) return null;
+              const isNacional = !selectedInstallation && varData.length > 1;
+              const variacao = isNacional
+                ? varData.reduce((sum: number, d: any) => sum + toNumber(d.variacao_percentual), 0) / varData.length
+                : toNumber(varData[0]?.variacao_percentual);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Tendência de Emprego</h3>
+                  <p className={`text-2xl font-bold ${variacao >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {variacao >= 0 ? '+' : ''}{formatDecimal(variacao, 1)}%
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'variação anual de empregos (média nacional)' : 'variação anual de empregos'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {variacao > 3
+                      ? 'Crescimento expressivo — a cadeia portuária está em expansão, indicando aquecimento do comércio exterior e/ou investimentos recentes.'
+                      : variacao > 0
+                      ? 'Crescimento moderado — estabilidade no mercado de trabalho portuário com tendência positiva.'
+                      : variacao > -3
+                      ? 'Leve retração — monitorar se reflete ajustes sazonais ou tendência estrutural de queda de movimentação.'
+                      : 'Contração significativa — pode indicar perda de competitividade do porto ou desaceleração do comércio exterior regional.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Diversidade de gênero (ESG) */}
+            {(() => {
+              const genData = indicators['IND-3.02']?.data;
+              if (!Array.isArray(genData) || genData.length === 0) return null;
+              const isNacional = !selectedInstallation && genData.length > 1;
+              const pctFem = isNacional
+                ? genData.reduce((sum: number, d: any) => sum + toNumber(d.percentual_feminino), 0) / genData.length
+                : toNumber(genData[0]?.percentual_feminino);
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Diversidade (ESG)</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(pctFem, 1)}%</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {isNacional ? 'participação feminina no setor (média nacional)' : 'participação feminina no setor'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {pctFem >= 30
+                      ? 'Participação feminina acima da média setorial — diferencial positivo em critérios ESG e governança.'
+                      : pctFem >= 15
+                      ? 'Participação feminina moderada — avanços em diversidade podem melhorar pontuação ESG e atrair capital sustentável.'
+                      : 'Baixa representatividade feminina — indicador típico do setor, mas com espaço para políticas de inclusão que valorizem o ativo perante investidores ESG.'}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Qualificação da força de trabalho */}
+            {(() => {
+              const escolData = indicators['IND-3.09']?.data;
+              if (!Array.isArray(escolData) || escolData.length === 0) return null;
+              const escolMap = new Map<string, number>();
+              let total = 0;
+              for (const row of escolData) {
+                const key = normalizeEscolaridade(row?.grau_instrucao);
+                if (!key) continue;
+                const qtd = toNumber(row?.qtd);
+                escolMap.set(key, (escolMap.get(key) || 0) + qtd);
+                total += qtd;
+              }
+              if (total === 0) return null;
+              const superior = ((escolMap.get('SUPERIOR_COMPLETO') || 0) + (escolMap.get('MESTRADO') || 0) + (escolMap.get('DOUTORADO') || 0)) / total * 100;
+              const medio = ((escolMap.get('MEDIO_COMPLETO') || 0) + (escolMap.get('MEDIO_INCOMPLETO') || 0)) / total * 100;
+              return (
+                <div className="bg-white rounded-lg border border-blue-100 p-4">
+                  <h3 className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">Qualificação</h3>
+                  <p className="text-2xl font-bold text-gray-900">{formatDecimal(superior, 1)}%</p>
+                  <p className="text-sm text-gray-600 mt-1">com nível superior ou pós-graduação</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {superior > 25
+                      ? `Força de trabalho altamente qualificada (${formatDecimal(medio, 0)}% com ensino médio) — favorece operações complexas e atrai investimentos em logística de alto valor.`
+                      : superior > 10
+                      ? `Qualificação intermediária com ${formatDecimal(medio, 0)}% no ensino médio — investimentos em capacitação podem elevar produtividade e competitividade.`
+                      : `Perfil predominantemente operacional (${formatDecimal(medio, 0)}% ensino médio) — programas de qualificação são estratégicos para modernização das operações.`}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          BLOCO A — Empregos Diretos (RAIS)
-          ═══════════════════════════════════════════════════════════════════ */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <Building2 className="h-5 w-5 text-amber-600" />
-          <h2 className="text-xl font-semibold text-gray-900">Empregos Diretos no Setor Portuário</h2>
-        </div>
-
-        <p className="text-sm text-gray-500 mb-4">
-          Dados da RAIS (Relação Anual de Informações Sociais) filtrados pelos 24 CNAEs do setor portuário e aquaviário.
-        </p>
-
-        {/* Mini-cards resumo */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Maior empregador</p>
-            <p className="text-2xl font-bold text-amber-700">{topDirectJobs ? formatNumber(topDirectJobs.value) : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1 truncate">{topDirectJobs?.name ?? '—'}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Maior salário médio</p>
-            <p className="text-2xl font-bold text-amber-700">{topSalary ? formatNumber(topSalary.value, 'currency') : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1 truncate">{topSalary?.name ?? '—'}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Maior massa salarial</p>
-            <p className="text-2xl font-bold text-amber-700">{topPayroll ? formatNumber(topPayroll.value, 'currency') : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1 truncate">{topPayroll?.name ?? '—'}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 mb-1">Maior participação local</p>
-            <p className="text-2xl font-bold text-amber-700">{topShare ? formatNumber(topShare.value, 'percent') : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1 truncate">{topShare?.name ?? '—'}</p>
-          </div>
-        </div>
-
-        {/* Filtro de busca */}
-        <div className="mb-4">
-          <input
-            className="w-full max-w-sm border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            placeholder="Filtrar município no ranking..."
-            value={tableSearch}
-            onChange={(e) => setTableSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div className="bg-amber-50 rounded-xl border border-amber-100 p-4">
-            <p className="text-xs text-amber-600 uppercase mb-1">Selecionado</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {selectedMunicipioLabel ?? 'Nenhum município'}
+      {/* ── Painel de Impacto em Emprego (PR-31) ──────────────────────────────── */}
+      <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Painel de Impacto em Emprego</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Fonte: RAIS + ANTAQ · {selectedYear} · {useCausalEstimate
+                ? t('module3.multiplier.causalBeta')
+                : 'Multiplicadores de literatura (MInfra / literatura acadêmica)'}
             </p>
-            {selectedMunicipio ? (
-              <div className="mt-3 text-sm text-gray-700 space-y-1">
-                <p><strong>Empregos:</strong> {municipalitySummary.jobs !== null ? formatNumber(municipalitySummary.jobs, 'integer') : '—'}</p>
-                <p><strong>Salário médio:</strong> {municipalitySummary.salary !== null ? formatNumber(municipalitySummary.salary, 'currency') : '—'}</p>
-                <p><strong>Massa salarial:</strong> {municipalitySummary.payroll !== null ? formatNumber(municipalitySummary.payroll, 'currency') : '—'}</p>
-                <p><strong>Participação local:</strong> {municipalitySummary.participation !== null ? formatNumber(municipalitySummary.participation, 'percent') : '—'}</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 mt-2">Selecione um município no topo para ver a leitura individual.</p>
-            )}
           </div>
-
-          <div className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-sm text-gray-500 mb-2">Comparador de salário do usuário</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                value={salaryQueryInput}
-                onChange={(e) => setSalaryQueryInput(e.target.value)}
-                inputMode="decimal"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                placeholder="Informe seu salário mensal (R$)"
-              />
-              <button
-                type="button"
-                onClick={() => void runSalaryComparison()}
-                className="px-4 py-2 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                disabled={!selectedMunicipio}
-              >
-                Comparar
-              </button>
-            </div>
-            {salaryComparisonText && (
-              <p className="text-sm text-gray-700 mt-2">{salaryComparisonText}</p>
-            )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setUseCausalEstimate(false)}
+              className={`px-3 py-1.5 rounded-md border text-xs font-semibold ${
+                !useCausalEstimate
+                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                  : 'bg-white text-gray-600 border-gray-200'
+              }`}
+            >
+              Literatura
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseCausalEstimate(true)}
+              className={`px-3 py-1.5 rounded-md border text-xs font-semibold ${
+                useCausalEstimate
+                  ? 'bg-blue-100 text-blue-700 border-blue-200'
+                  : 'bg-white text-gray-600 border-gray-200'
+              }`}
+            >
+              Causal
+            </button>
+            <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border whitespace-nowrap ${
+              useCausalEstimate
+                ? 'bg-blue-100 text-blue-700 border-blue-200'
+                : 'bg-amber-100 text-amber-700 border-amber-200'
+            }`}>
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              {useCausalEstimate ? t('module3.multiplier.causalActive') : t('module3.multiplier.literaryProxy')}
+            </span>
           </div>
         </div>
 
-        {/* Gráficos do Bloco A */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {BLOCK_A_INDICATORS.map((ind) => (
-            <div key={ind.code}>
-              <IndicatorDashboardCard
-                title={ind.name}
-                description={ind.desc}
-                unit={ind.unit}
-                isLoading={isLoading}
-                data={indicators[ind.code]}
-                chartType={ind.chartType}
-                valueField={ind.valueField}
-                labelAccessor={getLabelAccessor(ind.code)}
-                filterText={tableSearch}
-                indicatorCode={ind.code}
-                warnings={indicatorWarnings[ind.code]}
-                error={indicatorErrors[ind.code] ?? null}
-              />
-              {ind.interpretation && (
-                <p className="mt-1 px-3 text-xs text-gray-400 italic">{ind.interpretation}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="h-5 w-5 text-blue-600" />
-          <h2 className="text-xl font-semibold text-gray-900">Evolução recente do município selecionado</h2>
-        </div>
-        <p className="text-sm text-gray-500 mb-4">
-          Série temporal dos últimos {TREND_YEARS} anos para leitura dinâmica (apenas se houver município selecionado).
-        </p>
-
-        {!selectedMunicipio ? (
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 text-sm text-gray-500">
-            Selecione um município para carregar a tendência anual dos principais indicadores.
-          </div>
-        ) : trendLoading ? (
-          <LoadingSpinner />
-        ) : trendError ? (
-          <ErrorAlert message={trendError} />
+        {isImpactLoading ? (
+          <div className="py-6"><LoadingSpinner /></div>
+        ) : impactData.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">
+            Selecione um porto para visualizar o painel de impacto, ou aguarde disponibilização dos dados RAIS para os filtros atuais.
+          </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {TREND_INDICATORS.map((ind) => {
-              const series = trendSeries[ind.code];
-              const growth = trendGrowth[ind.code];
-              const warnings = indicatorWarnings[ind.code];
-              return (
-                <ChartCard
-                  key={ind.code}
-                  title={ind.name}
-                  description={ind.description}
-                  unit={ind.unit}
-                  error={series === null ? 'Sem dados para montar série temporal.' : undefined}
-                  isLoading={false}
-                  extraInfo={warnings && warnings.length > 0 ? warnings.join(' | ') : 'Média de tendência por período da seleção'}
-                >
-                  {series && (
-                    <div className="space-y-4">
-                      <LineChart
-                        labels={series.labels}
-                        datasets={[{ label: ind.unit, data: series.values }]}
-                        yAxisLabel={ind.unit}
-                        yAxisFormat={getIndicatorFormat(ind.code)}
-                        yAxisBeginAtZero={ind.code === 'IND-3.01'}
-                      />
-                      <p className="text-xs text-gray-500">
-                        Variação acumulada no período:
-                        {' '}
-                        {growth === null ? '—' : formatNumber(growth, 'percent')}
-                      </p>
+          <>
+            {/* Cards de impacto por município */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              {impactData.map((resp) => {
+                const row = resp.data?.[0];
+                if (!row) return null;
+                const estimate = resolveImpactEstimate(resp, useCausalEstimate);
+                const empregosDiretos = estimate?.direct_jobs ?? row.empregos_diretos ?? 0;
+                const empregosIndiretos = estimate?.indirect_estimated ?? row.empregos_indiretos_estimados ?? 0;
+                const empregosInduzidos = estimate?.induced_estimated ?? row.empregos_induzidos_estimados ?? 0;
+                const empregosTotais = estimate?.total_impact ?? row.emprego_total_estimado ?? 0;
+                const nomeMunicipio = row.municipality_name || resp.municipality_name || resp.municipality_id;
+                return (
+                  <div key={resp.municipality_id} className="bg-white rounded-lg border border-amber-100 p-4 shadow-sm">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm truncate" title={nomeMunicipio}>
+                      {nomeMunicipio}
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">Empregos diretos</span>
+                        <span className="font-semibold text-gray-900">{formatQuantity(Math.round(empregosDiretos))}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">Indiretos (est.)</span>
+                        <span className="font-medium text-gray-700">{formatQuantity(Math.round(empregosIndiretos))}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">Induzidos (est.)</span>
+                        <span className="font-medium text-gray-700">{formatQuantity(Math.round(empregosInduzidos))}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-t border-gray-100 pt-2">
+                        <span className="font-semibold text-gray-700">Total estimado</span>
+                        <span className="font-bold text-amber-700 text-base">{formatQuantity(Math.round(empregosTotais))}</span>
+                      </div>
+                      {estimate?.multiplier_type && (
+                        <div className="flex justify-between items-center text-xs text-gray-400 pt-1 border-t border-gray-50">
+                          <span>Tipo de multiplicador</span>
+                          <span className="font-medium">
+                            {estimate.multiplier_type === 'causal' ? 'Causal' : 'Literatura'}
+                          </span>
+                        </div>
+                      )}
+                      {row.participacao_emprego_local != null && (
+                        <div className="flex justify-between items-center text-xs text-gray-400 pt-1 border-t border-gray-50">
+                          <span>Participação no emprego local</span>
+                          <span className="font-medium">{formatDecimal(row.participacao_emprego_local, 2)}%</span>
+                        </div>
+                      )}
+                      {row.empregos_por_milhao_toneladas != null && (
+                        <div className="flex justify-between items-center text-xs text-gray-400">
+                          <span>Eficiência (emp / 1 mi t)</span>
+                          <span className="font-medium">{formatDecimal(row.empregos_por_milhao_toneladas, 1)}</span>
+                        </div>
+                      )}
+                      {/* Metadata do multiplicador para credibilidade */}
+                      {resp.literature && (
+                        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                          <p className="text-xs font-medium text-gray-500">Fonte do multiplicador</p>
+                          <div className="flex justify-between items-start text-xs text-gray-400 gap-2">
+                            <span className="flex-shrink-0">Referência</span>
+                            <span className="font-medium text-gray-600 text-right min-w-0 break-words">{resp.literature.source}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-gray-400">
+                            <span>{t('module3.multiplier.coefficient')}</span>
+                            <span className="font-medium">{formatDecimal(resp.literature.coefficient, 1)}x</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-gray-400">
+                            <span>{t('module3.multiplier.range')}</span>
+                            <span className="font-medium">{formatDecimal(resp.literature.range_low, 1)}x – {formatDecimal(resp.literature.range_high, 1)}x</span>
+                          </div>
+                          {resp.literature.confidence && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>{t('module3.multiplier.confidence')}</span>
+                              <span className={`font-medium ${
+                                resp.literature.confidence === 'strong' ? 'text-green-600'
+                                  : resp.literature.confidence === 'moderate' ? 'text-amber-600'
+                                  : 'text-red-500'
+                              }`}>
+                                {resp.literature.confidence === 'strong' ? 'Alta' : resp.literature.confidence === 'moderate' ? 'Moderada' : 'Baixa'}
+                              </span>
+                            </div>
+                          )}
+                          {resp.literature.region && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>{t('module3.multiplier.region')}</span>
+                              <span className="font-medium">{resp.literature.region}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {resp.causal && estimate?.multiplier_type === 'causal' && (
+                        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                          <p className="text-xs font-medium text-gray-500">Estimativa causal</p>
+                          <div className="flex justify-between items-center text-xs text-gray-400">
+                            <span>Método</span>
+                            <span className="font-medium text-gray-600">
+                              {resp.causal.method === 'iv_2sls' ? 'IV / 2SLS' : resp.causal.method === 'panel_iv' ? 'Panel IV' : resp.causal.method}
+                            </span>
+                          </div>
+                          {resp.causal.coefficient != null && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>{t('module3.multiplier.coefficient')}</span>
+                              <span className="font-medium">{formatDecimal(resp.causal.coefficient, 2)}x</span>
+                            </div>
+                          )}
+                          {resp.causal.p_value != null && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>p-valor</span>
+                              <span className={`font-medium ${resp.causal.p_value < 0.05 ? 'text-green-600' : resp.causal.p_value < 0.10 ? 'text-amber-600' : 'text-red-500'}`}>
+                                {resp.causal.p_value < 0.001 ? '< 0,001' : formatDecimal(resp.causal.p_value, 3)}
+                              </span>
+                            </div>
+                          )}
+                          {resp.causal.ci_lower != null && resp.causal.ci_upper != null && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>IC 95%</span>
+                              <span className="font-medium">[{formatDecimal(resp.causal.ci_lower, 2)} – {formatDecimal(resp.causal.ci_upper, 2)}]</span>
+                            </div>
+                          )}
+                          {resp.causal.n_obs != null && (
+                            <div className="flex justify-between items-center text-xs text-gray-400">
+                              <span>Observações</span>
+                              <span className="font-medium">{resp.causal.n_obs.toLocaleString('pt-BR')}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </ChartCard>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          BLOCO B — Empregos Indiretos e Induzidos (Multiplicadores)
-          ═══════════════════════════════════════════════════════════════════ */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="h-5 w-5 text-blue-600" />
-          <h2 className="text-xl font-semibold text-gray-900">Impacto Indireto no Emprego Local</h2>
-        </div>
-
-        <p className="text-sm text-gray-500 mb-4">
-          Estimativa de quantos empregos indiretos (cadeia de fornecedores) e induzidos (consumo dos trabalhadores)
-          são gerados pela atividade portuária, além dos empregos diretos registrados na RAIS.
-        </p>
-
-        {multiplierLoading && <LoadingSpinner />}
-
-        {multiplierData && activeEstimate && (
-          <div className="space-y-4">
-            {/* Card principal de multiplicador */}
-            <div className={`rounded-xl border p-6 ${CONFIDENCE_CONFIG[activeEstimate.confidence].bg} ${CONFIDENCE_CONFIG[activeEstimate.confidence].border}`}>
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {activeEstimate.municipality_name
-                      ? `Impacto do Porto em ${activeEstimate.municipality_name}`
-                      : 'Impacto Estimado no Emprego'}
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {activeEstimate.multiplier_type === 'literature'
-                      ? `Multiplicador: ${activeEstimate.multiplier_used}× (${multiplierData.literature.source})`
-                      : `Estimativa causal — ${multiplierData.causal?.method === 'iv_2sls' ? 'Variáveis Instrumentais' : 'Painel IV'}`}
-                  </p>
-                </div>
-                <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${CONFIDENCE_CONFIG[activeEstimate.confidence].bg} ${CONFIDENCE_CONFIG[activeEstimate.confidence].color}`}>
-                  {activeEstimate.confidence === 'strong' ? '🟢' : activeEstimate.confidence === 'moderate' ? '🟡' : '🔴'}
-                  {' '}{CONFIDENCE_CONFIG[activeEstimate.confidence].label}
-                </span>
-              </div>
-
-              {/* Números grandes */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-gray-900">{formatNumber(activeEstimate.direct_jobs)}</p>
-                  <p className="text-xs text-gray-500 mt-1">Empregos diretos</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-blue-700">{formatNumber(activeEstimate.indirect_estimated)}</p>
-                  <p className="text-xs text-gray-500 mt-1">Indiretos estimados</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-indigo-700">{formatNumber(activeEstimate.induced_estimated)}</p>
-                  <p className="text-xs text-gray-500 mt-1">Induzidos estimados</p>
-                </div>
-                <div className="text-center bg-white rounded-lg p-2 border border-gray-200">
-                  <p className="text-3xl font-bold text-amber-700">{formatNumber(activeEstimate.total_impact)}</p>
-                  <p className="text-xs text-gray-500 mt-1">Impacto total</p>
-                </div>
-              </div>
-
-              {/* Frase executiva */}
-              <div className="bg-white rounded-lg p-4 border border-gray-200">
-                <p className="text-sm text-gray-700">
-                  {activeEstimate.municipality_name ? (
-                    <>
-                      O setor portuário de <strong>{activeEstimate.municipality_name}</strong> sustenta
-                      diretamente <strong>{formatNumber(activeEstimate.direct_jobs)} empregos formais</strong>.
-                      Com base no multiplicador de <strong>{activeEstimate.multiplier_used}×</strong>,
-                      estima-se que a atividade portuária gere adicionalmente
-                      cerca de <strong>{formatNumber(activeEstimate.indirect_estimated)} empregos indiretos</strong> (na cadeia de fornecedores)
-                      e <strong>{formatNumber(activeEstimate.induced_estimated)} empregos induzidos</strong> (pelo consumo dos trabalhadores),
-                      totalizando aproximadamente <strong>{formatNumber(activeEstimate.total_impact)} empregos</strong> vinculados
-                      ao porto.
-                    </>
-                  ) : (
-                    <>
-                      Com base no multiplicador de <strong>{activeEstimate.multiplier_used}×</strong>,
-                      cada emprego direto no porto gera aproximadamente {(activeEstimate.multiplier_used - 1).toFixed(1)} empregos
-                      adicionais na economia local.
-                    </>
-                  )}
-                </p>
-              </div>
-
-              {/* Fonte e confiança */}
-              <p className="text-xs text-gray-400 mt-3">
-                {CONFIDENCE_CONFIG[activeEstimate.confidence].desc}. Fonte: {activeEstimate.source}.
-              </p>
-            </div>
-
-            {/* Intervalo de multiplicadores da literatura */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-3">Intervalo de multiplicadores (literatura internacional)</h4>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex-1 bg-gray-100 rounded-full h-3 relative">
-                  <div
-                    className="bg-amber-400 h-3 rounded-full absolute"
-                    style={{
-                      left: `${((multiplierData.literature.range_low - 1) / 5) * 100}%`,
-                      width: `${((multiplierData.literature.range_high - multiplierData.literature.range_low) / 5) * 100}%`,
-                    }}
-                  />
-                  <div
-                    className="bg-amber-700 h-5 w-1 rounded absolute -top-1"
-                    style={{ left: `${((multiplierData.literature.coefficient - 1) / 5) * 100}%` }}
-                  />
-                </div>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>1× (sem efeito)</span>
-                <span>{multiplierData.literature.range_low}× — {multiplierData.literature.range_high}×</span>
-                <span>6× (alto impacto)</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                A literatura indica que o setor portuário tem multiplicador entre {multiplierData.literature.range_low}× e {multiplierData.literature.range_high}×,
-                com estimativa central de {multiplierData.literature.coefficient}×.
-                Isso significa que cada emprego direto gera entre {(multiplierData.literature.range_low - 1).toFixed(1)} e {(multiplierData.literature.range_high - 1).toFixed(1)} empregos adicionais.
-              </p>
-            </div>
-
-            {/* Simulador de impacto por tonelagem movimentada */}
-            {simulation && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700">Simulador de impacto por tonelagem</h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Ajuste a variação de toneladas movimentadas e veja, mantendo o multiplicador, a evolução dos empregos diretos,
-                      indiretos, induzidos e o impacto total estimado.
-                    </p>
                   </div>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${formatDeltaBadgeClass(simulation.totalDelta)}`}>
-                    Δ total: {formatDelta(simulation.totalDelta)}
-                  </span>
-                </div>
-                {simulationMultiplierLoading && (
-                  <p className="text-xs text-gray-500 mb-2">Recalculando cenário com base no cenário remoto.</p>
-                )}
-                {_simulationMultiplierError && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mb-2">
-                    {_simulationMultiplierError}
-                  </p>
-                )}
+                );
+              })}
+            </div>
 
-                <label htmlFor="simulation-delta" className="text-sm text-gray-700">
-                  Variação da tonelagem movimentada
-                </label>
-                <div className="mt-2 flex items-center gap-3">
-                  <input
-                    id="simulation-delta"
-                    type="range"
-                    min={SIMULATION_MIN_DELTA}
-                    max={SIMULATION_MAX_DELTA}
-                    step={1}
-                    value={simulationDelta}
-                    onChange={(e) => setSimulationDelta(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <span className="text-sm font-medium text-gray-800 w-16 text-right">
-                    {formatDelta(simulation.deltaTonelagem)}%
-                  </span>
-                </div>
+            {/* Nota metodológica — limitações MIP */}
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">Nota metodológica:</span>{' '}
+                Multiplicadores de emprego, produção e renda estimados via Matriz de
+                Insumo-Produto nacional (IBGE 2015; Vale &amp; Perobelli, 2020), setor
+                Transporte, com ajuste regional por Quociente Locacional (Miller &amp;
+                Blair, 2009). Este método é uma aproximação — não substitui uma MIP
+                regional completa (com balanceamento RAS). Ano de referência da MIP: 2015.
+              </p>
+            </div>
 
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {QUICK_SIMULATION_DELTAS.map((quickDelta) => (
+            {/* Simulação de choque de carga — multi-cenário */}
+            <div className="bg-white rounded-lg border border-amber-100 p-4">
+              <div className="mb-4">
+                <h3 className="font-semibold text-gray-800 mb-2">{t('module3.shock.title')}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-500">{t('module3.shock.quickScenarios')}</span>
+                  {[-20, -10, 5, 10, 20, 50].map((pct) => (
                     <button
-                      key={quickDelta}
+                      key={pct}
                       type="button"
-                      onClick={() => setSimulationDelta(quickDelta)}
-                      className={`text-xs px-3 py-1.5 rounded-full border ${
-                        quickDelta === simulation.deltaTonelagem
-                          ? 'bg-blue-50 border-blue-400 text-blue-700'
-                          : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
+                      onClick={() => {
+                        setScenarioDeltas((prev) =>
+                          prev.includes(pct) ? prev.filter((d) => d !== pct) : [...prev, pct].sort((a, b) => a - b)
+                        );
+                      }}
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                        scenarioDeltas.includes(pct)
+                          ? pct >= 0 ? 'bg-green-100 border-green-300 text-green-700' : 'bg-red-100 border-red-300 text-red-700'
+                          : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
                       }`}
                     >
-                      {quickDelta > 0 ? `+${quickDelta}%` : `${quickDelta}%`}
+                      {pct >= 0 ? '+' : ''}{pct}%
                     </button>
                   ))}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <p className="text-xs text-gray-500">Tonelagem base</p>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {baselineTonelagemMilhoes === null ? '—' : formatTonelagem(baselineTonelagemMilhoes)}
-                    </p>
-                    <p className={`text-xs mt-1 ${tonelagemDeltaPercent === null ? 'text-gray-700 bg-gray-50 border-gray-200' : formatDeltaBadgeClass(tonelagemDeltaPercent)}`}>
-                      {simulation.targetTonelagemMilhoes === null
-                        ? 'Referência indisponível'
-                        : `Alvo: ${formatTonelagem(simulation.targetTonelagemMilhoes)} (${tonelagemDeltaPercent === null ? '—' : `${formatDelta(tonelagemDeltaPercent)}%`})`
-                      }
-                    </p>
+                  <div className="flex items-center gap-1 ml-2">
+                    <input
+                      type="number"
+                      min={-50}
+                      max={100}
+                      step={5}
+                      value={deltaPct}
+                      onChange={(e) => setDeltaPct(Number(e.target.value))}
+                      className="w-16 px-2 py-0.5 text-xs border border-gray-300 rounded-md"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!scenarioDeltas.includes(deltaPct)) {
+                          setScenarioDeltas((prev) => [...prev, deltaPct].sort((a, b) => a - b));
+                        }
+                      }}
+                      className="px-2 py-0.5 text-xs rounded-md border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    >
+                      {t('module3.shock.add')}
+                    </button>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <p className="text-xs text-gray-500">Empregos diretos</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(simulation.diretos)}</p>
-                    <p className={`text-xs mt-1 ${formatDeltaBadgeClass(simulation.diretosDelta)}`}>
-                      {formatDelta(simulation.diretosDelta)} (contra base)
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <p className="text-xs text-gray-500">Empregos indiretos e induzidos</p>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {formatNumber(simulation.indiretos + simulation.induzidos, 'decimal')}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Indiretos: {formatNumber(simulation.indiretos, 'decimal')} | Induzidos: {formatNumber(simulation.induzidos, 'decimal')}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <p className="text-xs text-gray-500">Impacto total projetado</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(simulation.total)}</p>
-                    <p className={`text-xs mt-1 ${formatDeltaBadgeClass(simulation.total - activeEstimate.total_impact)}`}>
-                      {formatDelta(simulation.total - (simulationBaseEstimate?.total_impact ?? 0))} (em relação à base)
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <p className="text-xs text-gray-500 mb-2">Sensibilidade do impacto total por cenário</p>
-                  <LineChart
-                    labels={simulationCurve.labels}
-                    datasets={[{ label: 'Empregos totais', data: simulationCurve.values, borderColor: '#0ea5e9' }]}
-                    yAxisLabel="Empregos"
-                    yAxisFormat="quantity"
-                  />
                 </div>
               </div>
-            )}
 
-            {/* Toggle causal */}
-            {multiplierData.causal && multiplierData.causal_estimate && (
+              {scenarioDeltas.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Selecione ao menos um cenário acima para comparar.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500 border-b border-gray-100">
+                        <th className="pb-2 pr-3 font-medium">{t('module3.shock.municipality')}</th>
+                        {scenarioDeltas.map((pct) => (
+                          <th key={pct} className={`pb-2 px-2 font-medium text-right whitespace-nowrap ${pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {pct >= 0 ? '+' : ''}{pct}%
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {impactData.map((resp) => {
+                        const row = resp.data?.[0];
+                        if (!row) return null;
+                        const estimate = resolveImpactEstimate(resp, useCausalEstimate);
+                        const baseTotal = estimate?.total_impact ?? row.emprego_total_estimado ?? 0;
+                        const nomeMunicipio = row.municipality_name || resp.municipality_name || resp.municipality_id;
+                        return (
+                          <tr key={resp.municipality_id} className="border-b border-gray-50 last:border-0">
+                            <td className="py-2 pr-3 text-gray-700 font-medium">{nomeMunicipio}</td>
+                            {scenarioDeltas.map((pct) => {
+                              const delta = Math.round(baseTotal * pct / 100);
+                              const positive = delta >= 0;
+                              return (
+                                <td key={pct} className={`py-2 px-2 text-right font-semibold tabular-nums ${positive ? 'text-green-600' : 'text-red-600'}`}>
+                                  {positive ? '+' : ''}{formatQuantity(delta)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 mt-3">
+                {t('module3.shock.disclaimer')}
+              </p>
+            </div>
+
+            {/* Link para análise causal completa no Módulo 5 */}
+            <div className="mt-4 pt-3 border-t border-amber-200">
+              <p className="text-xs text-gray-600 mb-2">
+                {t('module3.causal.linkDescription')}
+              </p>
               <button
-                onClick={() => setShowCausalEstimate(!showCausalEstimate)}
-                className="text-sm text-blue-600 hover:text-blue-800 underline"
+                type="button"
+                onClick={() => navigate('/dashboard/module5')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-300 bg-blue-50 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
               >
-                {showCausalEstimate ? 'Ver estimativa da literatura' : 'Ver estimativa causal (baseada em dados do município)'}
+                {t('module3.causal.linkButton')}
               </button>
-            )}
-          </div>
+            </div>
+          </>
         )}
+      </div>
 
-        {!multiplierLoading && !multiplierData && (
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 text-center">
-            <p className="text-gray-500">
-              {raisYearHint !== null
-                ? `Sem dados de empregos diretos para ${selectedYear}. Selecione o ano ${raisYearHint ?? 'anterior'} para calcular o multiplicador.`
-                : 'Sem dados de empregos diretos disponíveis. Verifique o ano selecionado e tente novamente.'}
-            </p>
-          </div>
-        )}
-      </section>
+      {/* ── Indicadores Descritivos de Recursos Humanos ───────────────────────── */}
+      <h2 className="text-base font-semibold text-gray-700 mb-1">Indicadores Descritivos de Recursos Humanos</h2>
+      <p className="text-sm text-gray-400 mb-4">Dados individuais por município — base RAIS e fontes complementares (ANTAQ, IBGE PIB)</p>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          BLOCO C — Perfil do Trabalhador Portuário (colapsável)
-          ═══════════════════════════════════════════════════════════════════ */}
-      <section>
-        <button
-          onClick={() => setProfileOpen(!profileOpen)}
-          className="flex items-center gap-2 w-full text-left"
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {INDICATORS_INFO.map((ind) => {
+          const indData = indicators[ind.code];
+          const hasData = indData?.data && indData.data.length > 0;
+          const hasError = indData?.error;
+
+          return (
+            <ChartCard
+              key={ind.code}
+              title={ind.name}
+              description={ind.desc}
+              unit={ind.unit}
+              isLoading={isLoading}
+            >
+              {hasData ? (
+                <BarChart
+                  labels={indData.data.slice(0, 10).map((d: any) => getLabelFromData(d))}
+                  datasets={[{
+                    label: ind.unit,
+                    data: indData.data.slice(0, 10).map((d: any) => getValueFromData(d, ind.valueField)),
+                  }]}
+                  yAxisLabel={ind.unit}
+                  horizontal
+                  valueFormat={getIndicatorFormat(ind.code)}
+                  {...(ind.code === 'IND-3.02' && {
+                    maxValue: 100,
+                    referenceLine: { value: 50, label: 'Paridade (50%)', color: '#9ca3af' },
+                  })}
+                />
+              ) : (
+                renderDataStatus(hasError)
+              )}
+            </ChartCard>
+          );
+        })}
+      </div>
+
+      {/* ── Indicadores Agrupados: Capital Humano ──────────────────────────────── */}
+      <h2 className="text-base font-semibold text-gray-700 mb-4">Perfil do Capital Humano Portuário</h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* IND-3.03 — Paridade de Gênero por Categoria Profissional (CBO da RAIS) */}
+        <ChartCard
+          title="Paridade de Gênero por Categoria (CBO)"
+          description="Percentual de mulheres por categoria profissional derivada do código CBO-2002 da RAIS"
+          unit="%"
+          isLoading={isLoading}
         >
-          <BookOpen className="h-5 w-5 text-gray-500" />
-          <h2 className="text-xl font-semibold text-gray-900">Perfil do Trabalhador Portuário</h2>
-          {profileOpen
-            ? <ChevronUp className="h-5 w-5 text-gray-400 ml-auto" />
-            : <ChevronDown className="h-5 w-5 text-gray-400 ml-auto" />}
-        </button>
+          {(() => {
+            const raw = indicators['IND-3.03']?.data;
+            if (!Array.isArray(raw) || raw.length === 0) {
+              return renderDataStatus(indicators['IND-3.03']?.error, chartMunicipioHint);
+            }
+            const catMap = new Map<string, { sum: number; count: number }>();
+            for (const row of raw) {
+              const cat = String(row?.categoria || '').toUpperCase().trim();
+              if (!cat) continue;
+              const val = toNumber(row?.percentual_feminino);
+              const prev = catMap.get(cat) || { sum: 0, count: 0 };
+              catMap.set(cat, { sum: prev.sum + val, count: prev.count + 1 });
+            }
+            const categories = ['GESTAO_TECNICO', 'ADMINISTRATIVO', 'OPERACIONAL'];
+            const labels = categories.map((c) => CATEGORIA_LABELS[c] || c);
+            const values = categories.map((c) => {
+              const entry = catMap.get(c);
+              return entry && entry.count > 0 ? Math.round((entry.sum / entry.count) * 100) / 100 : 0;
+            });
+            return (
+              <BarChart
+                labels={labels}
+                datasets={[{
+                  label: '% Feminino',
+                  data: values,
+                  backgroundColor: '#ec4899',
+                }]}
+                yAxisLabel="% Feminino"
+                valueFormat="percent"
+                maxValue={100}
+                referenceLine={{ value: 50, label: 'Paridade (50%)', color: '#9ca3af' }}
+              />
+            );
+          })()}
+        </ChartCard>
 
-        <p className="text-sm text-gray-500 mt-1 mb-4">
-          Gênero, escolaridade e idade dos trabalhadores do setor portuário.
-        </p>
+        {/* IND-3.09 — Distribuição por Escolaridade (campo grau_instrucao da RAIS) */}
+        <ChartCard
+          title="Distribuição por Escolaridade"
+          description="Distribuição percentual dos trabalhadores portuários por nível de escolaridade"
+          unit="%"
+          isLoading={isLoading}
+        >
+          {(() => {
+            const raw = indicators['IND-3.09']?.data;
+            if (!Array.isArray(raw) || raw.length === 0) {
+              return renderDataStatus(indicators['IND-3.09']?.error, chartMunicipioHint);
+            }
+            // Agregar por escolaridade (soma de qtd entre municípios)
+            const escolMap = new Map<string, number>();
+            let totalGeral = 0;
+            for (const row of raw) {
+              const rawEscol = normalizeEscolaridade(row?.grau_instrucao);
+              if (!rawEscol) continue;
+              const qtd = toNumber(row?.qtd);
+              escolMap.set(rawEscol, (escolMap.get(rawEscol) || 0) + qtd);
+              totalGeral += qtd;
+            }
+            if (totalGeral === 0) {
+              return renderDataStatus(undefined, 'Sem dados de escolaridade disponíveis para os filtros atuais.');
+            }
+            const labels = ESCOLARIDADE_CATEGORIES.map((c) => c.label);
+            const values = ESCOLARIDADE_CATEGORIES.map((c) => {
+              const qtd = escolMap.get(c.key) || 0;
+              return Math.round((qtd / totalGeral) * 10000) / 100;
+            });
+            return (
+              <BarChart
+                labels={labels}
+                datasets={[{
+                  label: '% dos trabalhadores',
+                  data: values,
+                  backgroundColor: '#6366f1',
+                }]}
+                yAxisLabel="% do total"
+                valueFormat="percent"
+              />
+            );
+          })()}
+        </ChartCard>
+      </div>
 
-        {profileOpen && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {BLOCK_C_INDICATORS.map((ind) => (
-                <div key={ind.code}>
-                  <IndicatorDashboardCard
-                    title={ind.name}
-                    description={ind.desc}
-                    unit={ind.unit}
-                    isLoading={isLoading}
-                    data={indicators[ind.code]}
-                    chartType={ind.chartType}
-                    valueField={ind.valueField}
-                    labelAccessor={getLabelAccessor(ind.code)}
-                    filterText={tableSearch}
-                    indicatorCode={ind.code}
-                    warnings={indicatorWarnings[ind.code]}
-                    error={indicatorErrors[ind.code] ?? null}
-                  />
-                {ind.interpretation && (
-                  <p className="mt-1 px-3 text-xs text-gray-400 italic">{ind.interpretation}</p>
-                )}
+      {/* ── Novos Gráficos de Remuneração ─────────────────────────────────────── */}
+      <h2 className="text-base font-semibold text-gray-700 mb-1">Recortes de Remuneração</h2>
+      <p className="text-sm text-gray-400 mb-4">
+        Análise de equidade salarial por gênero, raça e escolaridade — indicadores relevantes para governança ESG e due diligence trabalhista
+      </p>
+
+      <div className="grid grid-cols-1 gap-6">
+        <ChartCard
+          title="Gráfico 1 - Remuneração média por sexo e grau de instrução"
+          description="Eixo X: escolaridade. Eixo Y: remuneração média (R$)."
+          unit="R$"
+          isLoading={isLoading}
+        >
+          {Array.isArray(indicators['IND-3.13']?.data) &&
+          indicators['IND-3.13']?.data.length > 0 &&
+          remEscolSexoRows.length > 0 ? (
+            <BarChart
+              labels={chart1Data.labels}
+              datasets={[
+                { label: 'Masculino', data: chart1Data.masculino, backgroundColor: '#3b82f6' },
+                { label: 'Feminino', data: chart1Data.feminino, backgroundColor: '#ec4899' },
+              ]}
+              yAxisLabel="Remuneração média (R$)"
+              valueFormat="currency-compact"
+              height="h-80"
+            />
+          ) : (
+            renderDataStatus(indicators['IND-3.13']?.error, chartMunicipioHint)
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Gráfico 2 - Remuneração média por cor/raça e sexo"
+          description="Eixo X: cor/raça. Eixo Y: remuneração média (R$)."
+          unit="R$"
+          isLoading={isLoading}
+        >
+          {Array.isArray(indicators['IND-3.14']?.data) &&
+          indicators['IND-3.14']?.data.length > 0 &&
+          remRacaSexoRows.length > 0 ? (
+            <BarChart
+              labels={chart2Data.labels}
+              datasets={[
+                { label: 'Masculino', data: chart2Data.masculino, backgroundColor: '#3b82f6' },
+                { label: 'Feminino', data: chart2Data.feminino, backgroundColor: '#ec4899' },
+              ]}
+              yAxisLabel="Remuneração média (R$)"
+              valueFormat="currency-compact"
+              height="h-80"
+            />
+          ) : (
+            renderDataStatus(indicators['IND-3.14']?.error, chartMunicipioHint)
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Gráfico 3 - Remuneração por escolaridade, raça/cor e sexo"
+          description="Filtro de sexo com combinações de escolaridade e raça/cor no eixo X."
+          unit="R$"
+          isLoading={isLoading}
+        >
+          {Array.isArray(indicators['IND-3.15']?.data) &&
+          indicators['IND-3.15']?.data.length > 0 &&
+          remEscolRacaSexoRows.length > 0 ? (
+            <>
+              <div className="mb-3 flex items-center justify-end gap-2">
+                <label htmlFor="sexoChart3" className="text-sm text-gray-500">Sexo:</label>
+                <select
+                  id="sexoChart3"
+                  value={selectedSexoChart3}
+                  onChange={(e) => setSelectedSexoChart3(e.target.value as SexoOption)}
+                  className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white"
+                >
+                  <option value="MASCULINO">Masculino</option>
+                  <option value="FEMININO">Feminino</option>
+                </select>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+
+              <BarChart
+                labels={chart3Data.labels}
+                datasets={[
+                  {
+                    label: selectedSexoChart3 === 'MASCULINO' ? 'Masculino' : 'Feminino',
+                    data: chart3Data.values,
+                    backgroundColor: selectedSexoChart3 === 'MASCULINO' ? '#2563eb' : '#db2777',
+                  },
+                ]}
+                yAxisLabel="Remuneração média (R$)"
+                valueFormat="currency-compact"
+                height="h-[32rem]"
+              />
+            </>
+          ) : (
+            renderDataStatus(indicators['IND-3.15']?.error, chartMunicipioHint)
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Gráfico 4 - Remuneração média com média geral nacional"
+          description="Barras de remuneração média por município com linha horizontal da média nacional."
+          unit="R$"
+          isLoading={isLoading}
+        >
+          {Array.isArray(indicators['IND-3.16']?.data) && indicators['IND-3.16']?.data.length > 0 ? (
+            <>
+              <BarChart
+                labels={chart4Data.labels}
+                datasets={[
+                  {
+                    label: 'Remuneração média (R$)',
+                    data: chart4Data.values,
+                    backgroundColor: '#0ea5e9',
+                  },
+                ]}
+                yAxisLabel="Remuneração média (R$)"
+                valueFormat="currency-compact"
+                height="h-80"
+                referenceLine={chart4Data.mediaNacional != null ? {
+                  value: chart4Data.mediaNacional,
+                  label: 'Média nacional',
+                } : undefined}
+              />
+
+              {chart4Data.mediaNacional != null && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Linha de referência (média geral nacional): {formatCurrency(chart4Data.mediaNacional)}
+                </p>
+              )}
+            </>
+          ) : (
+            renderDataStatus(indicators['IND-3.16']?.error, chartMunicipioHint)
+          )}
+        </ChartCard>
+      </div>
     </div>
   );
 }

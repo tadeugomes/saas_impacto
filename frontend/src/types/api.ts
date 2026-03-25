@@ -65,6 +65,13 @@ export interface MunicipioLookupResponse {
   municipios: MunicipioLookupItem[];
 }
 
+export interface InstallationMunicipioResolution {
+  id_instalacao: string;
+  id_municipio: string | null;
+  municipio_found: boolean;
+  message: string;
+}
+
 export interface IndicatorRequest {
   codigo_indicador: string;
   params?: FilterParams;
@@ -148,6 +155,8 @@ export interface MatchingResponse {
   features: string[];
 }
 
+export type SimulationShockMode = 'movement' | 'investment';
+
 export interface AdminDashboardItem {
   codigo: string;
   nome: string;
@@ -226,4 +235,52 @@ export interface AnalysisDetail extends AnalysisResponse {
   result_full?: Record<string, unknown> | null;
   artifact_path?: string | null;
   error_message?: string | null;
+}
+
+export interface ImpactSimulationRequest {
+  shock_mode?: SimulationShockMode;
+  shock_intensity_pct: number;
+  investment_to_movement_elasticity?: number | null;
+  reference_outcome?: string;
+  target_outcomes?: string[];
+}
+
+export interface ImpactSimulationProjection {
+  outcome: string;
+  outcome_label: string;
+  treatment_effect_100pct: number | null;
+  projected_delta_pct: number | null;
+  method_used: string;
+  std_err: number | null;
+  coef: number | null;
+  p_value: number | null;
+  treatment_effect_100pct_ci_lower: number | null;
+  treatment_effect_100pct_ci_upper: number | null;
+  projected_delta_pct_conservative: number | null;
+  projected_delta_pct_optimistic: number | null;
+  notes: string[];
+  confidence: 'forte' | 'moderada' | 'fraca';
+  warning: string | null;
+}
+
+export interface ImpactSimulationMetadata {
+  model_version: string;
+  as_of: string;
+  generated_by: string;
+  notes: string[];
+}
+
+export interface ImpactSimulationResponse {
+  analysis_id: string;
+  method: string;
+  shock_intensity_pct: number;
+  shock_mode: SimulationShockMode;
+  applied_shock_intensity_pct: number;
+  investment_to_movement_elasticity?: number | null;
+  reference_outcome: string;
+  reference_effect_100pct: number | null;
+  projected_outcomes: ImpactSimulationProjection[];
+  simulation_metadata: ImpactSimulationMetadata;
+  assumptions: string[];
+  executive_summary: string[];
 }

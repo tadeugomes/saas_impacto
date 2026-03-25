@@ -1,7 +1,7 @@
 """
 Queries BigQuery para o Módulo 3 - Recursos Humanos.
 
-Este módulo contém as queries SQL para cálculo dos 12 indicadores
+Este módulo contém as queries SQL para cálculo dos indicadores
 do Módulo 3 de recursos humanos, baseados em dados da RAIS.
 
 NOTA: IND-3.07 (Produtividade) usa view oficial ANTAQ v_carga_metodologia_oficial.
@@ -56,6 +56,159 @@ def _where_vinculo_ativo(alias: str) -> str:
 
 def _where_sexo_feminino(alias: str) -> str:
     return f"{_as_int(f'{alias}.sexo')} = 2"
+
+
+def _sexo_categoria_expr(alias: str) -> str:
+    return f"""
+        CASE
+            WHEN {_as_int(f"{alias}.sexo")} = 1 THEN 'MASCULINO'
+            WHEN {_as_int(f"{alias}.sexo")} = 2 THEN 'FEMININO'
+            WHEN LOWER(TRIM(CAST({alias}.sexo AS STRING))) IN ('masculino', 'm') THEN 'MASCULINO'
+            WHEN LOWER(TRIM(CAST({alias}.sexo AS STRING))) IN ('feminino', 'f') THEN 'FEMININO'
+            ELSE NULL
+        END
+    """.strip()
+
+
+def _grau_instrucao_raw_expr(alias: str) -> str:
+    return f"""
+        COALESCE(
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao_apos_2005'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao_1985_2005'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao_2005'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao_2010'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.grau_instrucao_2019')
+        )
+    """.strip()
+
+
+def _grau_instrucao_categoria_expr(alias: str) -> str:
+    raw_expr = _grau_instrucao_raw_expr(alias)
+    raw_code_expr = f"SAFE_CAST(({raw_expr}) AS INT64)"
+    raw_text_expr = f"LOWER(TRIM(CAST(({raw_expr}) AS STRING)))"
+    ano_expr = f"SAFE_CAST({alias}.ano AS INT64)"
+    return f"""
+        CASE
+            WHEN {ano_expr} >= 2006 THEN
+                CASE
+                    WHEN {raw_code_expr} IN (1, 2, 3, 4)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'fundamental.*incom|1.?grau.*incom')
+                        THEN 'FUNDAMENTAL_INCOMPLETO'
+                    WHEN {raw_code_expr} IN (5)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'fundamental.*compl|1.?grau.*compl')
+                        THEN 'FUNDAMENTAL_COMPLETO'
+                    WHEN {raw_code_expr} IN (6)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'm.dio.*incom|2.?grau.*incom')
+                        THEN 'MEDIO_INCOMPLETO'
+                    WHEN {raw_code_expr} IN (7)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'm.dio.*compl|2.?grau.*compl')
+                        THEN 'MEDIO_COMPLETO'
+                    WHEN {raw_code_expr} IN (8)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'superior.*incom|gradua.*incom')
+                        THEN 'SUPERIOR_INCOMPLETO'
+                    WHEN {raw_code_expr} IN (9)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'superior.*compl|gradua.*compl')
+                        THEN 'SUPERIOR_COMPLETO'
+                    WHEN {raw_code_expr} IN (10)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'mestrado')
+                        THEN 'MESTRADO'
+                    WHEN {raw_code_expr} IN (11)
+                        OR REGEXP_CONTAINS({raw_text_expr}, r'doutorado|phd')
+                        THEN 'DOUTORADO'
+                    ELSE NULL
+                END
+            WHEN {raw_code_expr} IN (1, 2, 3, 4)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'fundamental.*incom|1.?grau.*incom')
+                THEN 'FUNDAMENTAL_INCOMPLETO'
+            WHEN {raw_code_expr} IN (5, 6)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'fundamental.*compl|1.?grau.*compl')
+                THEN 'FUNDAMENTAL_COMPLETO'
+            WHEN {raw_code_expr} IN (7, 8)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'm.dio.*incom|2.?grau.*incom')
+                THEN 'MEDIO_INCOMPLETO'
+            WHEN {raw_code_expr} IN (9, 10)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'm.dio.*compl|2.?grau.*compl')
+                THEN 'MEDIO_COMPLETO'
+            WHEN {raw_code_expr} IN (11)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'superior.*incom|gradua.*incom')
+                THEN 'SUPERIOR_INCOMPLETO'
+            WHEN {raw_code_expr} IN (12)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'superior.*compl|gradua.*compl')
+                THEN 'SUPERIOR_COMPLETO'
+            WHEN {raw_code_expr} IN (13)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'mestrado')
+                THEN 'MESTRADO'
+            WHEN {raw_code_expr} IN (14)
+                OR REGEXP_CONTAINS({raw_text_expr}, r'doutorado|phd')
+                THEN 'DOUTORADO'
+            ELSE NULL
+        END
+    """.strip()
+
+
+def _escolaridade_ordem_expr(field: str) -> str:
+    return f"""
+        CASE
+            WHEN {field} = 'FUNDAMENTAL_INCOMPLETO' THEN 1
+            WHEN {field} = 'FUNDAMENTAL_COMPLETO' THEN 2
+            WHEN {field} = 'MEDIO_INCOMPLETO' THEN 3
+            WHEN {field} = 'MEDIO_COMPLETO' THEN 4
+            WHEN {field} = 'SUPERIOR_INCOMPLETO' THEN 5
+            WHEN {field} = 'SUPERIOR_COMPLETO' THEN 6
+            WHEN {field} = 'MESTRADO' THEN 7
+            WHEN {field} = 'DOUTORADO' THEN 8
+            ELSE 99
+        END
+    """.strip()
+
+
+def _raca_cor_raw_expr(alias: str) -> str:
+    return f"""
+        COALESCE(
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.raca_cor'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.raca'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.cor_raca'),
+            JSON_VALUE(TO_JSON_STRING({alias}), '$.raca_cor_2010')
+        )
+    """.strip()
+
+
+def _raca_cor_categoria_expr(alias: str) -> str:
+    raw_expr = _raca_cor_raw_expr(alias)
+    return f"""
+        CASE
+            WHEN SAFE_CAST(({raw_expr}) AS INT64) = 1
+                OR REGEXP_CONTAINS(LOWER(TRIM(CAST(({raw_expr}) AS STRING))), r'branca')
+                THEN 'BRANCA'
+            WHEN SAFE_CAST(({raw_expr}) AS INT64) = 3
+                OR REGEXP_CONTAINS(LOWER(TRIM(CAST(({raw_expr}) AS STRING))), r'parda')
+                THEN 'PARDA'
+            WHEN SAFE_CAST(({raw_expr}) AS INT64) = 5
+                OR REGEXP_CONTAINS(LOWER(TRIM(CAST(({raw_expr}) AS STRING))), r'indig')
+                THEN 'INDIGENA'
+            WHEN SAFE_CAST(({raw_expr}) AS INT64) = 2
+                OR REGEXP_CONTAINS(LOWER(TRIM(CAST(({raw_expr}) AS STRING))), r'preta|negra')
+                THEN 'PRETA'
+            WHEN SAFE_CAST(({raw_expr}) AS INT64) = 4
+                OR REGEXP_CONTAINS(LOWER(TRIM(CAST(({raw_expr}) AS STRING))), r'amarela|asiat')
+                THEN 'AMARELA'
+            ELSE NULL
+        END
+    """.strip()
+
+
+def _raca_cor_ordem_expr(field: str) -> str:
+    return f"""
+        CASE
+            WHEN {field} = 'BRANCA' THEN 1
+            WHEN {field} = 'PARDA' THEN 2
+            WHEN {field} = 'INDIGENA' THEN 3
+            WHEN {field} = 'PRETA' THEN 4
+            WHEN {field} = 'AMARELA' THEN 5
+            ELSE 99
+        END
+    """.strip()
 
 
 # ============================================================================
@@ -212,54 +365,6 @@ def query_paridade_categoria_profissional(
         c.ano DESC,
         id_municipio,
         c.categoria
-    """
-
-
-def query_taxa_emprego_temporario(
-    id_municipio: Optional[str] = None,
-    ano: Optional[int] = None,
-    ano_inicio: Optional[int] = None,
-    ano_fim: Optional[int] = None,
-) -> str:
-    """
-    IND-3.04: Taxa de Emprego Temporário [UNCTAD].
-
-    Unidade: Percentual
-    Granularidade: Município/Ano
-    """
-    where_clauses = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
-    if id_municipio:
-        where_clauses.append(_where_id_municipio("r", id_municipio))
-    if ano:
-        where_clauses.append(_where_ano("r", ano))
-    elif ano_inicio and ano_fim:
-        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
-
-    where_sql = "\n        AND ".join(where_clauses)
-
-    return f"""
-    SELECT
-        {_as_string("r.id_municipio")} AS id_municipio,
-        dir.nome AS nome_municipio,
-        r.ano,
-        ROUND(SUM(CASE
-            WHEN {_as_int("r.tipo_vinculo")} IN (1, 3, 5, 7) THEN 1
-            ELSE 0
-        END) * 100.0 / COUNT(*), 2) AS taxa_temporario
-    FROM
-        `{BD_DADOS_RAIS}` r
-    LEFT JOIN
-        `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON {_as_string("r.id_municipio")} = {_as_string("dir.id_municipio")}
-    WHERE
-        r.tipo_vinculo IS NOT NULL
-        AND {where_sql}
-    GROUP BY
-        id_municipio,
-        dir.nome,
-        r.ano
-    ORDER BY
-        r.ano DESC,
-        dir.nome
     """
 
 
@@ -488,14 +593,7 @@ def query_distribuicao_escolaridade(
 
     # A coluna de escolaridade na RAIS varia por versão do dataset.
     # Para evitar "Name ... not found" (erro de compilação), extraímos via JSON.
-    grau_instrucao_expr = """
-        COALESCE(
-            JSON_VALUE(TO_JSON_STRING(r), '$.grau_instrucao'),
-            JSON_VALUE(TO_JSON_STRING(r), '$.grau_instrucao_2005'),
-            JSON_VALUE(TO_JSON_STRING(r), '$.grau_instrucao_2010'),
-            JSON_VALUE(TO_JSON_STRING(r), '$.grau_instrucao_2019')
-        )
-    """.strip()
+    grau_instrucao_expr = _grau_instrucao_raw_expr("r")
 
     return f"""
     WITH escolaridade AS (
@@ -719,6 +817,271 @@ def query_participacao_emprego_local(
     """
 
 
+def query_remuneracao_media_por_escolaridade_sexo(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-3.13: Remuneração média por escolaridade e sexo.
+
+    Unidade: R$
+    Granularidade: Município/Ano/Escolaridade/Sexo
+    """
+    where_clauses = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_clauses.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_sql = "\n        AND ".join(where_clauses)
+    sexo_expr = _sexo_categoria_expr("r")
+    escolaridade_expr = _grau_instrucao_categoria_expr("r")
+    escolaridade_ordem_expr = _escolaridade_ordem_expr("escolaridade")
+
+    return f"""
+    WITH base AS (
+        SELECT
+            r.ano,
+            {sexo_expr} AS sexo,
+            {escolaridade_expr} AS escolaridade,
+            SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) AS remuneracao_media
+        FROM
+            `{BD_DADOS_RAIS}` r
+        WHERE
+            r.valor_remuneracao_media IS NOT NULL
+            AND SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) > 0
+            AND {where_sql}
+    )
+    SELECT
+        ano,
+        escolaridade,
+        {escolaridade_ordem_expr} AS ordem_escolaridade,
+        sexo,
+        ROUND(AVG(remuneracao_media), 2) AS remuneracao_media
+    FROM
+        base
+    WHERE
+        sexo IS NOT NULL
+        AND escolaridade IS NOT NULL
+    GROUP BY
+        1, 2, 3, 4
+    ORDER BY
+        ano DESC,
+        ordem_escolaridade,
+        sexo
+    """
+
+
+def query_remuneracao_media_por_raca_sexo(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-3.14: Remuneração média por raça/cor e sexo.
+
+    Unidade: R$
+    Granularidade: Município/Ano/Raça/Sexo
+    """
+    where_clauses = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_clauses.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_sql = "\n        AND ".join(where_clauses)
+    sexo_expr = _sexo_categoria_expr("r")
+    raca_expr = _raca_cor_categoria_expr("r")
+    raca_ordem_expr = _raca_cor_ordem_expr("raca_cor")
+
+    return f"""
+    WITH base AS (
+        SELECT
+            r.ano,
+            {sexo_expr} AS sexo,
+            {raca_expr} AS raca_cor,
+            SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) AS remuneracao_media
+        FROM
+            `{BD_DADOS_RAIS}` r
+        WHERE
+            r.valor_remuneracao_media IS NOT NULL
+            AND SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) > 0
+            AND {where_sql}
+    )
+    SELECT
+        ano,
+        raca_cor,
+        {raca_ordem_expr} AS ordem_raca,
+        sexo,
+        ROUND(AVG(remuneracao_media), 2) AS remuneracao_media
+    FROM
+        base
+    WHERE
+        sexo IS NOT NULL
+        AND raca_cor IS NOT NULL
+    GROUP BY
+        1, 2, 3, 4
+    ORDER BY
+        ano DESC,
+        ordem_raca,
+        sexo
+    """
+
+
+def query_remuneracao_media_por_escolaridade_raca_sexo(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-3.15: Remuneração média por escolaridade, raça/cor e sexo.
+
+    Unidade: R$
+    Granularidade: Município/Ano/Escolaridade/Raça/Sexo
+    """
+    where_clauses = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
+    if id_municipio:
+        where_clauses.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_clauses.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_clauses.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_sql = "\n        AND ".join(where_clauses)
+    sexo_expr = _sexo_categoria_expr("r")
+    escolaridade_expr = _grau_instrucao_categoria_expr("r")
+    raca_expr = _raca_cor_categoria_expr("r")
+    escolaridade_ordem_expr = _escolaridade_ordem_expr("escolaridade")
+    raca_ordem_expr = _raca_cor_ordem_expr("raca_cor")
+
+    return f"""
+    WITH base AS (
+        SELECT
+            r.ano,
+            {sexo_expr} AS sexo,
+            {escolaridade_expr} AS escolaridade,
+            {raca_expr} AS raca_cor,
+            SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) AS remuneracao_media
+        FROM
+            `{BD_DADOS_RAIS}` r
+        WHERE
+            r.valor_remuneracao_media IS NOT NULL
+            AND SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) > 0
+            AND {where_sql}
+    )
+    SELECT
+        ano,
+        escolaridade,
+        {escolaridade_ordem_expr} AS ordem_escolaridade,
+        raca_cor,
+        {raca_ordem_expr} AS ordem_raca,
+        sexo,
+        CONCAT(escolaridade, ' | ', raca_cor) AS combinacao,
+        ROUND(AVG(remuneracao_media), 2) AS remuneracao_media
+    FROM
+        base
+    WHERE
+        sexo IS NOT NULL
+        AND escolaridade IS NOT NULL
+        AND raca_cor IS NOT NULL
+    GROUP BY
+        1, 2, 3, 4, 5, 6, 7
+    ORDER BY
+        ano DESC,
+        ordem_escolaridade,
+        ordem_raca,
+        sexo
+    """
+
+
+def query_remuneracao_media_comparativo_nacional(
+    id_municipio: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-3.16: Remuneração média com referência da média nacional.
+
+    Unidade: R$
+    Granularidade: Município/Ano
+    """
+    where_base = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
+    if id_municipio:
+        where_base.append(_where_id_municipio("r", id_municipio))
+    if ano:
+        where_base.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_base.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_base_sql = "\n        AND ".join(where_base)
+
+    where_nacional = [_where_cnae_portuario("r"), _where_vinculo_ativo("r")]
+    if ano:
+        where_nacional.append(_where_ano("r", ano))
+    elif ano_inicio and ano_fim:
+        where_nacional.append(_where_ano_range("r", ano_inicio, ano_fim))
+
+    where_nacional_sql = "\n        AND ".join(where_nacional)
+
+    return f"""
+    WITH base_municipio AS (
+        SELECT
+            {_as_string("r.id_municipio")} AS id_municipio,
+            dir.nome AS nome_municipio,
+            r.ano,
+            ROUND(AVG(SAFE_CAST(r.valor_remuneracao_media AS FLOAT64)), 2) AS remuneracao_media
+        FROM
+            `{BD_DADOS_RAIS}` r
+        LEFT JOIN
+            `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir ON {_as_string("r.id_municipio")} = {_as_string("dir.id_municipio")}
+        WHERE
+            r.valor_remuneracao_media IS NOT NULL
+            AND SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) > 0
+            AND {where_base_sql}
+        GROUP BY
+            id_municipio,
+            nome_municipio,
+            r.ano
+    ),
+    media_nacional AS (
+        SELECT
+            r.ano,
+            ROUND(AVG(SAFE_CAST(r.valor_remuneracao_media AS FLOAT64)), 2) AS media_nacional
+        FROM
+            `{BD_DADOS_RAIS}` r
+        WHERE
+            r.valor_remuneracao_media IS NOT NULL
+            AND SAFE_CAST(r.valor_remuneracao_media AS FLOAT64) > 0
+            AND {where_nacional_sql}
+        GROUP BY
+            r.ano
+    )
+    SELECT
+        b.id_municipio,
+        b.nome_municipio,
+        b.ano,
+        b.remuneracao_media,
+        n.media_nacional
+    FROM
+        base_municipio b
+    INNER JOIN
+        media_nacional n USING (ano)
+    ORDER BY
+        b.ano DESC,
+        b.remuneracao_media DESC,
+        b.nome_municipio
+    """
+
+
 def query_rais_year_coverage_for_portuarios(
     id_municipio: Optional[str] = None,
     ano: Optional[int] = None,
@@ -768,7 +1131,6 @@ QUERIES_MODULE_3 = {
     "IND-3.01": query_empregos_diretos_portuarios,
     "IND-3.02": query_paridade_genero_geral,
     "IND-3.03": query_paridade_categoria_profissional,
-    "IND-3.04": query_taxa_emprego_temporario,
     "IND-3.05": query_salario_medio_setor_portuario,
     "IND-3.06": query_massa_salarial_portuaria,
     "IND-3.07": query_produtividade_ton_empregado,
@@ -777,6 +1139,10 @@ QUERIES_MODULE_3 = {
     "IND-3.10": query_idade_media,
     "IND-3.11": query_variacao_anual_empregos,
     "IND-3.12": query_participacao_emprego_local,
+    "IND-3.13": query_remuneracao_media_por_escolaridade_sexo,
+    "IND-3.14": query_remuneracao_media_por_raca_sexo,
+    "IND-3.15": query_remuneracao_media_por_escolaridade_raca_sexo,
+    "IND-3.16": query_remuneracao_media_comparativo_nacional,
 }
 
 

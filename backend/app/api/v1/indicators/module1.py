@@ -29,6 +29,10 @@ from app.schemas.indicators import (
     OperacoesNaviosResumoResponse,
     OperacoesNaviosRequest,
     IndicatorListRequest,
+    # Analíticos
+    TendenciaOperacionalResponse,
+    BenchmarkingResponse,
+    ScoreEficienciaResponse,
 )
 
 
@@ -442,6 +446,135 @@ async def get_resumo(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao consultar resumo: {str(e)}",
+        )
+
+
+# ============================================================================
+# Endpoints Analíticos — Inteligência Operacional para Investidores
+# ============================================================================
+
+@router.get(
+    "/analise-tendencia",
+    response_model=List[TendenciaOperacionalResponse],
+    summary="Análise de Tendência Operacional",
+    description=(
+        "Retorna a tendência (IMPROVING/STABLE/DETERIORATING) para cada "
+        "indicador temporal, com variação YoY e CAGR 3 anos."
+    ),
+)
+async def get_tendencia_operacional(
+    id_instalacao: Optional[str] = Query(None, description="ID da instalação portuária"),
+    ano_inicio: Optional[int] = Query(None, description="Ano inicial do período", ge=2000, le=2100),
+    ano_fim: Optional[int] = Query(None, description="Ano final do período", ge=2000, le=2100),
+    service: ShipOperationsIndicatorService = Depends(get_indicator_service),
+) -> List[TendenciaOperacionalResponse]:
+    """
+    Análise de tendência operacional para investidores.
+
+    Para cada indicador temporal (IND-1.01 a 1.06, 1.11, 1.12):
+    - Variação ano a ano (%)
+    - CAGR 3 anos (%)
+    - Classificação: IMPROVING / STABLE / DETERIORATING
+
+    **Polaridade:** Para tempos, queda = melhoria. Para atracações, crescimento = melhoria.
+    """
+    try:
+        return await service.get_tendencia_operacional(
+            id_instalacao=id_instalacao,
+            ano_inicio=ano_inicio,
+            ano_fim=ano_fim,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao calcular tendência: {str(e)}",
+        )
+
+
+@router.get(
+    "/benchmarking",
+    response_model=BenchmarkingResponse,
+    summary="Benchmarking contra Pares Nacionais",
+    description=(
+        "Posiciona uma instalação contra todos os portos brasileiros no ano, "
+        "com percentil, mediana e P75 para cada indicador."
+    ),
+    responses={
+        404: {"description": "Instalação não encontrada no ano informado"},
+    },
+)
+async def get_benchmarking(
+    id_instalacao: str = Query(..., description="ID da instalação portuária"),
+    ano: int = Query(..., description="Ano de referência", ge=2000, le=2100),
+    service: ShipOperationsIndicatorService = Depends(get_indicator_service),
+) -> BenchmarkingResponse:
+    """
+    Benchmarking operacional para investidores.
+
+    Compara a instalação com todos os portos nacionais no mesmo ano:
+    - Percentil rank (0-100)
+    - Mediana e P75 nacionais
+    - Classificação: ACIMA_MEDIA / NA_MEDIA / ABAIXO_MEDIA
+
+    **Polaridade:** Para tempos, percentil baixo = melhor. Para atracações, percentil alto = melhor.
+    """
+    try:
+        result = await service.get_benchmarking(
+            id_instalacao=id_instalacao,
+            ano=ano,
+        )
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Dados não encontrados para {id_instalacao} no ano {ano}",
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao calcular benchmarking: {str(e)}",
+        )
+
+
+@router.get(
+    "/score-eficiencia",
+    response_model=List[ScoreEficienciaResponse],
+    summary="Score de Eficiência Operacional Decomposto",
+    description=(
+        "Score 0-100 baseado em 6 indicadores temporais, com decomposição "
+        "por componente e ranking. Diferente do IND-7.01 (volume)."
+    ),
+)
+async def get_score_eficiencia(
+    ano: int = Query(..., description="Ano de referência", ge=2000, le=2100),
+    id_instalacao: Optional[str] = Query(
+        None, description="ID da instalação (omitir para ranking completo)",
+    ),
+    service: ShipOperationsIndicatorService = Depends(get_indicator_service),
+) -> List[ScoreEficienciaResponse]:
+    """
+    Score de eficiência operacional para investidores.
+
+    Score 0-100 normalizado (min-max) com decomposição:
+    - Tempo espera (20%), Bruto atracação (15%), Operação (15%)
+    - Ocioso (20%), Atracações (15%), Paralisação (15%)
+
+    Sem `id_instalacao` → ranking de todos os portos.
+
+    **Diferente do M7:** M7 IND-7.01 = volume (tonelagem + atracações).
+    Este score = eficiência de processo (tempos operacionais).
+    """
+    try:
+        return await service.get_score_eficiencia(
+            ano=ano,
+            id_instalacao=id_instalacao,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao calcular score de eficiência: {str(e)}",
         )
 
 

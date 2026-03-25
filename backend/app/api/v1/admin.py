@@ -5,6 +5,7 @@ Endpoints administrativos (auditoria, compliance e controles operacionais).
 from __future__ import annotations
 
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,10 +37,10 @@ router = APIRouter(
 async def list_audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
-    action: str | None = Query(None),
-    resource: str | None = Query(None),
-    user_id: str | None = Query(None),
-    status_code: int | None = Query(None),
+    action: Optional[str] = Query(None),
+    resource: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    status_code: Optional[int] = Query(None),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     _: object = Depends(require_admin),
     db: AsyncSession = Depends(get_db),

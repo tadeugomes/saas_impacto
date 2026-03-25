@@ -6,6 +6,8 @@ import type {
   AnalysisListResponse,
   MatchingRequest,
   MatchingResponse,
+  ImpactSimulationRequest,
+  ImpactSimulationResponse,
 } from '../types/api';
 
 type BlobDownload = {
@@ -49,21 +51,33 @@ export const impactoEconomicoService = {
     return response.data;
   },
 
-  async getAnalysisReport(id: string): Promise<BlobDownload> {
+  async getAnalysisReport(id: string, format: 'docx' | 'pdf' | 'xlsx' = 'docx'): Promise<BlobDownload> {
     const response = await apiClient.get<Blob>(`/api/v1/impacto-economico/analises/${id}/report`, {
       responseType: 'blob',
+      params: { format },
     });
     return {
       blob: response.data,
       filename: extractFilename(
         response.headers['content-disposition'],
-        `analise_${id}.docx`,
+        `analise_${id}.${format}`,
       ),
     };
   },
 
   async suggestMatchingControls(payload: MatchingRequest): Promise<MatchingResponse> {
     const response = await apiClient.post<MatchingResponse>('/api/v1/impacto-economico/matching', payload);
+    return response.data;
+  },
+
+  async simulateImpact(
+    analysisId: string,
+    payload: ImpactSimulationRequest,
+  ): Promise<ImpactSimulationResponse> {
+    const response = await apiClient.post<ImpactSimulationResponse>(
+      `/api/v1/impacto-economico/analises/${analysisId}/simulacao`,
+      payload,
+    );
     return response.data;
   },
 };

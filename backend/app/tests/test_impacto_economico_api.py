@@ -128,6 +128,34 @@ class TestSchemas:
         # Should not raise
         json.dumps(dumped)
 
+    def test_simulation_request_movement_mode_defaults(self):
+        from app.schemas.impacto_economico import ImpactSimulationRequest
+
+        payload = {"shock_intensity_pct": 12.0}
+        req = ImpactSimulationRequest(**payload)
+        assert req.shock_mode == "movement"
+        assert req.shock_intensity_pct == 12.0
+
+    def test_simulation_request_investment_mode_requires_elasticity(self):
+        from app.schemas.impacto_economico import ImpactSimulationRequest
+
+        with pytest.raises(ValidationError, match="investment_to_movement_elasticity"):
+            ImpactSimulationRequest(
+                shock_mode="investment",
+                shock_intensity_pct=10.0,
+            )
+
+    def test_simulation_request_investment_mode_accepts_elasticity(self):
+        from app.schemas.impacto_economico import ImpactSimulationRequest
+
+        req = ImpactSimulationRequest(
+            shock_mode="investment",
+            shock_intensity_pct=10.0,
+            investment_to_movement_elasticity=0.8,
+        )
+        assert req.shock_mode == "investment"
+        assert req.investment_to_movement_elasticity == 0.8
+
     def test_all_valid_methods_accepted(self):
         from app.schemas.impacto_economico import EconomicImpactAnalysisCreateRequest
         for method in ("did", "event_study", "compare"):
@@ -431,6 +459,22 @@ class TestRouter:
             "error_message": None,
         }
 
+    def _mock_simulation_detail(
+        self,
+        status: str = "success",
+        result_full: dict | None = None,
+    ) -> dict:
+        detail = self._mock_detail(status=status)
+        if result_full is None:
+            detail["result_full"] = {
+                "toneladas_antaq_log": {"main_result": {"coef": 0.08, "p_value": 0.02}},
+                "pib_log": {"main_result": {"coef": 0.04, "p_value": 0.03}},
+                "empregos_totais_log": {"main_result": {"coef": 0.10, "p_value": 0.01}},
+            }
+        else:
+            detail["result_full"] = result_full
+        return detail
+
     def _make_client(self, mock_service: MagicMock):
         from fastapi import FastAPI
         import app.api.v1.impacto_economico.router as router_module
@@ -593,6 +637,36 @@ class TestRouter:
         body = resp.json()
         assert body["result_summary"]["coef"] == pytest.approx(0.15)
 
+    def test_get_result_loads_artifact_payload_when_inline_empty(self, tmp_path):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        artifact_payload = {
+            "pib_log": {
+                "main_result": {"coef": 0.2, "p_value": 0.01, "std_err": 0.02},
+            }
+        }
+        artifact_path = tmp_path / "result_full.json"
+        artifact_path.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+        detail_payload = self._mock_detail(status="success")
+        detail_payload["result_full"] = None
+        detail_payload["artifact_path"] = str(artifact_path)
+        detail = EconomicImpactAnalysisDetailResponse(**detail_payload)
+
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+        client = self._make_client(svc)
+
+        resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/result")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "pib_log" in body["result_full"]
+        warnings = body["result_summary"].get("warnings") if isinstance(body["result_summary"], dict) else None
+        assert warnings and any(
+            "artifact_path" in str(warning) for warning in warnings
+        )
+
     def test_get_result_not_found_returns_404(self):
         from app.services.impacto_economico.analysis_service import AnalysisNotFoundError
 
@@ -656,8 +730,196 @@ class TestRouter:
         assert "get" in result_path
         report_path = paths[f"{self.PREFIX}/analises/{{analysis_id}}/report"]
         assert "get" in report_path
+        simulation_path = paths[f"{self.PREFIX}/analises/{{analysis_id}}/simulacao"]
+        assert "post" in simulation_path
         matching_path = paths[f"{self.PREFIX}/matching"]
         assert "post" in matching_path
+
+    def test_simulate_impact_movement_mode_success(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        detail = EconomicImpactAnalysisDetailResponse(**self._mock_simulation_detail())
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        payload = {
+            "shock_mode": "movement",
+            "shock_intensity_pct": 10,
+            "reference_outcome": "toneladas_antaq_log",
+            "target_outcomes": ["toneladas_antaq_log", "pib_log", "empregos_totais_log"],
+        }
+
+        client = self._make_client(svc)
+        resp = client.post(
+            f"{self.PREFIX}/analises/{ANALYSIS_ID}/simulacao",
+            json=payload,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["shock_mode"] == "movement"
+        assert body["shock_intensity_pct"] == 10
+        assert body["applied_shock_intensity_pct"] == 10
+        assert len(body["projected_outcomes"]) == 3
+        assert body["simulation_metadata"]["model_version"] == "simulador_impacto_v1"
+        assert "Método causal de origem: did." in body["simulation_metadata"]["notes"]
+
+    def test_simulate_impact_investment_mode_uses_elasticity(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        detail = EconomicImpactAnalysisDetailResponse(**self._mock_simulation_detail())
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        payload = {
+            "shock_mode": "investment",
+            "shock_intensity_pct": 10,
+            "investment_to_movement_elasticity": 0.5,
+            "reference_outcome": "toneladas_antaq_log",
+            "target_outcomes": ["pib_log", "empregos_totais_log"],
+        }
+
+        client = self._make_client(svc)
+        resp = client.post(
+            f"{self.PREFIX}/analises/{ANALYSIS_ID}/simulacao",
+            json=payload,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["shock_mode"] == "investment"
+        assert body["shock_intensity_pct"] == 10
+        assert body["investment_to_movement_elasticity"] == 0.5
+        assert body["applied_shock_intensity_pct"] == 5
+
+    def test_simulate_impact_includes_ci_and_notes(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        detail = EconomicImpactAnalysisDetailResponse(
+            **self._mock_simulation_detail(
+                result_full={
+                    "metadata": {"model_version": "v-test-2026-02-28"},
+                    "toneladas_antaq_log": {
+                        "main_result": {
+                            "coef": 0.1,
+                            "std_err": 0.01,
+                            "p_value": 0.001,
+                            "ci_lower": 0.08,
+                            "ci_upper": 0.12,
+                        },
+                    },
+                    "pib_log": {
+                        "main_result": {
+                            "coef": 0.05,
+                            "std_err": 0.02,
+                            "p_value": 0.02,
+                            "ci_lower": 0.01,
+                            "ci_upper": 0.10,
+                        },
+                    },
+                },
+            )
+        )
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        payload = {
+            "shock_mode": "movement",
+            "shock_intensity_pct": 10,
+            "reference_outcome": "toneladas_antaq_log",
+            "target_outcomes": ["pib_log"],
+        }
+
+        client = self._make_client(svc)
+        resp = client.post(
+            f"{self.PREFIX}/analises/{ANALYSIS_ID}/simulacao",
+            json=payload,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["simulation_metadata"]["model_version"] == "v-test-2026-02-28"
+        assert body["projected_outcomes"][0]["treatment_effect_100pct_ci_lower"] is not None
+        assert body["projected_outcomes"][0]["treatment_effect_100pct_ci_upper"] is not None
+        assert body["projected_outcomes"][0]["projected_delta_pct_conservative"] is not None
+        assert body["projected_outcomes"][0]["projected_delta_pct_optimistic"] is not None
+        assert isinstance(body["projected_outcomes"][0]["notes"], list)
+
+    def test_simulate_impact_loads_from_artifact_when_inline_result_full_empty(self, tmp_path):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        artifact_path = tmp_path / "causal_result.json"
+        artifact_payload = {
+            "metadata": {"model_version": "artifact-v1"},
+            "toneladas_antaq_log": {
+                "main_result": {
+                    "coef": 0.06,
+                    "std_err": 0.012,
+                    "p_value": 0.01,
+                    "ci_lower": 0.04,
+                    "ci_upper": 0.08,
+                }
+            },
+            "pib_log": {
+                "main_result": {
+                    "coef": 0.035,
+                    "std_err": 0.01,
+                    "p_value": 0.04,
+                    "ci_lower": 0.01,
+                    "ci_upper": 0.07,
+                }
+            },
+        }
+        artifact_path.write_text(json.dumps(artifact_payload), encoding="utf-8")
+
+        detail_payload = self._mock_simulation_detail(result_full={})
+        detail_payload["artifact_path"] = str(artifact_path)
+        detail_payload["result_full"] = None
+        detail = EconomicImpactAnalysisDetailResponse(**detail_payload)
+
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        payload = {
+            "shock_mode": "movement",
+            "shock_intensity_pct": 10,
+            "reference_outcome": "toneladas_antaq_log",
+            "target_outcomes": ["pib_log"],
+        }
+
+        client = self._make_client(svc)
+        resp = client.post(
+            f"{self.PREFIX}/analises/{ANALYSIS_ID}/simulacao",
+            json=payload,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["simulation_metadata"]["model_version"] == "artifact-v1"
+        assert body["simulation_metadata"]["notes"][0].startswith("Resultado causal carregado via artifact_path")
+        assert body["projected_outcomes"][0]["outcome"] == "pib_log"
+        assert body["projected_outcomes"][0]["treatment_effect_100pct"] is not None
+
+    def test_simulate_impact_investment_mode_without_elasticity_returns_422(self):
+        from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
+
+        detail = EconomicImpactAnalysisDetailResponse(**self._mock_simulation_detail())
+        svc = MagicMock()
+        svc.get_detail = AsyncMock(return_value=detail)
+
+        payload = {
+            "shock_mode": "investment",
+            "shock_intensity_pct": 10,
+            "reference_outcome": "toneladas_antaq_log",
+        }
+
+        client = self._make_client(svc)
+        resp = client.post(
+            f"{self.PREFIX}/analises/{ANALYSIS_ID}/simulacao",
+            json=payload,
+        )
+
+        assert resp.status_code == 422
 
     def test_get_matching_controls_returns_200(self):
         svc = MagicMock()
@@ -699,6 +961,25 @@ class TestRouter:
         assert body["n_candidates"] == 1
         assert body["suggested_controls"][0]["id_municipio"] == "3304557"
         mock_matching.assert_called_once()
+
+    def test_matching_returns_400_on_value_error(self):
+        matching_payload = {
+            "treated_ids": ["2111300"],
+            "treatment_year": 2015,
+            "scope": "state",
+            "ano_inicio": 2010,
+            "ano_fim": 2023,
+        }
+
+        with patch(
+            "app.services.impacto_economico.causal.matching.suggest_control_matches",
+            new=AsyncMock(side_effect=ValueError("Sem observações pré-tratamento para calcular distância.")),
+        ):
+            client = self._make_client(MagicMock())
+            resp = client.post(f"{self.PREFIX}/matching", json=matching_payload)
+
+        assert resp.status_code == 400
+        assert "Sem observações pré-tratamento" in resp.json()["detail"]
 
     def test_get_analysis_report_not_found(self):
         from app.services.impacto_economico.analysis_service import AnalysisNotFoundError

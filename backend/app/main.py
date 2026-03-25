@@ -3,6 +3,7 @@ Aplicação Principal FastAPI - SaaS Impacto Portuário
 
 Entry point do servidor REST API com suporte a multi-tenancy.
 """
+from __future__ import annotations
 
 from time import perf_counter
 from typing import Any

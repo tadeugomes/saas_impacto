@@ -6,6 +6,10 @@ import { useFilterStore } from '../../store/filterStore';
 interface ExportButtonProps {
   moduleCode: string;
   indicatorCode?: string;
+  analysisId?: string;
+  compareAnalysisIds?: string[];
+  municipioId?: string;
+  deltaTonelagemPct?: number;
   label?: string;
   variant?: 'primary' | 'secondary';
   className?: string;
@@ -16,6 +20,10 @@ interface ExportButtonProps {
 export function ExportButton({
   moduleCode,
   indicatorCode,
+  analysisId,
+  compareAnalysisIds,
+  municipioId,
+  deltaTonelagemPct,
   label = indicatorCode ? 'Exportar Indicador' : 'Exportar Módulo',
   variant = 'secondary',
   className = '',
@@ -40,7 +48,11 @@ export function ExportButton({
         await reportsService.exportModule({
           moduleCode,
           id_instalacao: selectedInstallation || undefined,
+          id_municipio: municipioId || undefined,
           ano: selectedYear || undefined,
+          analysis_id: analysisId || undefined,
+          compare_analysis_ids: compareAnalysisIds?.length ? compareAnalysisIds.join(',') : undefined,
+          delta_tonelagem_pct: deltaTonelagemPct,
           format,
         });
       }

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 MODULE_TEMPLATES: Dict[str, Dict] = {
     "IND-1": {
         "name": "Módulo 1 - Operações de Navios",
-        "description": "Indicadores de operações de navios seguindo padrão UNCTAD",
+        "description": "Indicadores de eficiência e desempenho operacional de navios",
         "indicators": [
             {"code": "IND-1.01", "name": "Tempo Médio de Espera", "unit": "Horas", "description": "Tempo entre chegada e atracação"},
             {"code": "IND-1.02", "name": "Tempo Médio em Porto", "unit": "Horas", "description": "Tempo total no porto"},
@@ -27,10 +27,22 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-1.12", "name": "Índice de Paralisação", "unit": "%", "description": "Tempo ocioso / tempo atracado"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-1.11", "role": "headline", "label": "Atracações no período"},
+            {"indicator": "IND-1.01", "role": "context", "label": "Tempo médio de espera"},
+            {"indicator": "IND-1.05", "role": "context", "label": "Ocupação de berços"},
+            {"indicator": "IND-1.12", "role": "alert", "label": "Índice de paralisação",
+             "threshold": 20, "threshold_label": "limite operacional recomendado"},
+        ],
+        "methodological_notes": [
+            "Dados de atracação: ANTAQ, Sistema de Desempenho Portuário (SDP).",
+            "Tempos operacionais calculados conforme metodologia SDP/ANTAQ.",
+            "Valores podem estar sujeitos a revisão conforme atualização das fontes.",
+        ],
     },
     "IND-2": {
         "name": "Módulo 2 - Operações de Carga",
-        "description": "Indicadores de operações de carga seguindo padrão UNCTAD",
+        "description": "Indicadores de movimentação e produtividade de carga",
         "indicators": [
             {"code": "IND-2.01", "name": "Carga Total Movimentada", "unit": "Toneladas", "description": "Soma de carga embarcada e desembarcada"},
             {"code": "IND-2.05", "name": "Carga Média por Atracação", "unit": "Toneladas", "description": "Carga média por atracação"},
@@ -41,15 +53,24 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-2.13", "name": "Sazonalidade", "unit": "Índice", "description": "Variação mensal da carga"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-2.01", "role": "headline", "label": "Carga total movimentada"},
+            {"indicator": "IND-2.06", "role": "context", "label": "Produtividade de berço"},
+            {"indicator": "IND-2.12", "role": "context", "label": "Mix de carga"},
+        ],
+        "methodological_notes": [
+            "Dados de movimentação: ANTAQ, Sistema de Desempenho Portuário (SDP).",
+            "Produtividade calculada como toneladas por hora de operação efetiva.",
+            "Valores podem estar sujeitos a revisão conforme atualização das fontes.",
+        ],
     },
     "IND-3": {
         "name": "Módulo 3 - Recursos Humanos",
-        "description": "Indicadores de recursos humanos seguindo padrão UNCTAD",
+        "description": "Indicadores de emprego, remuneração e perfil da força de trabalho portuária",
         "indicators": [
             {"code": "IND-3.01", "name": "Empregos Portuários", "unit": "Empregos", "description": "Total de empregos no setor portuário (RAIS)"},
             {"code": "IND-3.02", "name": "Paridade de Gênero", "unit": "%", "description": "Percentual de mulheres no setor portuário"},
             {"code": "IND-3.03", "name": "Paridade por Categoria", "unit": "%", "description": "Paridade por categoria profissional"},
-            {"code": "IND-3.04", "name": "Taxa Emprego Temporário", "unit": "%", "description": "Percentual de contratos temporários"},
             {"code": "IND-3.05", "name": "Salário Médio", "unit": "R$", "description": "Remuneração média mensal"},
             {"code": "IND-3.06", "name": "Massa Salarial", "unit": "R$", "description": "Massa salarial anual estimada"},
             {"code": "IND-3.07", "name": "Produtividade", "unit": "ton/emp", "description": "Toneladas por empregado"},
@@ -60,10 +81,31 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-3.12", "name": "Participação Emprego Local", "unit": "%", "description": "Participação no emprego total do município"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-3.01", "role": "headline", "label": "Empregos diretos no setor portuário"},
+            {"indicator": "IND-3.02", "role": "esg", "label": "Participação feminina",
+             "benchmark": 50, "benchmark_label": "paridade de gênero"},
+            {"indicator": "IND-3.11", "role": "trend", "label": "Variação anual de empregos"},
+            {"indicator": "IND-3.05", "role": "context", "label": "Salário médio mensal"},
+        ],
+        "methodological_notes": [
+            "Dados de emprego: RAIS/CAGED (MTE), classificação CBO-2002 para setor portuário.",
+            "Multiplicadores de emprego, produção e renda: derivados da Matriz de Insumo-Produto "
+            "nacional (IBGE, 2015), tabulada por Vale & Perobelli (2020), setor Transporte, "
+            "Armazenagem e Correios (CNAE 49-53). Ajuste regional via Quociente Locacional "
+            "(Miller & Blair, 2009, cap. 3).",
+            "Dados de carga: ANTAQ, Sistema de Desempenho Portuário (SDP).",
+            "Limitações: os multiplicadores são uma aproximação baseada em MIP nacional com "
+            "ajuste por QL — não substituem uma MIP regional completa (com balanceamento RAS). "
+            "Para investimentos portuários de grande porte, recomenda-se complementar com "
+            "estudos de impacto específicos baseados em MIP estadual.",
+            "Ano de referência da MIP: 2015. Os coeficientes técnicos podem ter se alterado.",
+        ],
+        "extra_sections": ["employment_impact"],
     },
     "IND-4": {
         "name": "Módulo 4 - Comércio Exterior",
-        "description": "Indicadores de comércio exterior seguindo padrão UNCTAD",
+        "description": "Indicadores de comércio exterior e integração com mercados internacionais",
         "indicators": [
             {"code": "IND-4.01", "name": "Valor FOB Exportações", "unit": "US$", "description": "Valor total das exportações"},
             {"code": "IND-4.02", "name": "Valor FOB Importações", "unit": "US$", "description": "Valor total das importações"},
@@ -77,6 +119,17 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-4.10", "name": "Market Share", "unit": "%", "description": "Participação no mercado nacional"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-4.01", "role": "headline", "label": "Exportações (FOB)"},
+            {"indicator": "IND-4.03", "role": "context", "label": "Saldo da balança comercial"},
+            {"indicator": "IND-4.09", "role": "trend", "label": "Variação anual do comércio"},
+            {"indicator": "IND-4.10", "role": "context", "label": "Market share nacional"},
+        ],
+        "methodological_notes": [
+            "Dados de comércio exterior: ComexStat/MDIC.",
+            "Valores FOB em dólares americanos (US$).",
+            "Market share calculado sobre total nacional por via marítima.",
+        ],
     },
     "IND-5": {
         "name": "Módulo 5 - Impacto Econômico Regional",
@@ -105,6 +158,18 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-5.21", "name": "Índice Concentração Portuária", "unit": "0-100", "description": "Índice composto de concentração"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-5.01", "role": "headline", "label": "PIB municipal"},
+            {"indicator": "IND-5.06", "role": "context", "label": "Intensidade portuária"},
+            {"indicator": "IND-5.10", "role": "trend", "label": "Crescimento do PIB"},
+            {"indicator": "IND-5.14", "role": "context", "label": "Correlação tonelagem x PIB"},
+        ],
+        "methodological_notes": [
+            "PIB municipal: IBGE, Contas Regionais.",
+            "Dados de carga e comércio: ANTAQ e ComexStat/MDIC.",
+            "Análise causal: métodos econométricos (DiD, IV, SCM) com controles selecionados.",
+        ],
+        "extra_sections": ["causal_analysis", "causal_comparison"],
     },
     "IND-6": {
         "name": "Módulo 6 - Finanças Públicas",
@@ -123,10 +188,20 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-6.11", "name": "Elasticidade Tonelagem/Receita Fiscal", "unit": "Elast", "description": "Sensibilidade da tonelagem à variação da receita fiscal (modelo log-log), associação estatística sem causalidade."},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-6.03", "role": "headline", "label": "Receita total municipal"},
+            {"indicator": "IND-6.05", "role": "trend", "label": "Crescimento da receita"},
+            {"indicator": "IND-6.06", "role": "context", "label": "ICMS por tonelada"},
+        ],
+        "methodological_notes": [
+            "Dados fiscais: FINBRA/Tesouro Nacional e Secretarias Estaduais de Fazenda.",
+            "Receita per capita calculada com base na população estimada do IBGE.",
+            "Elasticidades estimadas por modelo log-log; associação estatística, não causalidade.",
+        ],
     },
     "IND-7": {
         "name": "Módulo 7 - Índices Sintéticos",
-        "description": "Indicadores de índices sintéticos seguindo padrão UNCTAD",
+        "description": "Índices sintéticos de desempenho, relevância e sustentabilidade portuária",
         "indicators": [
             {"code": "IND-7.01", "name": "Índice de Eficiência Portuária", "unit": "0-100", "description": "Índice composto de eficiência"},
             {"code": "IND-7.02", "name": "Índice de Relevância", "unit": "0-100", "description": "Índice composto de relevância"},
@@ -137,6 +212,16 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-7.07", "name": "Índice de Desempenho Consolidado", "unit": "0-100", "description": "Índice geral consolidado"},
         ],
         "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-7.07", "role": "headline", "label": "Desempenho consolidado"},
+            {"indicator": "IND-7.01", "role": "context", "label": "Eficiência portuária"},
+            {"indicator": "IND-7.02", "role": "context", "label": "Relevância"},
+        ],
+        "methodological_notes": [
+            "Índices compostos calculados por análise multivariada de indicadores dos módulos 1-6.",
+            "Escala de 0 a 100; valores maiores indicam melhor desempenho relativo.",
+            "Metodologia de composição disponível na documentação técnica.",
+        ],
     },
 }
 

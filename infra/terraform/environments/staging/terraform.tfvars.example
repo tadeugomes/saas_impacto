@@ -1,8 +1,9 @@
 project_id = "seu-projeto-gcp"
 region     = "southamerica-east1"
 
-api_image    = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/api:<tag>"
-worker_image = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/worker:<tag>"
+api_image      = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/api:<tag>"
+worker_image   = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/worker:<tag>"
+frontend_image = "southamerica-east1-docker.pkg.dev/seu-projeto/saas-impacto/frontend:<tag>"
 
 database_password = "troque-por-uma-senha-forte"
 

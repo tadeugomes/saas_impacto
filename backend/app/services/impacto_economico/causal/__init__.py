@@ -16,9 +16,9 @@ Fluxo típico::
     result = run_did_with_diagnostics(panel, outcome="pib_log", treatment_year=2015)
     payload = serialize_causal_result(result)  # list[dict] JSON-safe
 
-Módulos experimentais (feature flag):
-    :mod:`scm` — Synthetic Control Method (stub; requer ENABLE_SCM=true)
-    :mod:`augmented_scm` — Augmented SCM (stub; requer ENABLE_AUGMENTED_SCM=true)
+Métodos adicionais:
+    :mod:`scm` — Synthetic Control Method (implementação local com SLSQP)
+    :mod:`augmented_scm` — Augmented SCM (Ben-Michael et al. 2021, ridge correction)
 """
 
 from app.services.impacto_economico.causal.prep import (
@@ -100,11 +100,11 @@ __all__ = [
     "serialize_causal_result",
     "dataframe_to_records",
     "sanitize_scalars",
-    # scm (experimental — feature flag ENABLE_SCM)
+    # scm
     "SCMNotAvailableError",
     "run_scm",
     "run_scm_with_diagnostics",
-    # augmented_scm (experimental — feature flag ENABLE_AUGMENTED_SCM)
+    # augmented_scm
     "AugmentedSCMNotAvailableError",
     "run_augmented_scm",
     "run_augmented_scm_with_diagnostics",

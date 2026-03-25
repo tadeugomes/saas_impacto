@@ -30,6 +30,11 @@ variable "worker_image" {
   description = "Imagem Docker do worker Celery"
 }
 
+variable "frontend_image" {
+  type        = string
+  description = "Imagem Docker do frontend (Nginx + Vite build)"
+}
+
 variable "secrets" {
   type        = map(string)
   sensitive   = true

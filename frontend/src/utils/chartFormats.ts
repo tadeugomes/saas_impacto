@@ -188,7 +188,6 @@ export const INDICATOR_FORMATS: Record<string, ChartValueFormat> = {
   'IND-3.01': 'quantity',     // Empregos
   'IND-3.02': 'percent',      // % feminino
   'IND-3.03': 'percent',
-  'IND-3.04': 'percent',
   'IND-3.05': 'currency-compact',  // Salário R$
   'IND-3.06': 'currency-compact',  // Massa salarial R$
   'IND-3.07': 'number',       // ton/empregado
@@ -197,6 +196,10 @@ export const INDICATOR_FORMATS: Record<string, ChartValueFormat> = {
   'IND-3.10': 'number',       // Idade média
   'IND-3.11': 'percent',
   'IND-3.12': 'percent',
+  'IND-3.13': 'currency-compact',
+  'IND-3.14': 'currency-compact',
+  'IND-3.15': 'currency-compact',
+  'IND-3.16': 'currency-compact',
 
   // Módulo 4 - Comércio Exterior
   'IND-4.01': 'currency-compact',  // US$

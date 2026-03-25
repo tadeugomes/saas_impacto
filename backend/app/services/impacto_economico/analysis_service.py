@@ -49,20 +49,6 @@ class AnalysisNotFoundError(LookupError):
     """Análise não encontrada (ou pertence a outro tenant)."""
 
 
-class MethodNotAvailableError(NotImplementedError):
-    """Método causal não disponível: feature flag desabilitada ou módulo ausente.
-
-    Levantada quando o cliente solicita ``scm`` ou ``augmented_scm`` e a
-    respectiva feature flag (``ENABLE_SCM`` / ``ENABLE_AUGMENTED_SCM``)
-    está desabilitada no ``.env``.
-
-    O router captura esta exceção e retorna HTTP 501 Not Implemented.
-    """
-
-
-# Métodos que exigem feature flag explícita
-_EXPERIMENTAL_METHODS: frozenset[str] = frozenset({"scm", "augmented_scm"})
-
 
 class AnalysisService:
     """
@@ -85,37 +71,6 @@ class AnalysisService:
     # ──────────────────────────────────────────────────────────────────────────
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Validação de disponibilidade de método
-    # ──────────────────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _assert_method_available(method: str) -> None:
-        """Verifica se o método solicitado está habilitado pela feature flag.
-
-        Raises
-        ------
-        MethodNotAvailableError
-            Se ``method`` é experimental e a respectiva feature flag está
-            desabilitada (padrão) ou o módulo ainda não foi portado.
-        """
-        if method not in _EXPERIMENTAL_METHODS:
-            return  # método estável — sempre disponível
-
-        from app.config import get_settings
-
-        settings = get_settings()
-
-        if method == "scm" and not settings.enable_scm:
-            from app.services.impacto_economico.causal.scm import SCMNotAvailableError
-            raise MethodNotAvailableError(str(SCMNotAvailableError()))
-
-        if method == "augmented_scm" and not settings.enable_augmented_scm:
-            from app.services.impacto_economico.causal.augmented_scm import (
-                AugmentedSCMNotAvailableError,
-            )
-            raise MethodNotAvailableError(str(AugmentedSCMNotAvailableError()))
-
-    # ──────────────────────────────────────────────────────────────────────────
     # Operações de escrita
     # ──────────────────────────────────────────────────────────────────────────
 
@@ -129,16 +84,10 @@ class AnalysisService:
         Fluxo MVP (síncrono):
           queued → running → (success | failed)
 
-        Raises
-        ------
-        MethodNotAvailableError
-            Se o método é experimental e a feature flag está desabilitada.
-
         Returns
         -------
         EconomicImpactAnalysisDetailResponse com status final.
         """
-        self._assert_method_available(request.method)
         analysis = await self._create_queued(request, user_id)
         analysis = await self._execute(analysis, request)
         return EconomicImpactAnalysisDetailResponse.from_orm_instance(analysis)
@@ -150,17 +99,10 @@ class AnalysisService:
     ) -> EconomicImpactAnalysisResponse:
         """Cria análise com status=queued sem executar (para workers).
 
-        Raises
-        ------
-        MethodNotAvailableError
-            Se o método é experimental e a feature flag está desabilitada.
-            O router captura esta exceção e retorna HTTP 501.
-
         Returns
         -------
         EconomicImpactAnalysisResponse com status='queued'.
         """
-        self._assert_method_available(request.method)
         analysis = await self._create_queued(request, user_id)
         return EconomicImpactAnalysisResponse.model_validate(analysis)
 

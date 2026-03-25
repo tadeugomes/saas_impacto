@@ -7,7 +7,7 @@ de análises causais (DiD, IV, Panel IV, Event Study, Compare).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -17,12 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 MethodLiteral = Literal[
     "did", "iv", "panel_iv", "event_study", "compare",
-    # ── Métodos experimentais (requerem feature flag) ──────────────────────
-    # "scm" e "augmented_scm" são aceitos pela API mas retornam HTTP 501
-    # enquanto os módulos synthetic_control.py / synthetic_augmented.py
-    # não estiverem portados e ENABLE_SCM / ENABLE_AUGMENTED_SCM=true.
-    "scm",
-    "augmented_scm",
+    "scm", "augmented_scm",
 ]
 ScopeLiteral = Literal["state", "municipal"]
 StatusLiteral = Literal["queued", "running", "success", "failed"]
@@ -49,6 +44,7 @@ _VALID_INSTRUMENTS = frozenset(
         "commodity_index",
     }
 )
+ShockModeLiteral = Literal["movement", "investment"]
 
 
 # ── Request ───────────────────────────────────────────────────────────────────
@@ -79,7 +75,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     ]
 
-    control_ids: list[str] | None = Field(
+    control_ids: Optional[List[str]] = Field(
         default=None,
         max_length=500,
         description=(
@@ -119,7 +115,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     ]
 
-    controls: list[str] | None = Field(
+    controls: Optional[List[str]] = Field(
         default=None,
         max_length=10,
         description=(
@@ -128,7 +124,7 @@ class EconomicImpactAnalysisCreateRequest(BaseModel):
         ),
     )
 
-    instrument: str | None = Field(
+    instrument: Optional[str] = Field(
         default=None,
         description=(
             "Instrumento exógeno para métodos IV e panel_iv. "
@@ -231,7 +227,7 @@ class EconomicImpactAnalysisResponse(BaseModel):
 
     id: UUID = Field(..., description="UUID da análise.")
     tenant_id: UUID = Field(..., description="UUID do tenant dono da análise.")
-    user_id: UUID | None = Field(None, description="UUID do usuário que disparou.")
+    user_id: Optional[UUID] = Field(None, description="UUID do usuário que disparou.")
     status: StatusLiteral = Field(..., description="queued | running | success | failed")
     method: str = Field(..., description="Método causal utilizado.")
     created_at: datetime
@@ -243,14 +239,14 @@ class EconomicImpactAnalysisResponse(BaseModel):
 class EconomicImpactResultSummary(BaseModel):
     """Resumo executivo dos resultados (populado quando status=success)."""
 
-    outcome: str | None = None
-    coef: float | None = Field(None, description="Coeficiente ATT estimado.")
-    std_err: float | None = Field(None, description="Erro padrão.")
-    p_value: float | None = Field(None, description="P-valor.")
-    ci_lower: float | None = Field(None, description="Limite inferior IC 95%.")
-    ci_upper: float | None = Field(None, description="Limite superior IC 95%.")
-    n_obs: int | None = Field(None, description="Número de observações.")
-    r2: float | None = Field(None, description="R² do modelo.")
+    outcome: Optional[str] = None
+    coef: Optional[float] = Field(None, description="Coeficiente ATT estimado.")
+    std_err: Optional[float] = Field(None, description="Erro padrão.")
+    p_value: Optional[float] = Field(None, description="P-valor.")
+    ci_lower: Optional[float] = Field(None, description="Limite inferior IC 95%.")
+    ci_upper: Optional[float] = Field(None, description="Limite superior IC 95%.")
+    n_obs: Optional[int] = Field(None, description="Número de observações.")
+    r2: Optional[float] = Field(None, description="R² do modelo.")
     warnings: list[str] = Field(default_factory=list, description="Alertas metodológicos.")
 
     model_config = {"from_attributes": True}
@@ -259,14 +255,14 @@ class EconomicImpactResultSummary(BaseModel):
 class EconomicImpactAnalysisDetailResponse(EconomicImpactAnalysisResponse):
     """Resposta detalhada: inclui parâmetros, resumo e diagnósticos."""
 
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    duration_seconds: float | None = None
-    request_params: dict[str, Any] = Field(default_factory=dict)
-    result_summary: dict[str, Any] | None = None
-    result_full: dict[str, Any] | None = None
-    artifact_path: str | None = None
-    error_message: str | None = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    request_params: dict = Field(default_factory=dict)
+    result_summary: Optional[dict] = None
+    result_full: Optional[dict] = None
+    artifact_path: Optional[str] = None
+    error_message: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -313,11 +309,11 @@ class MatchingCandidate(BaseModel):
     """Item retornado por matching de controles."""
 
     id_municipio: str = Field(..., description="Código IBGE do município candidato.")
-    similarity_score: float | None = Field(
+    similarity_score: Optional[float] = Field(
         default=None,
         description="Similaridade entre tratado e candidato (maior é mais próximo).",
     )
-    distance: float | None = Field(
+    distance: Optional[float] = Field(
         default=None,
         description="Distância padronizada no espaço de features.",
     )
@@ -374,7 +370,7 @@ class MatchingRequest(BaseModel):
         description="Fim da janela usada para cálculo de distâncias.",
     )
 
-    features: list[str] | None = Field(
+    features: Optional[List[str]] = Field(
         default=None,
         max_length=20,
         description=(
@@ -407,3 +403,143 @@ class MatchingResponse(BaseModel):
     n_treated: int = Field(default=0, ge=0)
     n_candidates: int = Field(default=0, ge=0)
     features: list[str] = Field(default_factory=list)
+
+
+# ── Simulação de Impacto ───────────────────────────────────────────────────────
+
+
+from datetime import datetime
+
+class ImpactSimulationRequest(BaseModel):
+    """Parâmetros de cenário para estimar impacto hipotético."""
+
+    shock_mode: ShockModeLiteral = Field(
+        default="movement",
+        description=(
+            "Modo de entrada do cenário:\n"
+            "- `movement` (padrão): choques já em % de movimentação.\n"
+            "- `investment`: choques em % de investimento; aplica elasticidade de transmissão."
+        ),
+    )
+
+    shock_intensity_pct: float = Field(
+        ...,
+        ge=-100,
+        le=500,
+        description=(
+            "Intensidade hipotética do choque em % (ex.: 10 = +10%).\n"
+            "Se `shock_mode='movement'`, é variação de movimentação.\n"
+            "Se `shock_mode='investment'`, é variação de investimento e será convertida "
+            "para movimentação usando `investment_to_movement_elasticity`."
+        ),
+    )
+    reference_outcome: str = Field(
+        default="toneladas_antaq_log",
+        description=(
+            "Outcome de referência para escalar o cenário. "
+            "Recomendado: `toneladas_antaq_log`."
+        ),
+    )
+    investment_to_movement_elasticity: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Razão de transmissão de investimento -> movimentação (Δmovimentação / Δinvestimento). "
+            "Obrigatório quando `shock_mode='investment'`."
+        ),
+    )
+    target_outcomes: Optional[List[str]] = Field(
+        default=None,
+        max_length=50,
+        description=(
+            "Outcomes a projetar. "
+            "Se None, usa todos os outcomes disponíveis na análise."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_investment_inputs(self) -> "ImpactSimulationRequest":
+        if self.shock_mode == "investment" and self.investment_to_movement_elasticity is None:
+            raise ValueError(
+                "investment_to_movement_elasticity é obrigatório quando shock_mode='investment'."
+            )
+        return self
+
+
+class ImpactSimulationProjection(BaseModel):
+    """Projeção por variável de resultado."""
+
+    outcome: str = Field(..., description="Variável de resultado projetada.")
+    outcome_label: str = Field(..., description="Rótulo amigável para apresentação.")
+    treatment_effect_100pct: Optional[float] = Field(
+        default=None,
+        description="Efeito estimado da intervenção completa (100%) em %.",
+    )
+    projected_delta_pct: Optional[float] = Field(
+        default=None,
+        description="Projeção em % para o cenário informado.",
+    )
+    method_used: str = Field(..., description="Regra de cálculo aplicada.")
+    coef: Optional[float] = Field(default=None, description="Coeficiente estimado (escala original do modelo).")
+    std_err: Optional[float] = Field(default=None, description="Erro padrão estimado.")
+    p_value: Optional[float] = Field(default=None, description="P-valor do coeficiente da fonte.")
+    confidence: str = Field(default="fraca", description="Rótulo de confiança: forte | moderada | fraca")
+    notes: list[str] = Field(default_factory=list, description="Notas de ajuste/qualidade da projeção.")
+    warning: Optional[str] = Field(default=None, description="Observação de qualidade para o cenário.")
+    treatment_effect_100pct_ci_lower: Optional[float] = Field(
+        default=None,
+        description="Limite inferior (95%) do efeito em 100% de intervenção, em %.",
+    )
+    treatment_effect_100pct_ci_upper: Optional[float] = Field(
+        default=None,
+        description="Limite superior (95%) do efeito em 100% de intervenção, em %.",
+    )
+    projected_delta_pct_conservative: Optional[float] = Field(
+        default=None,
+        description="Projeção conservadora para o cenário informado (faixa baixa), em %.",
+    )
+    projected_delta_pct_optimistic: Optional[float] = Field(
+        default=None,
+        description="Projeção otimista para o cenário informado (faixa alta), em %.",
+    )
+
+
+class ImpactSimulationMetadata(BaseModel):
+    """Metadados de geração da simulação executiva."""
+
+    model_version: str = Field(default="simulador_impacto_v1", description="Versão do modelo usado")
+    as_of: datetime = Field(default_factory=datetime.utcnow, description="Timestamp de geração")
+    notes: list[str] = Field(default_factory=list, description="Notas operacionais/avisos de qualidade.")
+    generated_by: str = Field(default="impacto_economico_router", description="Componente que gerou o output")
+
+
+class ImpactSimulationResponse(BaseModel):
+    """Resposta da calculadora de impacto baseada em análise causal."""
+
+    analysis_id: UUID
+    method: str
+    shock_intensity_pct: float
+    shock_mode: str = Field(default="movement")
+    applied_shock_intensity_pct: float = Field(
+        ...,
+        description="Choque efetivo de movimentação aplicado aos outcomes (em %).",
+    )
+    investment_to_movement_elasticity: Optional[float] = Field(
+        default=None,
+        description=(
+            "Elasticidade usada para converter investimento em movimentação, "
+            "quando aplicável."
+        ),
+    )
+    reference_outcome: str
+    reference_effect_100pct: Optional[float] = Field(
+        default=None,
+        description="Efeito da referência para 100% de intervenção (em %)."
+    )
+    projected_outcomes: list[ImpactSimulationProjection]
+    assumptions: list[str] = Field(default_factory=list)
+    simulation_metadata: ImpactSimulationMetadata = Field(
+        default_factory=ImpactSimulationMetadata,
+        description="Metadados da simulação.",
+    )
+    executive_summary: list[str] = Field(default_factory=list)

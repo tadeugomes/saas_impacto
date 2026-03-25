@@ -9,6 +9,8 @@ import logging
 import math
 import time
 import inspect
+import re
+import unicodedata
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
 
@@ -235,7 +237,6 @@ MODULE3_INDICATORS_WITH_YEAR_COVERAGE = {
     "IND-3.01",
     "IND-3.02",
     "IND-3.03",
-    "IND-3.04",
     "IND-3.05",
     "IND-3.06",
     "IND-3.07",
@@ -244,6 +245,10 @@ MODULE3_INDICATORS_WITH_YEAR_COVERAGE = {
     "IND-3.10",
     "IND-3.11",
     "IND-3.12",
+    "IND-3.13",
+    "IND-3.14",
+    "IND-3.15",
+    "IND-3.16",
 }
 
 
@@ -543,16 +548,6 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano/Categoria",
         "fonte_dados": "RAIS - microdados_vinculos",
     },
-    "IND-3.04": {
-        "codigo": "IND-3.04",
-        "nome": "Taxa de Emprego Temporário",
-        "modulo": 3,
-        "unidade": "%",
-        "unctad": True,
-        "descricao": "Percentual de vínculos temporários",
-        "granularidade": "Município/Ano",
-        "fonte_dados": "RAIS - microdados_vinculos",
-    },
     "IND-3.05": {
         "codigo": "IND-3.05",
         "nome": "Salário Médio Setor Portuário",
@@ -630,6 +625,46 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "unidade": "%",
         "unctad": False,
         "descricao": "Participação do setor portuário no emprego total",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-3.13": {
+        "codigo": "IND-3.13",
+        "nome": "Remuneração por Escolaridade e Sexo",
+        "modulo": 3,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Remuneração média por grau de instrução e sexo",
+        "granularidade": "Município/Ano/Escolaridade/Sexo",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-3.14": {
+        "codigo": "IND-3.14",
+        "nome": "Remuneração por Raça/Cor e Sexo",
+        "modulo": 3,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Remuneração média por raça/cor e sexo",
+        "granularidade": "Município/Ano/Raça/Sexo",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-3.15": {
+        "codigo": "IND-3.15",
+        "nome": "Remuneração por Escolaridade, Raça/Cor e Sexo",
+        "modulo": 3,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Remuneração média por combinação de escolaridade, raça/cor e sexo",
+        "granularidade": "Município/Ano/Escolaridade/Raça/Sexo",
+        "fonte_dados": "RAIS - microdados_vinculos",
+    },
+    "IND-3.16": {
+        "codigo": "IND-3.16",
+        "nome": "Remuneração Média com Referência Nacional",
+        "modulo": 3,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Remuneração média municipal com linha de referência da média nacional",
         "granularidade": "Município/Ano",
         "fonte_dados": "RAIS - microdados_vinculos",
     },
@@ -1175,12 +1210,20 @@ class GenericIndicatorService:
         query_func = get_query(codigo)
         module_num = meta.get("modulo", 0)
 
+        resolved_id_municipio = GenericIndicatorService._normalize_municipio_id(
+            request.id_municipio
+        )
+        if request.id_instalacao and not resolved_id_municipio:
+            resolved_id_municipio = GenericIndicatorService._resolve_municipio_from_instalacao(
+                request.id_instalacao
+            )
+
         # Monta parâmetros da query
         raw_params = {}
         if request.id_instalacao:
             raw_params["id_instalacao"] = request.id_instalacao
-        if request.id_municipio:
-            raw_params["id_municipio"] = request.id_municipio
+        if resolved_id_municipio:
+            raw_params["id_municipio"] = resolved_id_municipio
         if request.ano:
             raw_params["ano"] = request.ano
         if request.ano_inicio:
@@ -1196,12 +1239,13 @@ class GenericIndicatorService:
             tenant_id=tenant_id,
             request=request,
             extra_params=raw_params,
+            resolved_id_municipio=resolved_id_municipio,
         )
 
         # Controle E5: allowlist por municipio direto
         self._enforce_municipio_access(
             codigo=codigo,
-            id_municipio=request.id_municipio,
+            id_municipio=resolved_id_municipio,
             tenant_policy=tenant_policy,
         )
 
@@ -1232,7 +1276,7 @@ class GenericIndicatorService:
 
                 if (
                     request.id_instalacao
-                    and not request.id_municipio
+                    and not resolved_id_municipio
                     and request.include_breakdown
                     and all(w.tipo != "municipio_influencia_agregada" for w in cached_warnings)
                 ):
@@ -1243,9 +1287,6 @@ class GenericIndicatorService:
                         "Resultado agregado por município de influência com breakdown municipal.",
                         campo="municipio_influencia",
                     )
-                resolved_id_municipio = request.id_municipio
-                if not resolved_id_municipio and request.id_instalacao:
-                    resolved_id_municipio = PORT_TO_IBGE_MAPPING.get(request.id_instalacao, request.id_instalacao)
                 if not cached_warnings and not cached_data and codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
                     cached_warnings = await self._append_no_data_warnings_module3(
                         codigo=codigo,
@@ -1278,7 +1319,7 @@ class GenericIndicatorService:
         # E4: municipio de influencia por instalacao (Módulo 5 e 6)
         if (
             request.id_instalacao
-            and not request.id_municipio
+            and not resolved_id_municipio
             and codigo in AREA_AGGREGATION_FIELD_BY_CODE
             and "id_municipio" in sig.parameters
         ):
@@ -1353,10 +1394,9 @@ class GenericIndicatorService:
             and "id_instalacao" in raw_params
         ):
             port_name = raw_params["id_instalacao"]
-            if port_name in PORT_TO_IBGE_MAPPING:
-                params["id_municipio"] = PORT_TO_IBGE_MAPPING[port_name]
-            else:
-                params["id_municipio"] = port_name
+            resolved_municipio = self._resolve_municipio_from_instalacao(port_name)
+            if resolved_municipio:
+                params["id_municipio"] = resolved_municipio
 
         # Executa a query regular
         query = query_func(**params)
@@ -1417,6 +1457,16 @@ class GenericIndicatorService:
         policy = tenant_policy or {}
         area_map = policy.get("municipio_influencia") or policy.get("area_influencia") or {}
         mapped = area_map.get(id_instalacao)
+        if not isinstance(mapped, list):
+            normalized_instalacao = GenericIndicatorService._normalize_installation_name(
+                str(id_instalacao),
+            )
+            for key, value in area_map.items():
+                if not isinstance(key, str) or not isinstance(value, list):
+                    continue
+                if GenericIndicatorService._normalize_installation_name(key) == normalized_instalacao:
+                    mapped = value
+                    break
         if isinstance(mapped, list) and mapped:
             cleaned = []
             for item in mapped:
@@ -1435,7 +1485,7 @@ class GenericIndicatorService:
             if cleaned:
                 return cleaned
 
-        fallback_municipio = PORT_TO_IBGE_MAPPING.get(id_instalacao)
+        fallback_municipio = GenericIndicatorService._resolve_municipio_from_instalacao(id_instalacao)
         if fallback_municipio:
             return [{"id_municipio": fallback_municipio, "peso": 1.0}]
 
@@ -1448,14 +1498,22 @@ class GenericIndicatorService:
         tenant_id: Optional[str],
         request: GenericIndicatorRequest,
         extra_params: Dict[str, Any],
+        resolved_id_municipio: Optional[str] = None,
     ) -> str:
         """Constrói chave canônica para cache de consulta genérica."""
+        if resolved_id_municipio is None:
+            resolved_id_municipio = GenericIndicatorService._normalize_municipio_id(request.id_municipio)
+        if not resolved_id_municipio and request.id_instalacao:
+            resolved_id_municipio = GenericIndicatorService._resolve_municipio_from_instalacao(
+                request.id_instalacao
+            )
+
         payload = {
             "codigo_indicador": codigo.upper(),
             "modulo": modulo,
             "tenant_id": tenant_id or "public",
             "id_instalacao": request.id_instalacao,
-            "id_municipio": request.id_municipio,
+            "id_municipio": resolved_id_municipio,
             "ano": request.ano,
             "ano_inicio": request.ano_inicio,
             "ano_fim": request.ano_fim,
@@ -1742,6 +1800,90 @@ class GenericIndicatorService:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _normalize_installation_name(instalacao: str) -> str:
+        """Normaliza texto de instalação para busca tolerante de mapeamento."""
+        normalized = unicodedata.normalize("NFKD", str(instalacao)).encode("ascii", "ignore").decode("ascii")
+        normalized = normalized.lower().strip()
+
+        # remove sufixos de UF: "porto (sp)" -> "porto"
+        normalized = re.sub(r"\s*\([^)]*\)\s*$", "", normalized)
+
+        # remove caracteres especiais e normaliza espaços
+        normalized = re.sub(r"[^a-z0-9 ]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        # remove prefixos comuns
+        for prefix in ("porto de ", "porto do ", "porto da ", "terminal de ", "terminal do ", "terminal da "):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
+
+        return normalized
+
+    @staticmethod
+    def _normalize_municipio_id(municipio_id: Optional[str]) -> Optional[str]:
+        """Normaliza código IBGE de município para comparação entre fontes."""
+        if not municipio_id:
+            return None
+
+        digits_only = re.sub(r"\D", "", str(municipio_id).strip())
+        if not digits_only:
+            return None
+
+        if len(digits_only) == 6:
+            digits_only = f"0{digits_only}"
+
+        if len(digits_only) != 7:
+            return None
+
+        return digits_only
+
+    @staticmethod
+    def _resolve_municipio_from_instalacao(id_instalacao: Optional[str]) -> Optional[str]:
+        """Resolve `id_instalacao` para um ID de município (IBGE) com fallback robusto."""
+        if not id_instalacao:
+            return None
+
+        normalized = str(id_instalacao).strip()
+        if not normalized:
+            return None
+
+        direct = PORT_TO_IBGE_MAPPING.get(normalized)
+        if direct:
+            return str(direct)
+
+        # normalização equivalente em todo mapa
+        normalized_clean = GenericIndicatorService._normalize_installation_name(normalized)
+        for port_name, municipio_id in PORT_TO_IBGE_MAPPING.items():
+            if GenericIndicatorService._normalize_installation_name(port_name) == normalized_clean:
+                return str(municipio_id)
+
+        # candidatos derivados de normalizações alternativas (sem UF, sem prefixo porto/terminal)
+        normalized_without_uf = re.sub(r"\s*\([^)]*\)\s*$", "", normalized)
+        candidate_names = {
+            GenericIndicatorService._normalize_installation_name(normalized_without_uf),
+            GenericIndicatorService._normalize_installation_name(f"porto {normalized_without_uf}"),
+            GenericIndicatorService._normalize_installation_name(f"terminal {normalized_without_uf}"),
+        }
+
+        for candidate in candidate_names:
+            if not candidate:
+                continue
+            for port_name, municipio_id in PORT_TO_IBGE_MAPPING.items():
+                normalized_port_name = GenericIndicatorService._normalize_installation_name(port_name)
+                if normalized_port_name == candidate:
+                    return str(municipio_id)
+
+        # Se vier um código numérico de município, normaliza para 7 dígitos.
+        if normalized.isdigit():
+            if len(normalized) == 6:
+                return f"0{normalized}"
+            if len(normalized) == 7:
+                return normalized
+
+        return None
 
     @staticmethod
     def _append_warning(

@@ -7,9 +7,6 @@ import { MainLayout } from '../components/layout/MainLayout';
 const LoginView = lazy(() =>
   import('../views/Login/LoginView').then((m) => ({ default: m.LoginView }))
 );
-const DashboardHome = lazy(() =>
-  import('../views/Dashboard/DashboardHome').then((m) => ({ default: m.DashboardHome }))
-);
 const Module1View = lazy(() =>
   import('../views/Dashboard/ModuleViews/Module1View').then((m) => ({ default: m.Module1View }))
 );
@@ -62,8 +59,8 @@ export const APP_ROUTES: AppRoute[] = [
     element: <MainLayout />,
     requiresAuth: true,
     children: [
-      { index: true, element: <DashboardHome /> },
-      { path: 'dashboard', element: <Navigate to="/" replace /> },
+      { index: true, element: <Navigate to="/dashboard/module3" replace /> },
+      { path: 'dashboard', element: <Navigate to="/dashboard/module3" replace /> },
       { path: 'dashboard/module1', element: <Module1View /> },
       { path: 'dashboard/module2', element: <Module2View /> },
       { path: 'dashboard/module3', element: <Module3View /> },

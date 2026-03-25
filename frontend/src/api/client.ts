@@ -18,9 +18,11 @@ class ApiClient {
     // Request interceptor - adiciona token
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('access_token');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+        if (!this.disableAuth) {
+          const token = localStorage.getItem('access_token');
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
         }
         const locale = localStorage.getItem('saas-impacto-locale') || 'pt-BR';
         config.headers['Accept-Language'] = locale;

@@ -33,6 +33,7 @@ from app.schemas.indicators import (
     TenantModulePermissionsRequest,
     TenantModulePermissionsResponse,
     TenantModulePermissionItem,
+    InstallationMunicipioResolutionResponse,
     AreaInfluenceUpsertRequest,
     AllowlistPolicyUpdateRequest,
     MunicipioLookupResponse,
@@ -194,6 +195,37 @@ async def get_municipios_por_codigo(
             {"id_municipio": municipio_id, "nome_municipio": nome}
             for municipio_id, nome in municipios_map.items()
         ]
+    )
+
+
+@router.get(
+    "/resolve-installation",
+    response_model=InstallationMunicipioResolutionResponse,
+    summary="Resolver instalação para município IBGE",
+    description="Resolve uma instalação/porto para o código IBGE associado.",
+)
+async def resolve_installation_to_municipio(
+    id_instalacao: str,
+    current_user: User = Depends(require_indicator_permission("read")),
+) -> InstallationMunicipioResolutionResponse:
+    municipio_id = GenericIndicatorService._resolve_municipio_from_instalacao(
+        id_instalacao
+    )
+    if municipio_id:
+        return InstallationMunicipioResolutionResponse(
+            id_instalacao=id_instalacao,
+            id_municipio=municipio_id,
+            municipio_found=True,
+            message=f"Instalação '{id_instalacao}' associada ao município IBGE {municipio_id}.",
+        )
+    return InstallationMunicipioResolutionResponse(
+        id_instalacao=id_instalacao,
+        id_municipio=None,
+        municipio_found=False,
+        message=(
+            f"Não foi possível associar a instalação '{id_instalacao}' a um município IBGE. "
+            "Verifique o cadastro ou use o código IBGE diretamente."
+        ),
     )
 
 

@@ -19,6 +19,9 @@ from app.db.bigquery.queries.module1_ship_operations import (
     query_numero_atracacoes,
     query_indice_paralisacao,
     query_resumo_operacoes_navios,
+    query_tendencia_operacional,
+    query_benchmarking_operacional,
+    query_score_eficiencia_decomposto,
     QUERIES_MODULE_1,
 )
 
@@ -45,7 +48,6 @@ from app.db.bigquery.queries.module3_human_resources import (
     query_empregos_diretos_portuarios,
     query_paridade_genero_geral,
     query_paridade_categoria_profissional,
-    query_taxa_emprego_temporario,
     query_salario_medio_setor_portuario,
     query_massa_salarial_portuaria,
     query_produtividade_ton_empregado,
@@ -54,6 +56,10 @@ from app.db.bigquery.queries.module3_human_resources import (
     query_idade_media,
     query_variacao_anual_empregos,
     query_participacao_emprego_local,
+    query_remuneracao_media_por_escolaridade_sexo,
+    query_remuneracao_media_por_raca_sexo,
+    query_remuneracao_media_por_escolaridade_raca_sexo,
+    query_remuneracao_media_comparativo_nacional,
     QUERIES_MODULE_3,
 )
 
@@ -152,6 +158,9 @@ __all__ = [
     "query_numero_atracacoes",
     "query_indice_paralisacao",
     "query_resumo_operacoes_navios",
+    "query_tendencia_operacional",
+    "query_benchmarking_operacional",
+    "query_score_eficiencia_decomposto",
     "QUERIES_MODULE_1",
     # Module 2 - Cargo Operations
     "query_carga_total_movimentada",
@@ -172,7 +181,6 @@ __all__ = [
     "query_empregos_diretos_portuarios",
     "query_paridade_genero_geral",
     "query_paridade_categoria_profissional",
-    "query_taxa_emprego_temporario",
     "query_salario_medio_setor_portuario",
     "query_massa_salarial_portuaria",
     "query_produtividade_ton_empregado",
@@ -181,6 +189,10 @@ __all__ = [
     "query_idade_media",
     "query_variacao_anual_empregos",
     "query_participacao_emprego_local",
+    "query_remuneracao_media_por_escolaridade_sexo",
+    "query_remuneracao_media_por_raca_sexo",
+    "query_remuneracao_media_por_escolaridade_raca_sexo",
+    "query_remuneracao_media_comparativo_nacional",
     "QUERIES_MODULE_3",
     # Module 4 - Foreign Trade
     "query_valor_fob_exportacoes",
