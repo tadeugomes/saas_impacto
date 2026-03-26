@@ -20,10 +20,12 @@ interface IndicatorConfig {
 
 const INDICATORS_INFO: IndicatorConfig[] = [
   { code: 'IND-2.01', name: 'Carga Total Movimentada', unit: 'Toneladas', desc: 'Soma de carga embarcada e desembarcada', chartType: 'bar', valueField: 'tonelagem_total', labelField: 'id_instalacao' },
+  { code: 'IND-2.03', name: 'Passageiros Ferry', unit: 'Passageiros', desc: 'Total de passageiros ferry embarcados e desembarcados', chartType: 'bar', valueField: 'passageiros_ferry', labelField: 'id_instalacao' },
+  { code: 'IND-2.04', name: 'Passageiros Cruzeiro', unit: 'Passageiros', desc: 'Total de passageiros de cruzeiro embarcados e desembarcados', chartType: 'bar', valueField: 'passageiros_cruzeiro', labelField: 'id_instalacao' },
   { code: 'IND-2.05', name: 'Carga Média por Atracação', unit: 'Toneladas', desc: 'Carga média por atracação', chartType: 'bar', valueField: 'carga_media_atracacao', labelField: 'id_instalacao' },
   { code: 'IND-2.06', name: 'Produtividade de Berço', unit: 'Ton/hora', desc: 'Toneladas por hora de operação', chartType: 'bar', valueField: 'produtividade_ton_hora', labelField: 'id_instalacao' },
-  { code: 'IND-2.10', name: 'Tonelagem Total (Ranking)', unit: 'Toneladas', desc: 'Ranking por tonelagem', chartType: 'bar', valueField: 'tonelagem_total', labelField: 'id_instalacao' },
-  { code: 'IND-2.11', name: 'Concentração de Carga', unit: 'Toneladas', desc: 'Índice de concentração', chartType: 'bar', valueField: 'tonelagem_total', labelField: 'id_instalacao' },
+  { code: 'IND-2.10', name: 'Toneladas por Hectare', unit: 'Ton/ha', desc: 'Densidade operacional: tonelagem por área física do porto', chartType: 'bar', valueField: 'toneladas_por_hectare', labelField: 'id_instalacao' },
+  { code: 'IND-2.11', name: 'Toneladas por Metro de Cais', unit: 'Ton/m', desc: 'Intensidade de uso do cais: tonelagem por metro linear', chartType: 'bar', valueField: 'toneladas_por_metro_cais', labelField: 'id_instalacao' },
   { code: 'IND-2.12', name: 'Mix de Carga', unit: '%', desc: 'Distribuição por tipo de carga', chartType: 'pie', valueField: 'percentual', labelField: 'tipo_carga' },
   { code: 'IND-2.13', name: 'Sazonalidade', unit: 'Índice', desc: 'Variação mensal da carga', chartType: 'bar', valueField: 'indice_sazonalidade', labelField: 'mes' },
 ];
@@ -104,7 +106,7 @@ export function Module2View() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Módulo 2 - Operações de Carga</h1>
-          <p className="text-gray-500 mt-1">7 indicadores de operações de carga</p>
+          <p className="text-gray-500 mt-1">9 indicadores de operações de carga (2 indisponíveis aguardando dados)</p>
         </div>
         <ExportButton moduleCode="2" />
       </div>
@@ -141,21 +143,27 @@ export function Module2View() {
       {error && <ErrorAlert message={error} className="mb-6" />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {visibleIndicators.map((ind) => (
-          <IndicatorDashboardCard
-            key={ind.code}
-            title={ind.name}
-            description={ind.desc}
-            unit={ind.unit}
-            isLoading={isLoading}
-            data={indicators[ind.code]}
-            chartType={ind.chartType}
-            valueField={ind.valueField}
-            labelField={ind.labelField}
-            filterText={tableSearch}
-            indicatorCode={ind.code}
-          />
-        ))}
+        {visibleIndicators.map((ind) => {
+          const resp = indicators[ind.code];
+          const apiWarnings = (resp as { warnings?: Array<{ mensagem: string }> } | undefined)
+            ?.warnings?.map((w) => w.mensagem) ?? [];
+          return (
+            <IndicatorDashboardCard
+              key={ind.code}
+              title={ind.name}
+              description={ind.desc}
+              unit={ind.unit}
+              isLoading={isLoading}
+              data={resp}
+              chartType={ind.chartType}
+              valueField={ind.valueField}
+              labelField={ind.labelField}
+              filterText={tableSearch}
+              indicatorCode={ind.code}
+              warnings={apiWarnings.length > 0 ? apiWarnings : undefined}
+            />
+          );
+        })}
       </div>
     </div>
   );

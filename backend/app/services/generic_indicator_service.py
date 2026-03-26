@@ -2036,10 +2036,50 @@ class GenericIndicatorService:
         results: List[Dict[str, Any]],
     ) -> List[DataQualityWarning]:
         """Executa verificações mínimas de qualidade por módulo."""
+        if codigo.startswith("IND-2."):
+            return cls._validate_module2_quality(codigo, results)
         if codigo.startswith("IND-5."):
             return cls._validate_module5_quality(codigo, results)
         if codigo.startswith("IND-6."):
             return cls._validate_module6_quality(codigo, results)
+        return []
+
+    @classmethod
+    def _validate_module2_quality(
+        cls,
+        codigo: str,
+        results: List[Dict[str, Any]],
+    ) -> List[DataQualityWarning]:
+        """Valida qualidade de dados do Módulo 2, incluindo indicadores indisponíveis."""
+        _PASSAGEIROS = {"IND-2.03", "IND-2.04"}
+        _INFRAESTRUTURA = {"IND-2.10", "IND-2.11"}
+
+        if codigo in _PASSAGEIROS and not results:
+            return [
+                DataQualityWarning(
+                    tipo="dado_indisponivel",
+                    codigo_indicador=codigo,
+                    mensagem=(
+                        "Dados de passageiros não disponíveis na view ANTAQ. "
+                        "Este indicador requer tabela específica de passageiros "
+                        "(ferry/cruzeiro) que ainda não foi integrada ao pipeline BigQuery."
+                    ),
+                )
+            ]
+
+        if codigo in _INFRAESTRUTURA and not results:
+            denominador = "área física (hectares)" if codigo == "IND-2.10" else "extensão de cais (metros lineares)"
+            return [
+                DataQualityWarning(
+                    tipo="dado_indisponivel",
+                    codigo_indicador=codigo,
+                    mensagem=(
+                        f"Denominador indisponível: {denominador} não consta na view de carga ANTAQ. "
+                        "Requer integração com cadastro físico de instalações portuárias (SNPq/ANTAQ)."
+                    ),
+                )
+            ]
+
         return []
 
     @classmethod

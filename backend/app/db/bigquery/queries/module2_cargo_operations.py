@@ -116,17 +116,19 @@ def query_passageiros_ferry(
     """
     IND-2.03: Total Passageiros Ferry [NECTAD].
 
-    NOTA: Este indicador não está disponível na view de carga.
-    Retorna 0 como placeholder - requer dados específicos de passageiros.
+    INDISPONÍVEL: a view de carga ANTAQ não contém dados de passageiros.
+    Requer tabela específica de passageiros (não integrada no BigQuery).
+    Retorna conjunto vazio com schema correto.
 
     Unidade: Contagem
     Granularidade: Instalação/Ano
     """
-    return f"""
+    return """
     SELECT
-        '{id_instalacao or 'TODOS'}' AS id_instalacao,
-        {ano or 2024} AS ano,
-        0 AS passageiros_ferry
+        CAST(NULL AS STRING)  AS id_instalacao,
+        CAST(NULL AS INT64)   AS ano,
+        CAST(NULL AS INT64)   AS passageiros_ferry
+    WHERE FALSE
     """
 
 
@@ -139,17 +141,19 @@ def query_passageiros_cruzeiro(
     """
     IND-2.04: Total Passageiros Cruzeiro [UNCTAD].
 
-    NOTA: Este indicador não está disponível na view de carga.
-    Retorna 0 como placeholder - requer dados específicos de passageiros.
+    INDISPONÍVEL: a view de carga ANTAQ não contém dados de passageiros.
+    Requer tabela específica de passageiros (não integrada no BigQuery).
+    Retorna conjunto vazio com schema correto.
 
     Unidade: Contagem
     Granularidade: Instalação/Ano
     """
-    return f"""
+    return """
     SELECT
-        '{id_instalacao or 'TODOS'}' AS id_instalacao,
-        {ano or 2024} AS ano,
-        0 AS passageiros_cruzeiro
+        CAST(NULL AS STRING)  AS id_instalacao,
+        CAST(NULL AS INT64)   AS ano,
+        CAST(NULL AS INT64)   AS passageiros_cruzeiro
+    WHERE FALSE
     """
 
 
@@ -425,35 +429,17 @@ def query_toneladas_por_hectare(
     Unidade: Toneladas/Hectare
     Granularidade: Instalação/Ano
 
-    NOTA: Requer dados de área física do porto (não disponível na view).
-    Retorna tonelagem total como placeholder.
+    INDISPONÍVEL: o denominador (área física da instalação em hectares)
+    não está presente na view de carga ANTAQ. Requer integração com
+    cadastro físico de instalações portuárias (SNPq/ANTAQ).
+    Retorna conjunto vazio com schema correto.
     """
-    where_clauses = []
-    if id_instalacao:
-        where_clauses.append(f"AND porto_atracacao = '{id_instalacao}'")
-    if ano:
-        where_clauses.append(f"AND ano = {ano}")
-    elif ano_inicio and ano_fim:
-        where_clauses.append(f"AND ano BETWEEN {ano_inicio} AND {ano_fim}")
-
-    where_sql = "\n    ".join(where_clauses) if where_clauses else ""
-
-    return f"""
+    return """
     SELECT
-        porto_atracacao AS id_instalacao,
-        CAST(ano AS INT64) AS ano,
-        ROUND(SUM(vlpesocargabruta_oficial), 2) AS tonelagem_total
-    FROM
-        `{VIEW_CARGA_METODOLOGIA_OFICIAL}`
-    WHERE
-        vlpesocargabruta_oficial IS NOT NULL
-        {where_sql}
-    GROUP BY
-        porto_atracacao,
-        ano
-    ORDER BY
-        ano DESC,
-        id_instalacao
+        CAST(NULL AS STRING)  AS id_instalacao,
+        CAST(NULL AS INT64)   AS ano,
+        CAST(NULL AS FLOAT64) AS toneladas_por_hectare
+    WHERE FALSE
     """
 
 
@@ -469,35 +455,17 @@ def query_toneladas_por_metro_cais(
     Unidade: Toneladas/Metro
     Granularidade: Instalação/Ano
 
-    NOTA: Requer dados de extensão de cais (não disponível na view).
-    Retorna tonelagem total como placeholder.
+    INDISPONÍVEL: o denominador (extensão de cais em metros lineares)
+    não está presente na view de carga ANTAQ. Requer integração com
+    cadastro físico de instalações portuárias (SNPq/ANTAQ).
+    Retorna conjunto vazio com schema correto.
     """
-    where_clauses = []
-    if id_instalacao:
-        where_clauses.append(f"AND porto_atracacao = '{id_instalacao}'")
-    if ano:
-        where_clauses.append(f"AND ano = {ano}")
-    elif ano_inicio and ano_fim:
-        where_clauses.append(f"AND ano BETWEEN {ano_inicio} AND {ano_fim}")
-
-    where_sql = "\n    ".join(where_clauses) if where_clauses else ""
-
-    return f"""
+    return """
     SELECT
-        porto_atracacao AS id_instalacao,
-        CAST(ano AS INT64) AS ano,
-        ROUND(SUM(vlpesocargabruta_oficial), 2) AS tonelagem_total
-    FROM
-        `{VIEW_CARGA_METODOLOGIA_OFICIAL}`
-    WHERE
-        vlpesocargabruta_oficial IS NOT NULL
-        {where_sql}
-    GROUP BY
-        porto_atracacao,
-        ano
-    ORDER BY
-        ano DESC,
-        id_instalacao
+        CAST(NULL AS STRING)  AS id_instalacao,
+        CAST(NULL AS INT64)   AS ano,
+        CAST(NULL AS FLOAT64) AS toneladas_por_metro_cais
+    WHERE FALSE
     """
 
 

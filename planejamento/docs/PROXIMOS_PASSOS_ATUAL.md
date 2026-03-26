@@ -45,6 +45,10 @@
 | PR-X  | M1: Frontend aba Benchmarking Nacional | — | ✅ |
 | PR-X  | M3: MIP IBGE 2015 + QL RAIS + benchmark Paranaguá | +8 | ✅ |
 | PR-X  | M3/M5: DOCX enriquecido (simulação + diagnósticos causais) | — | ✅ |
+| PR-37 | M2: IND-2.10/2.11 marcados indisponíveis + warning + frontend | — | ✅ |
+| PR-38 | M2: IND-2.03/2.04 marcados indisponíveis + warning + frontend | — | ✅ |
+| PR-M3 | M3: remover build_proxy_causal_multiplier + banner frontend | — | ✅ |
+| PR-RPT | Relatório DOCX: bandas de IC no gráfico Event Study | — | ✅ |
 
 **Total acumulado:** ~370 testes unitários, stack completa
 
@@ -83,10 +87,10 @@ Resumo dos gaps de dados:
 
 | Indicador | Módulo | Gap | Impacto |
 |-----------|--------|-----|---------|
-| IND-2.04 Passageiros Ferry | M2 | Retorna 0 — sem fonte de dados de passageiros no ANTAQ | Médio |
-| IND-2.05 Passageiros Cruzeiro | M2 | Retorna 0 — sem fonte de dados de passageiros no ANTAQ | Médio |
-| IND-2.11 Toneladas/Hectare | M2 | Retorna tonelagem total — sem dados de área do berço | Alto |
-| IND-2.12 Toneladas/Metro de Cais | M2 | Retorna tonelagem total — sem dados de extensão do cais | Alto |
+| IND-2.03 Passageiros Ferry | M2 | ✅ Resolvido: retorna vazio + warning "tabela de passageiros não integrada" | — |
+| IND-2.04 Passageiros Cruzeiro | M2 | ✅ Resolvido: retorna vazio + warning "tabela de passageiros não integrada" | — |
+| IND-2.10 Toneladas/Hectare | M2 | ✅ Resolvido: retorna vazio + warning "área física indisponível no ANTAQ" | — |
+| IND-2.11 Toneladas/Metro de Cais | M2 | ✅ Resolvido: retorna vazio + warning "extensão de cais indisponível no ANTAQ" | — |
 | Multiplicador de emprego | M3 | Coeficientes da literatura (MIP IBGE 2015) — intencional, documentado | Baixo |
 | Benchmark Paranaguá | M3 | Valor de referência hardcoded do TCC — intencional, documentado | Baixo |
 
@@ -95,7 +99,7 @@ Resumo dos gaps de dados:
 | # | Gap | Risco | Esforço |
 |---|-----|-------|---------|
 | G1 | Dashboard Grafana não pré-configurado | Cego em produção para métricas customizadas | 3h |
-| G2 | IND-2.11 e IND-2.12 retornam dados sem denominador real | Usuário vê gráfico com dado incorreto | 4h + dados |
+| G2 | ~~IND-2.11 e IND-2.12 retornam dados sem denominador real~~ | ✅ Resolvido via PR-37 | — |
 | G3 | Sem testes E2E (Playwright/Cypress) | Regressões de integração não detectadas | 1d |
 | G4 | Alembic migration D7 (SCM stubs) ainda no changelog | Ruído histórico | 30 min |
 

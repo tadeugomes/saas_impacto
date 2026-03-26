@@ -210,8 +210,8 @@ Os seguintes hardcodings são esperados e corretos:
 
 ## Checklist de resolução
 
-- [ ] **PR-37**: Implementar IND-2.11 e IND-2.12 com dado real ou marcar como `disponibilidade: "indisponível"` na resposta + mensagem na UI
-- [ ] **PR-38**: Implementar IND-2.04 e IND-2.05 com dado real ou marcar como `disponibilidade: "indisponível"`
+- [x] **PR-37**: IND-2.10 e IND-2.11 (toneladas/hectare e toneladas/metro de cais) — ✅ resolvido: queries retornam conjunto vazio com schema correto; `DataQualityWarning(tipo="dado_indisponivel")` explica ausência do cadastro físico; frontend exibe mensagem via `warnings` prop do `IndicatorDashboardCard`; nomes e `valueField` corrigidos no `INDICATORS_INFO`
+- [x] **PR-38**: IND-2.03 e IND-2.04 (passageiros ferry e cruzeiro) — ✅ resolvido: queries retornam conjunto vazio; `DataQualityWarning` explica que tabela de passageiros não está integrada; indicadores adicionados ao `INDICATORS_INFO` do `Module2View` com warning visível na UI
 - [ ] **FE-SEC-01**: Adicionar guard de build que proíbe `VITE_DISABLE_AUTH=true` em `NODE_ENV=production` (vite.config.ts ou step de CI)
 - [x] **M3-PH-05**: Após integração do pipeline causal M5→M3, remover `build_proxy_causal_multiplier` e usar resultado real — ✅ resolvido: método removido de `employment_multiplier.py`; endpoint retorna `causal: null` + `causal_unavailable_reason` quando `use_causal=true`; frontend exibe banner informativo no lugar dos p-values fabricados
 - [x] **RPT-PH-01**: Implementar geração de gráfico como bytes (matplotlib) no `report_service.py` para substituir o placeholder de Event Study — ✅ resolvido: adicionadas bandas de IC (`fill_between` com `ci_lower`/`ci_upper`) ao gráfico Event Study; placeholder só persiste se `matplotlib` não estiver instalado
