@@ -1091,6 +1091,34 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "FINBRA/STN + ANTAQ + mart de impacto",
     },
+    "IND-6.12": {
+        "codigo": "IND-6.12",
+        "nome": "ISS por Porto",
+        "modulo": 6,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": (
+            "ISS total atribuído a cada instalação portuária por ano. "
+            "Granularidade de instalação — mais fino que IND-6.02 (municipal/FINBRA). "
+            "Fonte: tabela própria BD_ISS_POR_PORTO."
+        ),
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "Tabela própria ISS por porto (em preparação)",
+    },
+    "IND-6.13": {
+        "codigo": "IND-6.13",
+        "nome": "ISS por Tonelada (Porto)",
+        "modulo": 6,
+        "unidade": "R$/ton",
+        "unctad": False,
+        "descricao": (
+            "ISS por tonelada movimentada por instalação portuária. "
+            "Mede eficiência fiscal do ISS ao nível de instalação. "
+            "Join entre BD_ISS_POR_PORTO e v_carga_metodologia_oficial (ANTAQ)."
+        ),
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "Tabela própria ISS por porto + ANTAQ v_carga_metodologia_oficial",
+    },
     # Module 7 - Synthetic Indices
     "IND-7.01": {
         "codigo": "IND-7.01",
@@ -2195,6 +2223,24 @@ class GenericIndicatorService:
     ) -> List[DataQualityWarning]:
         """Executa verificações mínimas de qualidade para o Módulo 6."""
         if not results:
+            # IND-6.12/6.13: BD_ISS_POR_PORTO não definida → dado indisponível
+            if codigo in {"IND-6.12", "IND-6.13"}:
+                nomes = {
+                    "IND-6.12": "ISS por Porto",
+                    "IND-6.13": "ISS por Tonelada (Porto)",
+                }
+                return [
+                    DataQualityWarning(
+                        tipo="dado_indisponivel",
+                        codigo_indicador=codigo,
+                        mensagem=(
+                            f"{nomes[codigo]}: tabela de ISS por instalação portuária "
+                            "ainda não disponível no BigQuery. "
+                            "Configure BD_ISS_POR_PORTO em module6_public_finance.py "
+                            "quando os dados estiverem prontos."
+                        ),
+                    )
+                ]
             return []
 
         warnings: List[DataQualityWarning] = []
@@ -2203,11 +2249,14 @@ class GenericIndicatorService:
             "IND-6.02": {"arrecadacao_iss"},
             "IND-6.03": {"receita_total"},
             "IND-6.04": {"receita_per_capita"},
-            "IND-6.05": {"crescimento_receita_pct"},
+            # IND-6.05 (crescimento_receita_pct) excluído intencionalmente:
+            # crescimento negativo é dado válido (recessão, perda de base tributária).
             "IND-6.06": {"icms_por_tonelada"},
             "IND-6.07": {"receita_fiscal_total"},
             "IND-6.08": {"receita_fiscal_per_capita"},
             "IND-6.09": {"receita_fiscal_por_tonelada"},
+            "IND-6.12": {"iss_por_porto"},
+            "IND-6.13": {"iss_por_tonelada"},
         }
 
         percentage_fields_by_code = {

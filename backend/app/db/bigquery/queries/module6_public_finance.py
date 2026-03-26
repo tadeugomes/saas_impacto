@@ -27,6 +27,15 @@ BD_DADOS_DIRETORIO_MUNICIPIO = "basedosdados.br_bd_diretorios_brasil.municipio"
 # Mart de impacto (já inclui crosswalk ANTAQ -> IBGE e janela de município/ano)
 MART_IMPACTO_ECONOMICO_FQTN = MART_IMPACTO_ECONOMICO_FQTN
 
+# View ANTAQ para tonelagem a nível de instalação (IND-6.13)
+ANTAQ_VIEW_CARGA = "antaqdados.br_antaq_estatistico_aquaviario.v_carga_metodologia_oficial"
+
+# Tabela de ISS por instalação portuária (fonte própria — IND-6.12/6.13).
+# Definir o FQTN real quando a tabela estiver disponível no BigQuery.
+# Enquanto None, as queries retornam conjunto vazio com schema correto.
+# Exemplo: "meu_projeto.meu_dataset.iss_por_instalacao_portuaria"
+BD_ISS_POR_PORTO: str | None = None
+
 
 # ============================================================================
 # Helpers
@@ -591,6 +600,161 @@ def query_elasticidade_tonelagem_receita_fiscal(
 
 
 # ============================================================================
+# IND-6.12 / IND-6.13 — ISS por Instalação Portuária
+# Fonte: tabela própria BD_ISS_POR_PORTO (nível id_instalacao/ano).
+# Diferente de IND-6.02 (FINBRA/SICONFI, nível municipal).
+# ============================================================================
+
+_ISS_PORTO_SCHEMA_VAZIA = """
+    SELECT
+        CAST(NULL AS STRING)  AS id_instalacao,
+        CAST(NULL AS STRING)  AS nome_instalacao,
+        CAST(NULL AS INT64)   AS ano,
+        CAST(NULL AS FLOAT64) AS {coluna}
+    WHERE FALSE
+"""
+
+
+def query_iss_por_porto(
+    id_instalacao: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-6.12: ISS por Porto / Instalação Portuária.
+
+    ISS total atribuído a cada instalação portuária por ano.
+    Granularidade mais fina que IND-6.02 (municipal via FINBRA):
+    permite comparar instalações dentro do mesmo município.
+
+    Esquema esperado de BD_ISS_POR_PORTO:
+        id_instalacao  STRING   -- código ANTAQ da instalação
+        nome_instalacao STRING  -- nome da instalação (opcional)
+        ano             INT64
+        iss_arrecadado  FLOAT64 -- ISS em R$ atribuído à instalação
+
+    Unidade: R$
+    Granularidade: Instalação/Ano
+    """
+    if not BD_ISS_POR_PORTO:
+        return _ISS_PORTO_SCHEMA_VAZIA.format(coluna="iss_por_porto")
+
+    clauses = ["i.iss_arrecadado IS NOT NULL"]
+    if id_instalacao:
+        clauses.append(f"i.id_instalacao = '{id_instalacao}'")
+    if ano:
+        clauses.append(f"i.ano = {ano}")
+    elif ano_inicio and ano_fim:
+        clauses.append(f"i.ano BETWEEN {ano_inicio} AND {ano_fim}")
+
+    where_sql = "WHERE " + "\n            AND ".join(clauses)
+    order_sql = "i.ano DESC, iss_por_porto DESC" if not id_instalacao else "i.ano DESC"
+
+    return f"""
+    SELECT
+        i.id_instalacao,
+        i.nome_instalacao,
+        i.ano,
+        ROUND(SUM(i.iss_arrecadado), 2) AS iss_por_porto
+    FROM
+        `{BD_ISS_POR_PORTO}` i
+    {where_sql}
+    GROUP BY
+        i.id_instalacao,
+        i.nome_instalacao,
+        i.ano
+    ORDER BY
+        {order_sql}
+    """
+
+
+def query_iss_por_tonelada_porto(
+    id_instalacao: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """
+    IND-6.13: ISS por Tonelada por Porto.
+
+    Eficiência fiscal do ISS: quanto de ISS é gerado por tonelada
+    movimentada em cada instalação portuária.
+
+    Join com v_carga_metodologia_oficial (id_instalacao → porto_atracacao)
+    para tonelagem no mesmo nível de granularidade.
+    Diferente de IND-6.09 (fiscal municipal ÷ tonelagem via mart M5).
+
+    Unidade: R$/ton
+    Granularidade: Instalação/Ano
+    """
+    if not BD_ISS_POR_PORTO:
+        return _ISS_PORTO_SCHEMA_VAZIA.format(coluna="iss_por_tonelada")
+
+    iss_clauses = ["i.iss_arrecadado IS NOT NULL"]
+    cargo_clauses = ["t.vlpesocargabruta_oficial IS NOT NULL"]
+    if id_instalacao:
+        iss_clauses.append(f"i.id_instalacao = '{id_instalacao}'")
+        cargo_clauses.append(f"t.porto_atracacao = '{id_instalacao}'")
+    if ano:
+        iss_clauses.append(f"i.ano = {ano}")
+        cargo_clauses.append(f"t.ano = {ano}")
+    elif ano_inicio and ano_fim:
+        iss_clauses.append(f"i.ano BETWEEN {ano_inicio} AND {ano_fim}")
+        cargo_clauses.append(f"t.ano BETWEEN {ano_inicio} AND {ano_fim}")
+
+    iss_where = "WHERE " + "\n        AND ".join(iss_clauses)
+    cargo_where = "WHERE " + "\n        AND ".join(cargo_clauses)
+    order_sql = "ano DESC, iss_por_tonelada DESC" if not id_instalacao else "ano DESC"
+
+    return f"""
+    WITH iss AS (
+        SELECT
+            i.id_instalacao,
+            i.nome_instalacao,
+            i.ano,
+            ROUND(SUM(i.iss_arrecadado), 2) AS iss_total
+        FROM
+            `{BD_ISS_POR_PORTO}` i
+        {iss_where}
+        GROUP BY
+            i.id_instalacao,
+            i.nome_instalacao,
+            i.ano
+    ),
+    tonelagem AS (
+        SELECT
+            t.porto_atracacao                 AS id_instalacao,
+            CAST(t.ano AS INT64)              AS ano,
+            ROUND(SUM(t.vlpesocargabruta_oficial), 2) AS tonelagem_total
+        FROM
+            `{ANTAQ_VIEW_CARGA}` t
+        {cargo_where}
+        GROUP BY
+            t.porto_atracacao,
+            t.ano
+    )
+    SELECT
+        COALESCE(iss.id_instalacao,  ton.id_instalacao) AS id_instalacao,
+        iss.nome_instalacao,
+        COALESCE(iss.ano,            ton.ano)           AS ano,
+        ROUND(
+            iss.iss_total / NULLIF(ton.tonelagem_total, 0),
+            4
+        )                                               AS iss_por_tonelada
+    FROM iss
+    FULL OUTER JOIN tonelagem AS ton
+        ON  iss.id_instalacao = ton.id_instalacao
+        AND iss.ano           = ton.ano
+    WHERE
+        ton.tonelagem_total > 0
+        AND iss.iss_total   IS NOT NULL
+    ORDER BY
+        {order_sql}
+    """
+
+
+# ============================================================================
 # Dicionário de Queries
 # ============================================================================
 
@@ -606,6 +770,8 @@ QUERIES_MODULE_6 = {
     "IND-6.09": query_receita_fiscal_por_tonelada,
     "IND-6.10": query_correlacao_tonelagem_receita_fiscal,
     "IND-6.11": query_elasticidade_tonelagem_receita_fiscal,
+    "IND-6.12": query_iss_por_porto,
+    "IND-6.13": query_iss_por_tonelada_porto,
 }
 
 

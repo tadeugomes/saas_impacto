@@ -117,6 +117,8 @@ from app.db.bigquery.queries.module6_public_finance import (
     query_icms_por_tonelada,
     query_correlacao_tonelagem_receita_fiscal,
     query_elasticidade_tonelagem_receita_fiscal,
+    query_iss_por_porto,
+    query_iss_por_tonelada_porto,
     QUERIES_MODULE_6,
 )
 
@@ -241,6 +243,8 @@ __all__ = [
     "query_icms_por_tonelada",
     "query_correlacao_tonelagem_receita_fiscal",
     "query_elasticidade_tonelagem_receita_fiscal",
+    "query_iss_por_porto",
+    "query_iss_por_tonelada_porto",
     "QUERIES_MODULE_6",
     # Module 7 - Synthetic Indices
     "query_indice_eficiencia_operacional",

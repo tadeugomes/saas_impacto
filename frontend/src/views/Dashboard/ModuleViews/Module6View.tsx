@@ -23,7 +23,7 @@ type IndicatorRow = Record<string, unknown>;
 type ModuleIndicatorResponse = IndicatorResponse<IndicatorRow>;
 type IndicatorMap = Record<string, ModuleIndicatorResponse>;
 
-type IndicatorGroup = 'tributacao' | 'percapita' | 'desempenho' | 'causal';
+type IndicatorGroup = 'tributacao' | 'percapita' | 'desempenho' | 'causal' | 'porto';
 
 const TREND_YEARS_BACK = 6;
 
@@ -150,6 +150,30 @@ const INDICATORS_INFO = [
     interpretation:
       'Elasticidade > 0 indica relação direta histórica; |elasticidade| alto significa resposta mais intensa.',
     question: 'Quanto a tonelagem tende a responder quando a base fiscal varia historicamente?',
+  },
+  {
+    code: 'IND-6.12',
+    name: 'ISS por Porto',
+    unit: 'R$',
+    desc: 'ISS atribuído a cada instalação portuária por ano.',
+    valueField: 'iss_por_porto',
+    group: 'porto',
+    interpretation:
+      'Granularidade de instalação: distingue contribuição de ISS de cada porto, mesmo dentro do mesmo município. '
+      + 'Fonte: tabela própria (em preparação); exibe aviso enquanto dados não estiverem disponíveis.',
+    question: 'Qual instalação gera mais ISS no município?',
+  },
+  {
+    code: 'IND-6.13',
+    name: 'ISS por Tonelada (Porto)',
+    unit: 'R$/ton',
+    desc: 'ISS por tonelada movimentada em cada instalação portuária.',
+    valueField: 'iss_por_tonelada',
+    group: 'porto',
+    interpretation:
+      'Eficiência fiscal do ISS por unidade de carga: quanto de ISS é gerado por tonelada. '
+      + 'Complementa IND-6.09 (fiscal total/ton municipal) com visão no nível de instalação.',
+    question: 'Qual porto gera mais ISS por tonelada movimentada?',
   },
 ] as const;
 
@@ -498,7 +522,9 @@ export function Module6View() {
                 ? 'Indicadores per capita'
                 : group === 'desempenho'
                   ? 'Eficiência e Retorno do Porto'
-                  : 'Relação e Sensibilidade (Associação)';
+                  : group === 'porto'
+                    ? 'ISS por Instalação Portuária'
+                    : 'Relação e Sensibilidade (Associação)';
 
           return (
             <section key={group} className="card space-y-4">
