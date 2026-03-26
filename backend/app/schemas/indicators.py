@@ -318,6 +318,13 @@ class GenericIndicatorRequest(BaseModel):
         default=False,
         description="Inclui detalhamento por município quando aplicável (ex.: município de influência).",
     )
+    method: Optional[str] = Field(
+        None,
+        description=(
+            "Método analítico opcional. Para IND-6.10/6.11 aceita 'panel_fe' para "
+            "estimar Two-Way Fixed Effects em vez da correlação/OLS pooled padrão."
+        ),
+    )
 
 
 class TenantModulePermissionItem(BaseModel):
@@ -440,6 +447,22 @@ class GenericIndicatorResponse(BaseModel):
     data_referencia: datetime = Field(
         default_factory=datetime.utcnow,
         description="Data/hora da geração dos dados",
+    )
+    causal_estimate: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Estimativa Panel FE (Two-Way FE / within-estimator) para IND-6.10 e "
+            "IND-6.11. Presente somente quando o cálculo for bem-sucedido. "
+            "Campos: coef, std_err, p_value, ci_lower, ci_upper, n_obs, "
+            "n_municipios, r2_within, method, log_log, significant, error."
+        ),
+    )
+    correlacao_ou_proxy: bool = Field(
+        default=True,
+        description=(
+            "True quando o resultado em 'data' é correlação/OLS pooled (não causal). "
+            "False quando 'causal_estimate' contém uma estimativa Panel FE sem erros."
+        ),
     )
 
 

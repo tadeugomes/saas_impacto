@@ -20,8 +20,26 @@ import { getIndicatorFormat } from '../../../utils/chartFormats';
 import type { IndicatorResponse } from '../../../types/api';
 
 type IndicatorRow = Record<string, unknown>;
-type ModuleIndicatorResponse = IndicatorResponse<IndicatorRow>;
+type ModuleIndicatorResponse = IndicatorResponse<IndicatorRow> & {
+  causal_estimate?: PanelFeEstimate | null;
+  correlacao_ou_proxy?: boolean;
+};
 type IndicatorMap = Record<string, ModuleIndicatorResponse>;
+
+interface PanelFeEstimate {
+  coef: number | null;
+  std_err: number | null;
+  p_value: number | null;
+  ci_lower: number | null;
+  ci_upper: number | null;
+  n_obs: number;
+  n_municipios: number;
+  r2_within: number | null;
+  method: string;
+  log_log: boolean;
+  significant: boolean | null;
+  error: string | null;
+}
 
 type IndicatorGroup = 'tributacao' | 'percapita' | 'desempenho' | 'causal' | 'porto';
 
@@ -315,6 +333,57 @@ function extractWarningsSummary(response: ModuleIndicatorResponse): string[] {
   return response.warnings.slice(0, 2).map((warning) => warning.mensagem);
 }
 
+function PanelFeBadge({ estimate }: { estimate: PanelFeEstimate | null | undefined }) {
+  if (!estimate) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+        Associação
+      </span>
+    );
+  }
+  if (estimate.error) {
+    return (
+      <span
+        title={estimate.error}
+        className="inline-flex items-center gap-1 rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-700"
+      >
+        Associação
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+      Painel FE
+    </span>
+  );
+}
+
+function PanelFeStats({ estimate }: { estimate: PanelFeEstimate | null | undefined }) {
+  if (!estimate || estimate.error || estimate.coef === null) return null;
+  const pLabel =
+    estimate.p_value === null ? '—' :
+    estimate.p_value < 0.001 ? '<0.001' :
+    estimate.p_value.toFixed(3);
+  const sig = estimate.significant ? '✓ p<0.05' : 'p≥0.05';
+  return (
+    <div className="mt-2 rounded-md border border-green-100 bg-green-50 px-3 py-2 text-xs text-green-800 space-y-1">
+      <p className="font-semibold text-green-900">Within-Estimator (Two-Way FE)</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <span>β = {estimate.coef?.toFixed(4)}</span>
+        <span>EP = {estimate.std_err?.toFixed(4)}</span>
+        <span>p = {pLabel} {sig}</span>
+        <span>N = {estimate.n_obs} ({estimate.n_municipios} mun.)</span>
+        {estimate.r2_within !== null && <span>R² within = {estimate.r2_within.toFixed(3)}</span>}
+      </div>
+      <p className="text-green-700 leading-relaxed">
+        {estimate.log_log
+          ? 'Elasticidade: % variação da receita fiscal por % variação na tonelagem, controlando por município e ano.'
+          : 'Coeficiente: R$ de receita fiscal por tonelada adicional, controlando por município e ano.'}
+      </p>
+    </div>
+  );
+}
+
 function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
   return (
     <button
@@ -339,6 +408,7 @@ export function Module6View() {
     percapita: true,
     desempenho: true,
     causal: true,
+    porto: true,
   });
 
   const toggleGroup = useCallback((group: IndicatorGroup) => {
@@ -524,7 +594,7 @@ export function Module6View() {
                   ? 'Eficiência e Retorno do Porto'
                   : group === 'porto'
                     ? 'ISS por Instalação Portuária'
-                    : 'Relação e Sensibilidade (Associação)';
+                    : 'Relação e Sensibilidade (Associação / Painel FE)';
 
           return (
             <section key={group} className="card space-y-4">
@@ -554,6 +624,8 @@ export function Module6View() {
                           .slice(0, 10);
 
                     const hasData = validRows.length > 0;
+                    const isCausalIndicator = ind.code === 'IND-6.10' || ind.code === 'IND-6.11';
+                    const panelFe = isCausalIndicator ? response?.causal_estimate : undefined;
 
                     return (
                       <ChartCard
@@ -567,6 +639,16 @@ export function Module6View() {
                             : ind.interpretation
                         }
                       >
+                        {isCausalIndicator && (
+                          <div className="mb-2 flex items-center gap-2">
+                            <PanelFeBadge estimate={panelFe} />
+                            <span className="text-xs text-gray-400">
+                              {panelFe && !panelFe.error
+                                ? 'Estimativa within-estimator (Two-Way FE)'
+                                : 'Correlação/OLS pooled (sem controle de FE)'}
+                            </span>
+                          </div>
+                        )}
                         {hasData ? (
                           trend ? (
                             <LineChart
@@ -602,6 +684,7 @@ export function Module6View() {
                               : 'Dados não disponíveis para o filtro atual.'}
                           </div>
                         )}
+                        {isCausalIndicator && <PanelFeStats estimate={panelFe} />}
                         <div className="mt-3 flex items-start gap-2 text-xs text-gray-500">
                           <AlertCircle className="w-4 h-4 mt-0.5 text-indigo-500" />
                           <p>{ind.question}</p>

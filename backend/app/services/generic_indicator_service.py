@@ -17,6 +17,7 @@ from typing import List, Dict, Any, Optional
 from app.db.bigquery.client import BigQueryClient, get_bigquery_client
 from app.db.bigquery.queries import ALL_QUERIES, get_query
 from app.db.bigquery.queries.module3_human_resources import query_rais_year_coverage_for_portuarios
+from app.services.module6_causal import estimate_panel_fe_m6
 from app.schemas.indicators import (
     GenericIndicatorRequest,
     GenericIndicatorResponse,
@@ -1465,6 +1466,32 @@ class GenericIndicatorService:
             bytes_processed=bytes_estimated,
         )
 
+        # ── Panel FE para IND-6.10/6.11 ─────────────────────────────────────
+        # Executa em paralelo lógico ao resultado BigQuery (não bloqueia cache).
+        # Ativado automaticamente quando há id_municipio resolvido ou quando
+        # o caller passa method="panel_fe" explicitamente.
+        causal_estimate: Optional[dict] = None
+        correlacao_ou_proxy: bool = True
+        _should_panel_fe = codigo in {"IND-6.10", "IND-6.11"} and (
+            resolved_id_municipio
+            or getattr(request, "method", None) == "panel_fe"
+        )
+        if _should_panel_fe:
+            try:
+                causal_estimate = await estimate_panel_fe_m6(
+                    codigo=codigo,
+                    id_municipio=resolved_id_municipio,
+                    bq_client=self.bq_client,
+                )
+                if causal_estimate and causal_estimate.get("error") is None:
+                    correlacao_ou_proxy = False
+            except Exception as _pfe_exc:
+                logger.warning(
+                    "Panel FE para %s falhou (não bloqueia resposta): %s",
+                    codigo,
+                    _pfe_exc,
+                )
+
         return GenericIndicatorResponse(
             codigo_indicador=meta["codigo"],
             nome=meta["nome"],
@@ -1474,6 +1501,8 @@ class GenericIndicatorService:
             data=results,
             warnings=warnings,
             cache_hit=False,
+            causal_estimate=causal_estimate,
+            correlacao_ou_proxy=correlacao_ou_proxy,
         )
 
     @staticmethod
