@@ -1,0 +1,169 @@
+# Alertas Grafana — SaaS Impacto Portuário
+# Formato: Grafana Alerting (versão 10+) provisionamento via YAML
+# Referência: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: saas-impacto-api
+    folder: SaaS Impacto
+    interval: 1m
+    rules:
+
+      # ── Error Rate ────────────────────────────────────────────────────────
+      - uid: saas-impacto-error-rate
+        title: "API Error Rate > 1%"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "${DS_PROMETHEUS}"
+            model:
+              expr: >
+                sum(rate(http_requests_total{job="saas-impacto-api",status=~"5.."}[5m]))
+                / sum(rate(http_requests_total{job="saas-impacto-api"}[5m]))
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              conditions:
+                - evaluator: { params: [0.01], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Taxa de erros HTTP 5xx acima de 1% por 2 minutos."
+          description: >
+            O endpoint da API está retornando mais de 1% de respostas 5xx.
+            Verificar logs do Cloud Run e status do banco de dados.
+          runbook_url: "https://github.com/tadeugomes/saas_impacto/wiki/runbooks#api-error-rate"
+        labels:
+          severity: critical
+          team: backend
+
+      # ── Latência P95 ──────────────────────────────────────────────────────
+      - uid: saas-impacto-latency-p95
+        title: "API Latência P95 > 2s"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "${DS_PROMETHEUS}"
+            model:
+              expr: >
+                histogram_quantile(0.95,
+                  sum(rate(http_request_duration_seconds_bucket{job="saas-impacto-api"}[5m]))
+                  by (le)
+                )
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              conditions:
+                - evaluator: { params: [2.0], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Latência P95 da API acima de 2 segundos por 5 minutos."
+          description: >
+            95% das requisições estão demorando mais de 2s para responder.
+            Verificar queries ao BigQuery, Redis e Cloud SQL.
+          runbook_url: "https://github.com/tadeugomes/saas_impacto/wiki/runbooks#latency"
+        labels:
+          severity: warning
+          team: backend
+
+      # ── Celery — Tasks com Falha ──────────────────────────────────────────
+      - uid: saas-impacto-celery-failures
+        title: "Celery: tasks com falha > 5 por minuto"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: "${DS_PROMETHEUS}"
+            model:
+              expr: >
+                sum(rate(celery_tasks_total{job="saas-impacto-worker",state="failed"}[1m])) * 60
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              conditions:
+                - evaluator: { params: [5], type: gt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Mais de 5 tasks Celery com falha por minuto."
+          description: >
+            O worker Celery está acumulando falhas. Análises causais podem não
+            estar sendo concluídas. Verificar logs do worker e conectividade
+            com Redis/BigQuery.
+          runbook_url: "https://github.com/tadeugomes/saas_impacto/wiki/runbooks#celery-failures"
+        labels:
+          severity: critical
+          team: backend
+
+      # ── BigQuery Cache Hit Rate ───────────────────────────────────────────
+      - uid: saas-impacto-bq-cache-low
+        title: "BigQuery Cache Hit Rate < 30%"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "${DS_PROMETHEUS}"
+            model:
+              expr: >
+                rate(bigquery_cache_hits_total{job="saas-impacto-api"}[5m])
+                / (
+                  rate(bigquery_cache_hits_total{job="saas-impacto-api"}[5m])
+                  + rate(bigquery_cache_misses_total{job="saas-impacto-api"}[5m])
+                )
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              conditions:
+                - evaluator: { params: [0.3], type: lt }
+                  operator: { type: and }
+                  query: { params: [A] }
+                  reducer: { params: [], type: last }
+                  type: query
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Cache hit rate do BigQuery abaixo de 30% por 10 minutos."
+          description: >
+            Muitas queries estão indo diretamente ao BigQuery sem cache Redis.
+            Verificar TTL do cache, conectividade com Memorystore e padrões de
+            acesso incomuns (possível scraping ou usuário abusando da API).
+          runbook_url: "https://github.com/tadeugomes/saas_impacto/wiki/runbooks#bq-cache"
+        labels:
+          severity: warning
+          team: backend
+
+contactPoints: []
+policies: []

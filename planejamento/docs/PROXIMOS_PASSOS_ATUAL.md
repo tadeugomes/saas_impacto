@@ -49,6 +49,9 @@
 | PR-38 | M2: IND-2.03/2.04 marcados indisponíveis + warning + frontend | — | ✅ |
 | PR-M3 | M3: remover build_proxy_causal_multiplier + banner frontend | — | ✅ |
 | PR-RPT | Relatório DOCX: bandas de IC no gráfico Event Study | — | ✅ |
+| PR-39  | E2E Playwright: 8 cenários (login, M1, M3, M5, onboarding, M2 warnings, navegação, health) | 8 | ✅ |
+| PR-40  | Dashboard Grafana pré-configurado + alertas YAML | — | ✅ |
+| PR-41  | Limpeza docstring migration Alembic D7 SCM stub | — | ✅ |
 
 **Total acumulado:** ~370 testes unitários, stack completa
 
@@ -98,10 +101,10 @@ Resumo dos gaps de dados:
 
 | # | Gap | Risco | Esforço |
 |---|-----|-------|---------|
-| G1 | Dashboard Grafana não pré-configurado | Cego em produção para métricas customizadas | 3h |
+| G1 | ~~Dashboard Grafana não pré-configurado~~ | ✅ Resolvido via PR-40 | — |
 | G2 | ~~IND-2.11 e IND-2.12 retornam dados sem denominador real~~ | ✅ Resolvido via PR-37 | — |
-| G3 | Sem testes E2E (Playwright/Cypress) | Regressões de integração não detectadas | 1d |
-| G4 | Alembic migration D7 (SCM stubs) ainda no changelog | Ruído histórico | 30 min |
+| G3 | ~~Sem testes E2E (Playwright/Cypress)~~ | ✅ Resolvido via PR-39 | — |
+| G4 | ~~Alembic migration D7 (SCM stubs) ainda no changelog~~ | ✅ Resolvido via PR-41 | — |
 
 ---
 
@@ -213,6 +216,6 @@ Higiene:
 | Métrica | Atual | Pós PR-37/38 | Pós PR-39/40 |
 |---------|-------|--------------|--------------|
 | Indicadores com dado real | 77/81 | 81/81 | 81/81 |
-| Cobertura E2E | 0 cenários | 0 | 8-12 |
-| Dashboard operacional | ❌ | ❌ | ✅ |
+| Cobertura E2E | 0 cenários | — | 8 cenários ✅ |
+| Dashboard operacional | ❌ | — | ✅ (PR-40) |
 | Testes unitários | ~370 | ~380 | ~380 |

@@ -6,20 +6,21 @@ Create Date: 2026-02-20 10:00:00.000000
 
 Contexto
 --------
-O PR-07 adiciona "scm" e "augmented_scm" como métodos válidos na tabela
-``economic_impact_analyses``. Ambos requerem feature flag habilitada no
-.env para serem executados (ENABLE_SCM / ENABLE_AUGMENTED_SCM).
+O PR-07 adicionou "scm" e "augmented_scm" como métodos válidos na tabela
+``economic_impact_analyses`` quando os métodos ainda estavam em fase de stub.
 
-A constraint original aceitava apenas:
-    did | iv | panel_iv | event_study | compare
+O PR-25 implementou o SCM real (Augmented SCM: ridge regression + placebos
+de espaço e tempo) via ``AugmentedSCM`` em ``backend/app/services/scm/``.
+Ambos os métodos são totalmente operacionais e não requerem mais feature flag
+para execução (a flag ENABLE_SCM / ENABLE_AUGMENTED_SCM foi removida no PR-25).
 
-A nova constraint adiciona:
-    scm | augmented_scm
+Constraint atual (V2) aceita:
+    did | iv | panel_iv | event_study | compare | scm | augmented_scm
 
 Reversibilidade
 --------------
 O downgrade remove os valores scm/augmented_scm da constraint.
-Rows com method IN ('scm', 'augmented_scm') devem ser removidas antes
+Rows com method IN ('scm', 'augmented_scm') devem ser excluídas antes
 do downgrade; do contrário, o ALTER TABLE falhará por violação de constraint.
 """
 from __future__ import annotations

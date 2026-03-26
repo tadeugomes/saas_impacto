@@ -1,0 +1,7 @@
+# Playwright auth state (contains tokens — never commit)
+.auth/
+
+# Test results
+playwright-report/
+test-results/
+node_modules/
