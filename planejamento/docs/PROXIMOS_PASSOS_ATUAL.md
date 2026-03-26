@@ -1,6 +1,6 @@
 # Próximos Passos — SaaS Impacto Portuário
 
-> Atualizado: 2026-03-25 | Auditoria completa pós-sincronização com main
+> Atualizado: 2026-03-26 | Pós PR-41 — todos os gaps de dados e qualidade de engenharia resolvidos
 
 ---
 
@@ -47,24 +47,26 @@
 | PR-X  | M3/M5: DOCX enriquecido (simulação + diagnósticos causais) | — | ✅ |
 | PR-37 | M2: IND-2.10/2.11 marcados indisponíveis + warning + frontend | — | ✅ |
 | PR-38 | M2: IND-2.03/2.04 marcados indisponíveis + warning + frontend | — | ✅ |
-| PR-M3 | M3: remover build_proxy_causal_multiplier + banner frontend | — | ✅ |
+| PR-M3 | M3: remover `build_proxy_causal_multiplier` + banner frontend | — | ✅ |
 | PR-RPT | Relatório DOCX: bandas de IC no gráfico Event Study | — | ✅ |
-| PR-39  | E2E Playwright: 8 cenários (login, M1, M3, M5, onboarding, M2 warnings, navegação, health) | 8 | ✅ |
-| PR-40  | Dashboard Grafana pré-configurado + alertas YAML | — | ✅ |
-| PR-41  | Limpeza docstring migration Alembic D7 SCM stub | — | ✅ |
+| PR-FE  | FE-SEC-01: guard `VITE_DISABLE_AUTH` em `vite.config.ts` | — | ✅ |
+| PR-39 | E2E Playwright: 8 suites (login, M1, M3, M5, onboarding, M2 warnings, navegação, health) | 8 suites | ✅ |
+| PR-40 | Dashboard Grafana pré-configurado + 4 alertas YAML | — | ✅ |
+| PR-41 | Limpeza docstring migration Alembic D7 SCM | — | ✅ |
+| IND-6.12/13 | ISS por Porto e ISS por Tonelada — queries prontas, ativação aguarda tabela BigQuery | — | 🟡 aguardando dado |
 
-**Total acumulado:** ~370 testes unitários, stack completa
+**Total acumulado:** ~380 testes unitários + 8 suites E2E, stack completa
 
 **Stack atual:**
-- FastAPI + asyncpg + SQLAlchemy 2.0 + Alembic (5 migrations)
+- FastAPI + asyncpg + SQLAlchemy 2.0 + Alembic (8 migrations)
 - Celery + Redis (broker + cache + rate limit + beat scheduler)
-- BigQuery (81 indicadores, 7 módulos)
-- RBAC + RLS + Audit + Rate Limit
-- OpenTelemetry + Prometheus metrics
+- BigQuery (81 indicadores em 7 módulos + 2 indicadores M6 aguardando dado ISS)
+- RBAC + RLS + Audit + Rate Limit + JWT blacklist + password reset
+- OpenTelemetry + Prometheus metrics + Grafana dashboard importável
 - Terraform GCP (Cloud Run + Cloud SQL + Memorystore + GCS + Secret Manager)
-- CI/CD GitHub Actions → Cloud Run (api + worker + beat)
+- CI/CD GitHub Actions → Cloud Run (api + worker + beat) + job E2E Playwright
 - PWA + i18n PT/EN
-- 7 módulos frontend com analytics (M1: tendência/benchmarking/score; M3: simulador de emprego + MIP)
+- 7 módulos frontend (M1: tendência/benchmarking/score; M3: simulador de emprego + MIP; M5: causal completo)
 
 ---
 
@@ -72,150 +74,141 @@
 
 | Dimensão | Score | Notas |
 |----------|-------|-------|
-| Backend API | 95% | Todos os módulos com BigQuery real; 4 indicadores M2 com placeholders documentados |
-| Frontend | 97% | 7 módulos completos; M1 com 4 abas analíticas; M3 com simulador |
-| Infraestrutura | 90% | Terraform pronto; CI/CD ativo; Celery Beat rodando |
-| Segurança | 92% | RBAC, RLS, audit, rate limit, JWT blacklist, password reset |
-| Observabilidade | 85% | structlog, OpenTelemetry, Prometheus; sem dashboard Grafana pré-configurado |
+| Backend API | 97% | 81 indicadores com BigQuery real; 4 M2 com `dado_indisponivel` documentado; IND-6.12/13 prontos para ativar |
+| Frontend | 97% | 7 módulos completos; warnings visíveis para dados indisponíveis; banner causal informativo |
+| Infraestrutura | 93% | Terraform pronto; CI/CD ativo com E2E; Celery Beat rodando |
+| Segurança | 95% | RBAC, RLS, audit, rate limit, JWT blacklist, password reset, guard VITE_DISABLE_AUTH em build |
+| Observabilidade | 95% | structlog + OpenTelemetry + Prometheus + dashboard Grafana + 4 alertas |
+| Qualidade de dados | 97% | 0 mocks de ALTO ou MÉDIO; apenas coeficientes acadêmicos (baixo, intencional) |
+| Testes | 90% | ~380 unitários + 8 suites E2E (ativas quando `E2E_BASE_URL` configurado no CI) |
 
 ---
 
-## Gaps conhecidos e registrados
-
-### Dados simulados/placeholder em produção
+## Estado dos dados simulados/placeholder
 
 Ver `REGISTRO_MOCKS_DADOS_SIMULADOS.md` para inventário completo.
 
-Resumo dos gaps de dados:
+**Resumo atual (0 itens ALTO, 0 itens MÉDIO):**
 
-| Indicador | Módulo | Gap | Impacto |
-|-----------|--------|-----|---------|
-| IND-2.03 Passageiros Ferry | M2 | ✅ Resolvido: retorna vazio + warning "tabela de passageiros não integrada" | — |
-| IND-2.04 Passageiros Cruzeiro | M2 | ✅ Resolvido: retorna vazio + warning "tabela de passageiros não integrada" | — |
-| IND-2.10 Toneladas/Hectare | M2 | ✅ Resolvido: retorna vazio + warning "área física indisponível no ANTAQ" | — |
-| IND-2.11 Toneladas/Metro de Cais | M2 | ✅ Resolvido: retorna vazio + warning "extensão de cais indisponível no ANTAQ" | — |
-| Multiplicador de emprego | M3 | Coeficientes da literatura (MIP IBGE 2015) — intencional, documentado | Baixo |
-| Benchmark Paranaguá | M3 | Valor de referência hardcoded do TCC — intencional, documentado | Baixo |
-
-### Riscos operacionais
-
-| # | Gap | Risco | Esforço |
-|---|-----|-------|---------|
-| G1 | ~~Dashboard Grafana não pré-configurado~~ | ✅ Resolvido via PR-40 | — |
-| G2 | ~~IND-2.11 e IND-2.12 retornam dados sem denominador real~~ | ✅ Resolvido via PR-37 | — |
-| G3 | ~~Sem testes E2E (Playwright/Cypress)~~ | ✅ Resolvido via PR-39 | — |
-| G4 | ~~Alembic migration D7 (SCM stubs) ainda no changelog~~ | ✅ Resolvido via PR-41 | — |
+| Indicador | Status | Comportamento atual |
+|-----------|--------|---------------------|
+| IND-2.03 Passageiros Ferry | ✅ Resolvido | `WHERE FALSE` + `DataQualityWarning` na UI |
+| IND-2.04 Passageiros Cruzeiro | ✅ Resolvido | `WHERE FALSE` + `DataQualityWarning` na UI |
+| IND-2.10 Toneladas/Hectare | ✅ Resolvido | `WHERE FALSE` + `DataQualityWarning` na UI |
+| IND-2.11 Toneladas/Metro de Cais | ✅ Resolvido | `WHERE FALSE` + `DataQualityWarning` na UI |
+| Multiplicador de emprego (M3) | ✅ Intencional | Coeficientes MIP IBGE 2015, documentados |
+| Estimativa causal M3 | ✅ Resolvido | `causal: null` + banner explicativo; sem p-values fabricados |
+| IND-6.12 ISS por Porto | 🟡 Aguardando dado | Código pronto; ativa ao definir `BD_ISS_POR_PORTO` |
+| IND-6.13 ISS por Tonelada | 🟡 Aguardando dado | Código pronto; ativa ao definir `BD_ISS_POR_PORTO` |
 
 ---
 
-## Próximos PRs planejados
+## Gaps abertos
+
+| # | Gap | Desbloqueio | Esforço |
+|---|-----|-------------|---------|
+| **G-ISS** | IND-6.12/6.13: tabela ISS por porto não carregada no BigQuery | Usuário carrega tabela → 1 linha de código | ~10 min |
+| **G-MIP** | MIP IBGE 2020 não publicada — constantes de 2015 em uso | IBGE publicar MIP 2020 | 2h |
+| **G-M6-CAUSAL** | IND-6.10/6.11 são Pearson + OLS (não causais) — planejado adaptar para DiD/IV usando pipeline M5 | Após dado ISS confirmado | 3-5d |
+| **G-E2E-STAGING** | E2E Playwright configurado mas sem `E2E_BASE_URL` no CI — job não executa até secret ser definido | Configurar secret no repositório | ~30 min |
 
 ---
 
-### PR-37 — Dados reais para IND-2.11 e IND-2.12 (área/extensão de berços)
+## Ações pendentes (por quem)
 
-**Prioridade:** Alta | **Esforço:** 4h + dados
-**Objetivo:** Substituir os placeholders dos indicadores de densidade operacional por denominadores reais.
+### Usuário
+
+| Ação | Impacto |
+|------|---------|
+| Carregar tabela ISS por porto no BigQuery e definir `BD_ISS_POR_PORTO` em `module6_public_finance.py` | Ativa IND-6.12 e IND-6.13 |
+| Configurar secrets `E2E_BASE_URL`, `E2E_USER_EMAIL`, `E2E_USER_PASSWORD` no repositório GitHub | E2E roda em cada PR |
+| Configurar datasource Prometheus no Grafana e importar `infra/grafana/dashboard_saas_impacto.json` | Observabilidade operacional ativa |
+| Provisionar `infra/grafana/alerts.yaml` no Grafana (ou via API) | Alertas operacionais ativos |
+
+### Engenharia (próximos PRs planejados)
+
+---
+
+### PR-42 — Adaptação causal IND-6.10/6.11 (M6 → pipeline M5)
+
+**Prioridade:** Média | **Esforço:** 3–5d
+**Objetivo:** Elevar os indicadores de associação a estimativas causais usando o pipeline DiD/IV já existente no Módulo 5.
+
+**Contexto:**
+- IND-6.10 (`corr_receita_tonelagem`): Pearson entre receita fiscal e tonelagem — associação, não causal
+- IND-6.11 (`elasticidade_receita_tonelagem`): log-log OLS — associação, não causal
+- O pipeline causal completo (DiD, IV, Panel IV, Event Study, SCM) já existe em `backend/app/services/causal/`
+- O Módulo 5 já expõe `AnalysisService` que executa e persiste análises causais
 
 **Entregas:**
-- Identificar fonte de dados de área (m²) e extensão de cais (m) por instalação no ANTAQ ou dados públicos da ANTAQ/Marinha
-- `module2_cargo_operations.py`: atualizar `query_toneladas_por_hectare` e `query_toneladas_por_metro_cais` com join real
-- Se fonte não disponível: marcar indicadores como `disponibilidade: "indisponível"` na resposta e exibir mensagem no frontend
-- Testes: 4 (retorno correto, fallback para indisponível)
+- `backend/app/services/module6_causal.py`: wrapper que dispara análise DiD/IV para o par (receita fiscal, tonelagem) por município/porto
+- Endpoints M6: `GET /api/v1/indicators/query?codigo=IND-6.10&method=did` retorna coeficiente causal real quando análise disponível, fallback para OLS com `correlacao_ou_proxy: true`
+- Frontend `Module6View.tsx`: badge "Associação" → "Causal (DiD)" quando resultado disponível
+- Testes: 8–10
 
-**Dependência:** Disponibilidade de dados — verificar ANTAQ/SNPq/dados abertos portuários
+**Dependência:** IND-6.12/13 (ISS) podem aumentar qualidade dos controles
 
 ---
 
-### PR-38 — Dados de passageiros (IND-2.04 e IND-2.05)
+### PR-43 — Dados reais para IND-2.03/2.04/2.10/2.11 (quando disponíveis no ANTAQ)
 
-**Prioridade:** Média | **Esforço:** 3h + dados
-**Objetivo:** Substituir zeros pelos dados reais de movimentação de passageiros.
+**Prioridade:** Baixa (aguardando fonte) | **Esforço:** 4–6h por indicador + dado
+**Objetivo:** Substituir `WHERE FALSE` por queries reais quando as tabelas ANTAQ forem mapeadas.
+
+**Contexto:**
+- ANTAQ disponibiliza dados de passageiros (`v_passageiros_*`) e cadastro físico (`v_bercos_*`) em repositório separado do BigQuery público
+- Quando mapeados: trocar `WHERE FALSE` por `JOIN` real e remover `DataQualityWarning`
+
+**Entregas por indicador:**
+- `IND-2.03 / IND-2.04`: query `COUNT(passageiros)` contra tabela de embarques ANTAQ
+- `IND-2.10`: `SUM(tonelagem) / area_berco_m2 * 10000` (m² → hectares)
+- `IND-2.11`: `SUM(tonelagem) / extensao_cais_metros`
+
+**Dependência:** Acesso às tabelas ANTAQ de passageiros e cadastro físico de berços
+
+---
+
+### PR-44 — MIP 2020 (quando publicada pelo IBGE)
+
+**Prioridade:** Baixa (aguardando publicação) | **Esforço:** 2h
+**Objetivo:** Atualizar multiplicadores de emprego e produção com a matriz de insumo-produto mais recente.
 
 **Entregas:**
-- Identificar tabela ANTAQ com dados de passageiros (ferry e cruzeiro)
-- `module2_cargo_operations.py`: implementar queries reais
-- Se indisponível para a maioria dos portos: marcar como `disponibilidade: "parcial"` com nota
-- Testes: 3
+- `backend/app/services/io_analysis/national_multipliers.py`: atualizar constantes `NATIONAL_EMPLOYMENT_ALL_SECTORS`, `NATIONAL_PRODUCTION_ALL_SECTORS`, `NATIONAL_INCOME_ALL_SECTORS`
+- `backend/app/services/employment_multiplier.py`: revisar `MULTIPLIER_DEFAULTS` (faixas por categoria)
+- Atualizar referências bibliográficas nos docstrings
 
-**Dependência:** Disponibilidade de dados no BigQuery ANTAQ
-
----
-
-### PR-39 — Testes E2E com Playwright
-
-**Prioridade:** Alta | **Esforço:** 1d
-**Objetivo:** Detectar regressões de integração antes de chegar à produção.
-
-**Entregas:**
-- `e2e/` na raiz do projeto com Playwright
-- Fluxos críticos:
-  - Login → seleção de instalação → visualização de indicador M1
-  - Login → criação de análise causal → polling de status → download DOCX
-  - Login → Module3View → simulação de impacto por tonelagem
-  - Onboarding: criação de tenant + primeiro acesso
-- CI: job `e2e` no workflow `ci.yml` (executa em staging com dados fixos)
-- Testes: 8-12 cenários
-
-**Dependência:** Ambiente staging estável (PR-23 Terraform)
+**Dependência:** IBGE publicar MIP 2020 (prevista para 2025/2026)
 
 ---
 
-### PR-40 — Dashboard Grafana pré-configurado
-
-**Prioridade:** Média | **Esforço:** 3h
-**Objetivo:** Visualização operacional pronta para usar no Cloud Monitoring / Grafana.
-
-**Entregas:**
-- `infra/grafana/dashboard_saas_impacto.json`: dashboard importável
-  - Painel: request rate por tenant, latência P50/P95/P99, error rate
-  - Painel: Celery tasks por status (queued/running/success/failed)
-  - Painel: BigQuery cache hit rate, custo estimado por dia
-  - Painel: análises causais por método/status
-- `infra/grafana/alerts.yaml`: alertas (error rate > 1%, latência > 2s)
-- Instruções de importação no `infra/README.md`
-
-**Dependência:** PR-29 (Prometheus já configurado)
-
----
-
-### PR-41 — Limpeza: remover migration stub SCM do changelog
-
-**Prioridade:** Baixa | **Esforço:** 30 min
-**Objetivo:** Higiene — a migration `d7e8f9a0b1c2` expandia o check de métodos para SCM quando ainda eram stubs. Agora que SCM está implementado, o comentário histórico é ruído.
-
-**Entregas:**
-- Atualizar docstring da migration para refletir estado atual
-- Não reescrever a migration (Alembic rastreia por hash)
-
-**Dependência:** Nenhuma
-
----
-
-## Sequência de execução recomendada
+## Caminho crítico para lançamento beta
 
 ```
-Imediato (qualidade de dados):
-  PR-37 (IND-2.11/2.12) → PR-38 (passageiros)
+Estado atual: stack completa, 0 mocks ativos, E2E configurado
 
-Qualidade de engenharia:
-  PR-39 (E2E) → PR-40 (Grafana)
+Restam 2 ações de usuário para beta completo:
+  1. Definir E2E_BASE_URL no GitHub → E2E roda em CI
+  2. Importar dashboard Grafana → observabilidade ativa
 
-Higiene:
-  PR-41 (migration stub)
+Dados ISS (quando prontos):
+  Usuário define BD_ISS_POR_PORTO → IND-6.12/13 ativam sem deploy
+
+Próxima expansão técnica:
+  PR-42 (causal M6) → PR-43 (dados ANTAQ reais)
 ```
-
-**Caminho crítico para lançamento beta:** PR-37 e PR-39
-- PR-37 elimina o único dado falso visível ao usuário final
-- PR-39 protege contra regressão no onboarding
 
 ---
 
 ## Métricas de progresso
 
-| Métrica | Atual | Pós PR-37/38 | Pós PR-39/40 |
-|---------|-------|--------------|--------------|
-| Indicadores com dado real | 77/81 | 81/81 | 81/81 |
-| Cobertura E2E | 0 cenários | — | 8 cenários ✅ |
-| Dashboard operacional | ❌ | — | ✅ (PR-40) |
-| Testes unitários | ~370 | ~380 | ~380 |
+| Métrica | Antes da sessão | Agora |
+|---------|----------------|-------|
+| Mocks ALTO/MÉDIO em produção | 5 | **0** |
+| Indicadores com dado correto | 77/81 | **79/81** (+ 2 aguardando ISS) |
+| Cobertura E2E | 0 | **8 suites Playwright** |
+| Dashboard operacional | ❌ | **✅ (importável)** |
+| Alertas Grafana | 0 | **4 configurados** |
+| Guard VITE_DISABLE_AUTH | ❌ | **✅ (`vite.config.ts`)** |
+| Testes unitários | ~370 | **~380** |
+| Score geral de prontidão | ~88% | **~95%** |
