@@ -104,11 +104,9 @@ class MaresClient(BasePublicApiClient):
             }
             try:
                 return await self.get("/previsao", params=params)
-            except PublicApiError:
+            except (PublicApiError, Exception):
                 logger.warning(
-                    "mares_api_unavailable",
-                    estacao=estacao_id,
-                    fallback="simulated",
+                    "mares_api_unavailable estacao=%s, using simulated data", estacao_id,
                 )
                 return self._generate_simulated_tides(data_inicio, data_fim)
 

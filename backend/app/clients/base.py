@@ -116,19 +116,14 @@ class BasePublicApiClient:
                         e.response.headers.get("Retry-After", 2**attempt)
                     )
                     logger.warning(
-                        "public_api_rate_limited",
-                        api=self.api_name,
-                        path=path,
-                        retry_after=retry_after,
+                        "public_api_rate_limited api=%s path=%s retry_after=%s",
+                        self.api_name, path, retry_after,
                     )
                     await asyncio.sleep(retry_after)
                 elif code >= 500:
                     logger.warning(
-                        "public_api_server_error",
-                        api=self.api_name,
-                        path=path,
-                        status=code,
-                        attempt=attempt + 1,
+                        "public_api_server_error api=%s path=%s status=%s attempt=%s",
+                        self.api_name, path, code, attempt + 1,
                     )
                     await asyncio.sleep(2**attempt)
                 else:
@@ -141,11 +136,8 @@ class BasePublicApiClient:
             except httpx.TransportError as e:
                 last_error = e
                 logger.warning(
-                    "public_api_transport_error",
-                    api=self.api_name,
-                    path=path,
-                    error=str(e),
-                    attempt=attempt + 1,
+                    "public_api_transport_error api=%s path=%s err=%s attempt=%s",
+                    self.api_name, path, e, attempt + 1,
                 )
                 await asyncio.sleep(2**attempt)
 

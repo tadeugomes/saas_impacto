@@ -131,12 +131,7 @@ class IbgeClient(BasePublicApiClient):
             )
             return self._extract_valor(data, cod_ibge)
         except Exception as e:
-            logger.warning(
-                "ibge_populacao_error",
-                cod_ibge=cod_ibge,
-                ano=ano,
-                error=str(e),
-            )
+            logger.warning("ibge_populacao_error: cod=%s ano=%s err=%s", cod_ibge, ano, e)
             return None
 
     async def pib_municipio(
@@ -167,12 +162,7 @@ class IbgeClient(BasePublicApiClient):
                 result["pib_mil_reais"] = result.pop("valor")
             return result
         except Exception as e:
-            logger.warning(
-                "ibge_pib_error",
-                cod_ibge=cod_ibge,
-                ano=ano,
-                error=str(e),
-            )
+            logger.warning("ibge_pib_error: cod=%s ano=%s err=%s", cod_ibge, ano, e)
             return None
 
     @staticmethod
