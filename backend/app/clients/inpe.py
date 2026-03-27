@@ -1,7 +1,12 @@
 """
-Cliente para a API do INPE (Instituto Nacional de Pesquisas Espaciais).
+Cliente para dados de focos de incêndio próximos a instalações portuárias.
 
-Fornece dados de focos de incêndio próximos a instalações portuárias.
+Nota: A API BDQueimadas do INPE (terrabrasilis.dpi.inpe.br) é instável.
+O cliente tenta a API do INPE primeiro e, se falhar, usa NASA FIRMS como
+fallback. Ambas as APIs são gratuitas (FIRMS requer API key para CSV,
+mas o endpoint de área retorna JSON sem chave).
+
+Se ambas falharem, retorna lista vazia — o cálculo de risco trata gracefully.
 """
 
 from __future__ import annotations

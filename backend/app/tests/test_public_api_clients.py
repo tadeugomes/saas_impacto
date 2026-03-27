@@ -328,29 +328,63 @@ class TestAnaClient:
 
     @pytest.mark.asyncio
     async def test_risco_hidrico_alto(self):
+        """Risco alto quando nível < calado mínimo."""
+        from unittest.mock import patch
         from app.clients.ana import AnaClient
 
-        client = _mock(
-            AnaClient(),
-            lambda r: _json_response([{"Data": "2025-01-01", "Nivel": "10.0", "Vazao": "5000"}]),
-        )
-        result = await client.calcular_risco_hidrico("14990000", 12.0)
+        client = AnaClient()
+        client._cache = NoOpCache()
+
+        # Mock consultar_nivel_rio para retornar dados diretamente
+        async def mock_nivel(*a, **kw):
+            return [{"data": "2025-01-01", "nivel_metros": 10.0, "vazao_m3s": 5000}]
+
+        with patch.object(client, "consultar_nivel_rio", mock_nivel):
+            result = await client.calcular_risco_hidrico("14990000", 12.0)
+
         assert result["classificacao"] == "alto"
         assert result["risco_normalizado"] == 1.0
-        await client.close()
 
     @pytest.mark.asyncio
     async def test_risco_hidrico_baixo(self):
+        """Risco baixo quando nível >> calado mínimo."""
+        from unittest.mock import patch
         from app.clients.ana import AnaClient
 
-        client = _mock(
-            AnaClient(),
-            lambda r: _json_response([{"Data": "2025-01-01", "Nivel": "30.0", "Vazao": "15000"}]),
-        )
-        result = await client.calcular_risco_hidrico("14990000", 12.0)
+        client = AnaClient()
+        client._cache = NoOpCache()
+
+        async def mock_nivel(*a, **kw):
+            return [{"data": "2025-01-01", "nivel_metros": 30.0, "vazao_m3s": 15000}]
+
+        with patch.object(client, "consultar_nivel_rio", mock_nivel):
+            result = await client.calcular_risco_hidrico("14990000", 12.0)
+
         assert result["classificacao"] == "baixo"
         assert result["risco_normalizado"] < 0.3
-        await client.close()
+
+    def test_parse_xml_cotas(self):
+        """Parseia XML diffgram real da ANA."""
+        from app.clients.ana import AnaClient
+        import xml.etree.ElementTree as ET
+
+        xml_str = """<DataTable xmlns="http://MRCS/">
+            <diffgr:diffgram xmlns:diffgr="urn:schemas-microsoft-com:xml-diffgram-v1">
+                <DocumentElement xmlns="">
+                    <SerieHistorica>
+                        <DataHora>2025-01-01</DataHora>
+                        <Cota01>1500</Cota01>
+                        <Cota02>1520</Cota02>
+                    </SerieHistorica>
+                </DocumentElement>
+            </diffgr:diffgram>
+        </DataTable>"""
+
+        root = ET.fromstring(xml_str)
+        result = AnaClient._parse_xml_cotas(root)
+        assert len(result) == 2
+        assert result[0]["nivel_metros"] == 15.0  # 1500cm → 15.0m
+        assert result[1]["nivel_metros"] == 15.2   # 1520cm → 15.2m
 
     def test_mapeamento_porto(self):
         from app.clients.ana import AnaClient
