@@ -3,12 +3,20 @@ Celery tasks para sincronização periódica de dados de APIs externas.
 
 Pré-popula o cache Redis com dados que mudam raramente (Selic a cada 45 dias,
 IPCA mensal, câmbio diário). Garante resposta <10ms durante horário comercial.
+
+Schedules definidos em celery_app.py (beat_schedule):
+  - sync_bacen_series: diário 10h
+  - sync_ibge_dados: mensal dia 1 às 6h
+  - sync_focos_incendio: a cada 3h
+  - sync_nivel_rios: a cada 6h
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +30,7 @@ def _run_async(coro):
         loop.close()
 
 
+@celery_app.task(name="app.tasks.public_api_sync.sync_bacen_series")
 def sync_bacen_series():
     """
     Atualiza séries BACEN no cache Redis.
@@ -41,6 +50,7 @@ def sync_bacen_series():
     _run_async(_sync())
 
 
+@celery_app.task(name="app.tasks.public_api_sync.sync_ibge_dados")
 def sync_ibge_dados():
     """
     Atualiza dados de população e PIB do IBGE.
@@ -63,6 +73,7 @@ def sync_ibge_dados():
     _run_async(_sync())
 
 
+@celery_app.task(name="app.tasks.public_api_sync.sync_focos_incendio")
 def sync_focos_incendio():
     """
     Atualiza focos de incêndio INPE para portos principais.
@@ -91,6 +102,7 @@ def sync_focos_incendio():
     _run_async(_sync())
 
 
+@celery_app.task(name="app.tasks.public_api_sync.sync_nivel_rios")
 def sync_nivel_rios():
     """
     Atualiza nível de rios para portos fluviais.

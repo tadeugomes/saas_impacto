@@ -169,10 +169,10 @@ async def query_servidores_federais(
 
 
 QUERIES_MODULE_6_EXTERNAL = {
-    "IND-6.06": query_autonomia_fiscal,
-    "IND-6.07": query_investimento_per_capita,
-    "IND-6.08": query_execucao_orcamentaria,
-    "IND-6.09": query_investimento_federal,
-    "IND-6.10": query_emendas_parlamentares,
-    "IND-6.11": query_servidores_federais,
+    "IND-6.12": query_autonomia_fiscal,
+    "IND-6.13": query_investimento_per_capita,
+    "IND-6.14": query_execucao_orcamentaria,
+    "IND-6.15": query_investimento_federal,
+    "IND-6.16": query_emendas_parlamentares,
+    "IND-6.17": query_servidores_federais,
 }

@@ -1248,8 +1248,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
     },
 
     # Module 6 - External Fiscal Indicators (TCEs + Portal da Transparência)
-    "IND-6.06": {
-        "codigo": "IND-6.06",
+    "IND-6.12": {
+        "codigo": "IND-6.12",
         "nome": "Autonomia Fiscal",
         "modulo": 6,
         "unidade": "Razão (0-1)",
@@ -1258,8 +1258,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "TCE Estadual",
     },
-    "IND-6.07": {
-        "codigo": "IND-6.07",
+    "IND-6.13": {
+        "codigo": "IND-6.13",
         "nome": "Investimento per Capita",
         "modulo": 6,
         "unidade": "R$/hab",
@@ -1268,8 +1268,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "TCE Estadual + IBGE",
     },
-    "IND-6.08": {
-        "codigo": "IND-6.08",
+    "IND-6.14": {
+        "codigo": "IND-6.14",
         "nome": "Eficiência na Execução Orçamentária",
         "modulo": 6,
         "unidade": "Razão (0-1)",
@@ -1278,8 +1278,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "TCE Estadual",
     },
-    "IND-6.09": {
-        "codigo": "IND-6.09",
+    "IND-6.15": {
+        "codigo": "IND-6.15",
         "nome": "Investimento Federal no Município",
         "modulo": 6,
         "unidade": "R$",
@@ -1288,8 +1288,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "Portal da Transparência",
     },
-    "IND-6.10": {
-        "codigo": "IND-6.10",
+    "IND-6.16": {
+        "codigo": "IND-6.16",
         "nome": "Emendas Parlamentares",
         "modulo": 6,
         "unidade": "R$",
@@ -1298,8 +1298,8 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Município/Ano",
         "fonte_dados": "Portal da Transparência",
     },
-    "IND-6.11": {
-        "codigo": "IND-6.11",
+    "IND-6.17": {
+        "codigo": "IND-6.17",
         "nome": "Servidores Federais",
         "modulo": 6,
         "unidade": "Contagem",
@@ -1371,6 +1371,58 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "descricao": "Combina execução orçamentária, investimento federal e autonomia fiscal (com bloco composicao)",
         "granularidade": "Instalação/Município/Ano",
         "fonte_dados": "TCE + Portal da Transparência + IBGE",
+    },
+
+    # Deflated Indicators (cross-module)
+    "IND-2.14": {
+        "codigo": "IND-2.14",
+        "nome": "Receita Real por Tonelada",
+        "modulo": 2,
+        "unidade": "R$ (constantes)",
+        "unctad": False,
+        "descricao": "Receita portuária deflacionada por IPCA / tonelagem movimentada",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "ANTAQ + BACEN (IPCA série 433)",
+    },
+    "IND-4.11": {
+        "codigo": "IND-4.11",
+        "nome": "FOB Exportações Ajustado",
+        "modulo": 4,
+        "unidade": "USD + R$ (constantes)",
+        "unctad": False,
+        "descricao": "Valor FOB exportações com conversão PTAX e deflação IPCA",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Comex Stat + BACEN (PTAX + IPCA)",
+    },
+    "IND-4.12": {
+        "codigo": "IND-4.12",
+        "nome": "FOB Importações Ajustado",
+        "modulo": 4,
+        "unidade": "USD + R$ (constantes)",
+        "unctad": False,
+        "descricao": "Valor FOB importações com conversão PTAX",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Comex Stat + BACEN (PTAX)",
+    },
+    "IND-6.18": {
+        "codigo": "IND-6.18",
+        "nome": "Receita Municipal Real per Capita",
+        "modulo": 6,
+        "unidade": "R$/hab (constantes)",
+        "unctad": False,
+        "descricao": "Receita total municipal deflacionada por IPCA / população",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "SICONFI + IBGE + BACEN (IPCA)",
+    },
+    "IND-6.19": {
+        "codigo": "IND-6.19",
+        "nome": "ICMS Real por Tonelada",
+        "modulo": 6,
+        "unidade": "R$/ton (constantes)",
+        "unctad": False,
+        "descricao": "ICMS arrecadado deflacionado / tonelagem portuária",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "SICONFI + ANTAQ + BACEN (IPCA)",
     },
 }
 

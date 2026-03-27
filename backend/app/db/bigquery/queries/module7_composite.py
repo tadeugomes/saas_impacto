@@ -95,7 +95,7 @@ async def query_idpm(
     autonomia = await _fetch_autonomia_fiscal(id_instalacao, id_municipio, ano)
     componentes.append({
         "nome": "Autonomia Fiscal",
-        "codigo_fonte": "IND-6.06",
+        "codigo_fonte": "IND-6.12",
         "valor_bruto": autonomia,
         "valor_normalizado": autonomia,  # já é 0-1
         "peso": 0.20,
@@ -304,7 +304,7 @@ async def query_indice_governanca(
     execucao = await _fetch_execucao_orcamentaria(id_instalacao, id_municipio, ano)
     componentes.append({
         "nome": "Execução Orçamentária",
-        "codigo_fonte": "IND-6.08",
+        "codigo_fonte": "IND-6.14",
         "valor_normalizado": execucao,
         "peso": 0.35,
         "fonte": "TCE Estadual",
@@ -320,7 +320,7 @@ async def query_indice_governanca(
     norm_inv = _normalize_ratio(inv_pc, max_val=5000)  # R$5000/hab = score 1
     componentes.append({
         "nome": "Investimento Federal per Capita",
-        "codigo_fonte": "IND-6.09",
+        "codigo_fonte": "IND-6.15",
         "valor_bruto_reais": inv_pc,
         "valor_normalizado": norm_inv,
         "peso": 0.30,
@@ -336,7 +336,7 @@ async def query_indice_governanca(
     autonomia = await _fetch_autonomia_fiscal(id_instalacao, id_municipio, ano)
     componentes.append({
         "nome": "Autonomia Fiscal",
-        "codigo_fonte": "IND-6.06",
+        "codigo_fonte": "IND-6.12",
         "valor_normalizado": autonomia,
         "peso": 0.35,
         "fonte": "TCE Estadual",

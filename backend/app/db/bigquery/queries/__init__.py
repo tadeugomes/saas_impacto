@@ -161,6 +161,16 @@ from app.db.bigquery.queries.module6_external import (
     QUERIES_MODULE_6_EXTERNAL,
 )
 
+# Deflated indicators (cross-module, async)
+from app.db.bigquery.queries.deflated_indicators import (
+    query_receita_real_por_tonelada,
+    query_fob_exportacoes_usd_ajustado,
+    query_fob_importacoes_usd_ajustado,
+    query_receita_municipal_real_per_capita,
+    query_icms_real_por_tonelada,
+    QUERIES_DEFLATED,
+)
+
 # Module 7 - Composite Synthetic Indices (cross-module, async)
 from app.db.bigquery.queries.module7_composite import (
     query_idpm,
@@ -191,6 +201,7 @@ ALL_QUERIES = {
     **QUERIES_MODULE_7_COMPOSITE,
     **QUERIES_MODULE_8,
     **QUERIES_MODULE_9,
+    **QUERIES_DEFLATED,
 }
 
 __all__ = [
