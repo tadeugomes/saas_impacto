@@ -78,6 +78,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       moduleColor: 'module7',
     },
     {
+      path: '/dashboard/module8',
+      icon: TrendingUp,
+      label: t('navigation.module8'),
+      description: 'Selic, IPCA, Câmbio, PIB (6)',
+      moduleColor: 'module8',
+    },
+    {
       path: '/admin',
       icon: Settings,
       label: 'Admin',
@@ -156,6 +163,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-module5': item.moduleColor === 'module5',
                             'bg-module6': item.moduleColor === 'module6',
                             'bg-module7': item.moduleColor === 'module7',
+                            'bg-emerald-500': item.moduleColor === 'module8',
                           }
                         )} />
                       )}

@@ -132,6 +132,17 @@ from app.db.bigquery.queries.module7_synthetic_indices import (
     QUERIES_MODULE_7,
 )
 
+# Module 8 - Macro (async API queries, not BigQuery SQL)
+from app.db.bigquery.queries.module8_macro import (
+    query_selic_meta,
+    query_ipca_acumulado,
+    query_cambio_ptax,
+    query_ibc_br,
+    query_populacao_municipal as query_populacao_municipal_ibge,
+    query_pib_per_capita_municipal,
+    QUERIES_MODULE_8,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
@@ -141,6 +152,7 @@ ALL_QUERIES = {
     **QUERIES_MODULE_5,
     **QUERIES_MODULE_6,
     **QUERIES_MODULE_7,
+    **QUERIES_MODULE_8,
 }
 
 __all__ = [

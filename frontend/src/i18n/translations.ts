@@ -12,6 +12,7 @@ export type TranslationKey =
   | 'navigation.module5'
   | 'navigation.module6'
   | 'navigation.module7'
+  | 'navigation.module8'
   // Module 3 — multiplier panel
   | 'module3.multiplier.causalBeta'
   | 'module3.multiplier.causalActive'
@@ -57,6 +58,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module5': 'Módulo 5',
     'navigation.module6': 'Módulo 6',
     'navigation.module7': 'Módulo 7',
+    'navigation.module8': 'Contexto Macro',
     // Module 3 — multiplier panel
     'module3.multiplier.causalBeta': 'Estimativa causal aproximada (beta)',
     'module3.multiplier.causalActive': 'Estimativa causal ativa',
@@ -99,6 +101,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module5': 'Module 5',
     'navigation.module6': 'Module 6',
     'navigation.module7': 'Module 7',
+    'navigation.module8': 'Macro Context',
     // Module 3 — multiplier panel
     'module3.multiplier.causalBeta': 'Approximate causal estimate (beta)',
     'module3.multiplier.causalActive': 'Active causal estimate',

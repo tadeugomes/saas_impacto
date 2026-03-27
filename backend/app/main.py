@@ -38,6 +38,7 @@ from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.admin_dashboard import router as admin_dashboard_router
 from app.api.v1.impacto_economico.router import router as impacto_economico_router
 from app.api.v1.employment import router as employment_router
+from app.api.v1.public_apis import router as public_apis_router
 from app.db.base import engine
 from app.db.bigquery.client import BigQueryError, BigQueryClient, get_bigquery_client
 import redis.asyncio as aioredis
@@ -68,8 +69,15 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown — cleanup de clientes HTTP de APIs externas
     logger.info("app_shutdown")
+    try:
+        from app.clients.bacen import get_bacen_client
+        from app.clients.ibge import get_ibge_client
+        await get_bacen_client().close()
+        await get_ibge_client().close()
+    except Exception:
+        pass
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -281,6 +289,7 @@ api_router.include_router(reports_router)
 api_router.include_router(users_router)
 api_router.include_router(impacto_economico_router)
 api_router.include_router(employment_router)
+api_router.include_router(public_apis_router)
 
 app.include_router(api_router)
 

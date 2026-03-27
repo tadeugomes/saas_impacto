@@ -1162,6 +1162,68 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Instalação",
         "fonte_dados": "ANTAQ - v_carga_validada",
     },
+
+    # Module 8 - Contexto Macroeconômico (APIs BACEN + IBGE)
+    "IND-8.01": {
+        "codigo": "IND-8.01",
+        "nome": "Taxa Selic Meta",
+        "modulo": 8,
+        "unidade": "% a.a.",
+        "unctad": False,
+        "descricao": "Taxa Selic Meta definida pelo Copom — custo de oportunidade do investidor",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 432",
+    },
+    "IND-8.02": {
+        "codigo": "IND-8.02",
+        "nome": "IPCA Acumulado 12 Meses",
+        "modulo": 8,
+        "unidade": "%",
+        "unctad": False,
+        "descricao": "Inflação acumulada em 12 meses — erosão do retorno real",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 433",
+    },
+    "IND-8.03": {
+        "codigo": "IND-8.03",
+        "nome": "Câmbio PTAX Venda",
+        "modulo": 8,
+        "unidade": "BRL/USD",
+        "unctad": False,
+        "descricao": "Taxa de câmbio dólar PTAX venda — competitividade exportadora",
+        "granularidade": "Nacional/Dia",
+        "fonte_dados": "BACEN SGS - Série 3698",
+    },
+    "IND-8.04": {
+        "codigo": "IND-8.04",
+        "nome": "IBC-Br",
+        "modulo": 8,
+        "unidade": "Índice",
+        "unctad": False,
+        "descricao": "Índice de Atividade Econômica do BC — proxy mensal do PIB",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 24364",
+    },
+    "IND-8.05": {
+        "codigo": "IND-8.05",
+        "nome": "População Municipal",
+        "modulo": 8,
+        "unidade": "Habitantes",
+        "unctad": False,
+        "descricao": "População estimada do município portuário (IBGE atualizada)",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "IBGE - Agregado 6579",
+    },
+    "IND-8.06": {
+        "codigo": "IND-8.06",
+        "nome": "PIB per Capita Municipal",
+        "modulo": 8,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "PIB per capita do município portuário — tamanho da economia local",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "IBGE - Agregados 5938 + 6579",
+    },
 }
 
 
@@ -1399,14 +1461,22 @@ class GenericIndicatorService:
                 params["id_municipio"] = resolved_municipio
 
         # Executa a query regular
-        query = query_func(**params)
-        bytes_estimated = await self._estimate_query_bytes(query)
-        self._enforce_bytes_quota(
-            codigo=codigo,
-            bytes_estimated=bytes_estimated,
-            tenant_policy=tenant_policy,
-        )
-        results = await self.bq_client.execute_query(query)
+        # Módulo 8+ usa funções async (APIs externas); módulos 1-7 retornam SQL string
+        is_async_query = inspect.iscoroutinefunction(query_func)
+
+        if is_async_query:
+            # Indicador de API externa (BACEN, IBGE etc.) — sem BigQuery
+            results = await query_func(**params)
+            bytes_estimated = None
+        else:
+            query = query_func(**params)
+            bytes_estimated = await self._estimate_query_bytes(query)
+            self._enforce_bytes_quota(
+                codigo=codigo,
+                bytes_estimated=bytes_estimated,
+                tenant_policy=tenant_policy,
+            )
+            results = await self.bq_client.execute_query(query)
         warnings = self._validate_indicator_quality(codigo, results)
         if codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
             warnings.extend(

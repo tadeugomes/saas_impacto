@@ -28,6 +28,9 @@ const Module6View = lazy(() =>
 const Module7View = lazy(() =>
   import('../views/Dashboard/ModuleViews/Module7View').then((m) => ({ default: m.Module7View }))
 );
+const Module8View = lazy(() =>
+  import('../views/Dashboard/ModuleViews/Module8View').then((m) => ({ default: m.Module8View }))
+);
 const RegisterView = lazy(() =>
   import('../views/Login/RegisterView').then((m) => ({ default: m.RegisterView }))
 );
@@ -68,6 +71,7 @@ export const APP_ROUTES: AppRoute[] = [
       { path: 'dashboard/module5', element: <Module5View /> },
       { path: 'dashboard/module6', element: <Module6View /> },
       { path: 'dashboard/module7', element: <Module7View /> },
+      { path: 'dashboard/module8', element: <Module8View /> },
       { path: 'admin', element: <AdminDashboard /> },
     ],
   },

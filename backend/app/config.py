@@ -135,6 +135,18 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     docs_access_token: Optional[str] = None
 
+    # APIs Públicas Externas (BACEN, IBGE etc.)
+    bacen_api_base_url: str = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
+    ibge_api_base_url: str = "https://servicodados.ibge.gov.br/api/v3"
+    transparencia_api_key: Optional[str] = None
+    public_api_timeout_seconds: float = 30.0
+    public_api_max_retries: int = 3
+
+    # Cache TTLs por fonte de dados externa
+    cache_ttl_bacen: int = 21600       # 6h — BACEN atualiza 1x/dia
+    cache_ttl_ibge: int = 86400        # 24h — IBGE menos frequente
+    cache_ttl_ambiental: int = 3600    # 1h — dados em tempo real (Fase 2)
+
     # Internacionalização backend
     default_language: str = "pt-BR"
 
