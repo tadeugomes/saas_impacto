@@ -1340,6 +1340,38 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Instalação",
         "fonte_dados": "ANA + INPE",
     },
+
+    # Module 7 - Composite Synthetic Indices (Fase 3)
+    "IND-7.08": {
+        "codigo": "IND-7.08",
+        "nome": "Índice de Desenvolvimento Portuário Municipal (IDPM)",
+        "modulo": 7,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Combina PIB per capita, emprego, eficiência, autonomia fiscal e sustentabilidade (com bloco composicao)",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "IBGE + RAIS + ANTAQ + TCE + ANA/INPE",
+    },
+    "IND-7.09": {
+        "codigo": "IND-7.09",
+        "nome": "Índice de Risco Operacional (IRO)",
+        "modulo": 7,
+        "unidade": "Índice (0-1)",
+        "unctad": False,
+        "descricao": "Combina risco de maré, hídrico e incêndio com pesos configuráveis (com bloco composicao)",
+        "granularidade": "Instalação",
+        "fonte_dados": "Marinha + ANA + INPE",
+    },
+    "IND-7.10": {
+        "codigo": "IND-7.10",
+        "nome": "Índice de Governança Portuária (IGP)",
+        "modulo": 7,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Combina execução orçamentária, investimento federal e autonomia fiscal (com bloco composicao)",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "TCE + Portal da Transparência + IBGE",
+    },
 }
 
 

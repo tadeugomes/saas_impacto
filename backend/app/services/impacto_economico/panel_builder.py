@@ -72,6 +72,10 @@ DTYPE_MAP: dict[str, str] = {
     "pib_lag1": "float64",
     "n_vinculos_lag1": "float64",
     "empregos_portuarios_lag1": "float64",
+    # covariáveis macro (BACEN — enrich_with_macro)
+    "selic_meta": "float64",
+    "ipca_acumulado": "float64",
+    "cambio_ptax": "float64",
 }
 
 
@@ -181,6 +185,9 @@ class EconomicImpactPanelBuilder:
             scope=scope,
         )
 
+        # Enriquece com covariáveis macro (Selic, IPCA, câmbio)
+        df = await self.enrich_with_macro(df)
+
         self._validate(df, mode="did")
         return df
 
@@ -234,6 +241,9 @@ class EconomicImpactPanelBuilder:
         if "uf" not in df.columns:
             df = add_uf_from_municipio(df, col="id_municipio")
 
+        # Enriquece com covariáveis macro (Selic, IPCA, câmbio)
+        df = await self.enrich_with_macro(df)
+
         self._validate(df, mode="iv")
         return df
 
@@ -276,6 +286,127 @@ class EconomicImpactPanelBuilder:
         missing = [c for c in required if c not in df.columns]
         if missing:
             raise PanelValidationError(f"Colunas ausentes no painel UF: {missing}")
+
+        return df
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Enriquecimento com covariáveis macroeconômicas (BACEN/IBGE)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def enrich_with_macro(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Adiciona covariáveis macroeconômicas ao painel causal.
+
+        Adiciona ao DataFrame:
+        - ``selic_meta``: Taxa Selic meta anual (%)
+        - ``ipca_acumulado``: IPCA acumulado 12 meses (%)
+        - ``cambio_ptax``: Câmbio médio anual USD/BRL
+
+        Essas variáveis são usadas como **controles macroeconômicos** nos
+        modelos DiD/IV/SCM para isolar efeitos de ciclo econômico.
+
+        Parameters
+        ----------
+        df:
+            DataFrame com coluna ``ano`` (int).
+
+        Returns
+        -------
+        pd.DataFrame com 3 novas colunas adicionadas.
+        """
+        if "ano" not in df.columns or df.empty:
+            return df
+
+        anos = sorted(df["ano"].unique())
+        ano_inicio = int(min(anos))
+        ano_fim = int(max(anos))
+
+        try:
+            from app.clients.bacen import get_bacen_client
+            bacen = get_bacen_client()
+
+            data_inicio = f"01/01/{ano_inicio}"
+            data_fim = f"31/12/{ano_fim}"
+
+            # Busca séries em paralelo
+            import asyncio
+            selic_task = bacen.consultar_serie(432, data_inicio, data_fim)  # Selic meta
+            ipca_task = bacen.consultar_serie(433, data_inicio, data_fim)   # IPCA mensal
+            cambio_task = bacen.consultar_serie(3698, data_inicio, data_fim)  # PTAX venda
+
+            selic_data, ipca_data, cambio_data = await asyncio.gather(
+                selic_task, ipca_task, cambio_task,
+                return_exceptions=True,
+            )
+
+            # Agrega por ano
+            macro_by_year: dict[int, dict[str, float]] = {}
+            for ano in anos:
+                macro_by_year[int(ano)] = {
+                    "selic_meta": None,
+                    "ipca_acumulado": None,
+                    "cambio_ptax": None,
+                }
+
+            if isinstance(selic_data, list):
+                for item in selic_data:
+                    try:
+                        year = int(str(item.get("data", ""))[-4:])
+                        if year in macro_by_year:
+                            macro_by_year[year]["selic_meta"] = float(item["valor"])
+                    except (ValueError, KeyError):
+                        continue
+
+            if isinstance(ipca_data, list):
+                from collections import defaultdict
+                ipca_by_year: dict[int, list[float]] = defaultdict(list)
+                for item in ipca_data:
+                    try:
+                        year = int(str(item.get("data", ""))[-4:])
+                        ipca_by_year[year].append(float(item["valor"]))
+                    except (ValueError, KeyError):
+                        continue
+                for year, vals in ipca_by_year.items():
+                    if year in macro_by_year:
+                        # Acumula: ((1+v1/100) * (1+v2/100) * ... - 1) * 100
+                        import math
+                        acum = math.prod(1 + v / 100 for v in vals) - 1
+                        macro_by_year[year]["ipca_acumulado"] = round(acum * 100, 2)
+
+            if isinstance(cambio_data, list):
+                from collections import defaultdict
+                cambio_by_year: dict[int, list[float]] = defaultdict(list)
+                for item in cambio_data:
+                    try:
+                        year = int(str(item.get("data", ""))[-4:])
+                        cambio_by_year[year].append(float(item["valor"]))
+                    except (ValueError, KeyError):
+                        continue
+                for year, vals in cambio_by_year.items():
+                    if year in macro_by_year:
+                        macro_by_year[year]["cambio_ptax"] = round(
+                            sum(vals) / len(vals), 4
+                        )
+
+            # Merge com DataFrame
+            macro_df = pd.DataFrame([
+                {"ano": year, **vals}
+                for year, vals in macro_by_year.items()
+            ])
+            if not macro_df.empty:
+                macro_df["ano"] = macro_df["ano"].astype("int64")
+                df = df.merge(macro_df, on="ano", how="left")
+
+            logger.info(
+                "Painel enriquecido com macro: selic=%d, ipca=%d, cambio=%d anos",
+                sum(1 for v in macro_by_year.values() if v["selic_meta"] is not None),
+                sum(1 for v in macro_by_year.values() if v["ipca_acumulado"] is not None),
+                sum(1 for v in macro_by_year.values() if v["cambio_ptax"] is not None),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Falha ao enriquecer painel com macro (continuando sem): %s", exc
+            )
 
         return df
 

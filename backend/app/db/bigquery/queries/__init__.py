@@ -161,6 +161,14 @@ from app.db.bigquery.queries.module6_external import (
     QUERIES_MODULE_6_EXTERNAL,
 )
 
+# Module 7 - Composite Synthetic Indices (cross-module, async)
+from app.db.bigquery.queries.module7_composite import (
+    query_idpm,
+    query_indice_risco_operacional as query_iro,
+    query_indice_governanca as query_igp,
+    QUERIES_MODULE_7_COMPOSITE,
+)
+
 # Module 9 - Environmental (ANA + INPE)
 from app.db.bigquery.queries.module9_ambiental import (
     query_risco_hidrico,
@@ -180,6 +188,7 @@ ALL_QUERIES = {
     **QUERIES_MODULE_6,
     **QUERIES_MODULE_6_EXTERNAL,
     **QUERIES_MODULE_7,
+    **QUERIES_MODULE_7_COMPOSITE,
     **QUERIES_MODULE_8,
     **QUERIES_MODULE_9,
 }
