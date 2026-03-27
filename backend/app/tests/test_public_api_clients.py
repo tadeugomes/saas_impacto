@@ -522,3 +522,82 @@ class TestAmbientalService:
         assert result["composicao"]["nota_metodologica"]
         await ana.close()
         await inpe.close()
+
+
+# ============================================================================
+# Deflation Integration (GenericIndicatorService._apply_deflation)
+# ============================================================================
+
+class TestDeflationIntegration:
+
+    @pytest.mark.asyncio
+    async def test_apply_deflation_adds_real_fields(self):
+        """_apply_deflation adiciona campos *_real a indicadores monetários."""
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from app.services.generic_indicator_service import GenericIndicatorService
+
+        svc = GenericIndicatorService.__new__(GenericIndicatorService)
+
+        results = [
+            {"ano": 2022, "icms": 5_000_000, "id_municipio": "3550308"},
+            {"ano": 2023, "icms": 5_500_000, "id_municipio": "3550308"},
+        ]
+
+        mock_svc = MagicMock()
+
+        async def fake_deflacionar(valores, campo_valor, campo_ano, ano_base=None):
+            for v in valores:
+                v[f"{campo_valor}_real"] = round(v[campo_valor] * 1.05, 2)
+                v["deflator_ipca"] = 1.05
+                v["ano_base_deflacao"] = 2023
+            return valores
+
+        mock_svc.deflacionar_serie = fake_deflacionar
+
+        with patch("app.services.deflation_service.get_deflation_service", return_value=mock_svc):
+            deflated, warnings = await svc._apply_deflation("IND-6.01", results, 2023)
+
+        assert deflated[0]["icms_real"] is not None
+        assert deflated[0]["deflator_ipca"] == 1.05
+        assert any(w.tipo == "deflacao_aplicada" for w in warnings)
+
+    @pytest.mark.asyncio
+    async def test_apply_deflation_no_ano_field(self):
+        """Sem campo 'ano', retorna warning e dados não alterados."""
+        from app.services.generic_indicator_service import GenericIndicatorService
+
+        svc = GenericIndicatorService.__new__(GenericIndicatorService)
+        results = [{"valor": 100, "nome": "teste"}]
+
+        deflated, warnings = await svc._apply_deflation("IND-1.01", results, None)
+        assert any(w.tipo == "deflacao_sem_campo_ano" for w in warnings)
+
+    @pytest.mark.asyncio
+    async def test_apply_deflation_autodetect_fields(self):
+        """Auto-detecta campos monetários quando não há mapeamento explícito."""
+        from unittest.mock import patch, MagicMock
+        from app.services.generic_indicator_service import GenericIndicatorService
+
+        svc = GenericIndicatorService.__new__(GenericIndicatorService)
+        results = [
+            {"ano": 2023, "receita_total": 1_000_000, "populacao": 50000},
+        ]
+
+        mock_svc = MagicMock()
+
+        async def fake_deflacionar(valores, campo_valor, campo_ano, ano_base=None):
+            for v in valores:
+                v[f"{campo_valor}_real"] = v[campo_valor]
+                v["deflator_ipca"] = 1.0
+            return valores
+
+        mock_svc.deflacionar_serie = fake_deflacionar
+
+        # Usa código sem mapeamento explícito para forçar auto-detecção
+        with patch("app.services.deflation_service.get_deflation_service", return_value=mock_svc):
+            deflated, warnings = await svc._apply_deflation("IND-99.99", results, None)
+
+        # receita_total deve ser detectado; populacao não (não é monetário)
+        assert "receita_total_real" in deflated[0]
+        assert any(w.tipo == "deflacao_aplicada" for w in warnings)
+        assert "receita_total" in [w.campo for w in warnings if w.tipo == "deflacao_aplicada"][0]

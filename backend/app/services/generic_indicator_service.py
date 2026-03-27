@@ -29,6 +29,53 @@ from app.services.indicator_query_cache import IndicatorQueryCache
 
 logger = logging.getLogger(__name__)
 
+
+# Indicadores com campos monetários (R$) que podem ser deflacionados.
+# Mapeamento {codigo: [campo_monetario, ...]}
+# Se vazio, tenta auto-detectar campos com "receita", "salario", "pib" etc.
+MONETARY_FIELDS_BY_INDICATOR: Dict[str, List[str]] = {
+    # Módulo 3 — Recursos Humanos
+    "IND-3.03": ["salario_medio"],
+    "IND-3.04": ["massa_salarial"],
+    "IND-3.06": ["receita_por_empregado"],
+    "IND-3.09": ["remuneracao_media"],
+    "IND-3.10": ["remuneracao_media"],
+    "IND-3.11": ["remuneracao_media"],
+    "IND-3.12": ["remuneracao_media", "referencia_nacional"],
+    # Módulo 5 — Impacto Econômico
+    "IND-5.01": ["pib"],
+    "IND-5.02": ["pib_per_capita"],
+    # Módulo 6 — Finanças Públicas
+    "IND-6.01": ["icms"],
+    "IND-6.02": ["iss"],
+    "IND-6.03": ["receita_total"],
+    "IND-6.04": ["receita_per_capita"],
+    "IND-6.06": ["icms_por_tonelada"],
+    "IND-6.07": ["receita_fiscal_total"],
+    "IND-6.08": ["receita_fiscal_per_capita"],
+    "IND-6.09": ["receita_fiscal_por_tonelada"],
+    # Módulo 8 — Macro
+    "IND-8.06": ["pib_per_capita"],
+}
+
+# Padrões de campo para auto-detecção de valores monetários
+_MONETARY_PATTERNS = re.compile(
+    r"(receita|salario|remuneracao|pib|icms|iss|massa_salarial|valor|fob|investimento)"
+    r"(?!.*(_real|_usd|_pct|_percentual|_ratio|deflator|fator))",
+    re.IGNORECASE,
+)
+
+
+def _detect_monetary_fields(row: Dict[str, Any]) -> List[str]:
+    """Auto-detecta campos monetários em um registro."""
+    return [
+        k for k, v in row.items()
+        if isinstance(v, (int, float))
+        and _MONETARY_PATTERNS.search(k)
+        and v > 0
+    ]
+
+
 # Mapping between Port names (frontend) and IBGE 7-digit IDs
 # This is essential for municipal-level indicators (RAIS, PIB, SICONFI)
 # Comprehensive mapping covering all major Brazilian ports and installations
@@ -1677,7 +1724,16 @@ class GenericIndicatorService:
                 tenant_policy=tenant_policy,
             )
             results = await self.bq_client.execute_query(query)
-        warnings = self._validate_indicator_quality(codigo, results)
+
+        # Deflação pós-query: aplica IPCA a todos os campos monetários
+        if request.deflacionar and results:
+            results, deflation_warnings = await self._apply_deflation(
+                codigo, results, request.ano_base_deflacao,
+            )
+            warnings = self._validate_indicator_quality(codigo, results)
+            warnings.extend(deflation_warnings)
+        else:
+            warnings = self._validate_indicator_quality(codigo, results)
         if codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
             warnings.extend(
                 await self._append_no_data_warnings_module3(
@@ -2298,6 +2354,95 @@ class GenericIndicatorService:
             )
 
         return warnings
+
+    async def _apply_deflation(
+        self,
+        codigo: str,
+        results: List[Dict[str, Any]],
+        ano_base: Optional[int],
+    ) -> tuple:
+        """
+        Aplica deflação IPCA pós-query a campos monetários.
+
+        Detecta o campo 'ano' nos resultados e aplica o deflator IPCA do
+        DeflationService a todos os campos monetários identificados.
+
+        Returns:
+            (results_deflacionados, warnings)
+        """
+        warnings: List[DataQualityWarning] = []
+
+        if not results:
+            return results, warnings
+
+        # Identifica campo de ano
+        first = results[0]
+        ano_field = None
+        for candidate in ("ano", "year", "ano_referencia"):
+            if candidate in first:
+                ano_field = candidate
+                break
+
+        if ano_field is None:
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_sem_campo_ano",
+                codigo_indicador=codigo,
+                mensagem="Deflação não aplicada: campo 'ano' não encontrado nos resultados.",
+                campo="ano",
+            ))
+            return results, warnings
+
+        # Identifica campos monetários
+        known_fields = MONETARY_FIELDS_BY_INDICATOR.get(codigo, [])
+        if known_fields:
+            # Usa campos conhecidos, filtra para os que existem nos resultados
+            monetary_fields = [f for f in known_fields if f in first]
+        else:
+            # Auto-detecta
+            monetary_fields = _detect_monetary_fields(first)
+
+        if not monetary_fields:
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_sem_campo_monetario",
+                codigo_indicador=codigo,
+                mensagem="Deflação não aplicada: nenhum campo monetário identificado.",
+                campo=codigo,
+            ))
+            return results, warnings
+
+        # Aplica deflação
+        try:
+            from app.services.deflation_service import get_deflation_service
+            deflation_svc = get_deflation_service()
+
+            for field in monetary_fields:
+                results = await deflation_svc.deflacionar_serie(
+                    results,
+                    campo_valor=field,
+                    campo_ano=ano_field,
+                    ano_base=ano_base,
+                )
+
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_aplicada",
+                codigo_indicador=codigo,
+                mensagem=(
+                    f"Valores deflacionados por IPCA (BACEN série 433). "
+                    f"Campos: {', '.join(f'{f}_real' for f in monetary_fields)}. "
+                    f"Ano base: {ano_base or 'mais recente da série'}."
+                ),
+                campo=",".join(monetary_fields),
+            ))
+        except Exception as e:
+            logger.warning("deflation_error codigo=%s err=%s", codigo, e)
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_erro",
+                codigo_indicador=codigo,
+                mensagem=f"Erro ao aplicar deflação: {str(e)[:200]}. Valores nominais retornados.",
+                campo=",".join(monetary_fields),
+            ))
+
+        return results, warnings
 
     @classmethod
     def _validate_indicator_quality(
