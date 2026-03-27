@@ -10,6 +10,7 @@ import {
   Building,
   LineChart,
   Settings,
+  Shield,
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -83,6 +84,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       label: t('navigation.module8'),
       description: 'Selic, IPCA, Câmbio, PIB (6)',
       moduleColor: 'module8',
+    },
+    {
+      path: '/dashboard/module9',
+      icon: Shield,
+      label: t('navigation.module9'),
+      description: 'ANA, INPE (3)',
+      moduleColor: 'module9',
     },
     {
       path: '/admin',
@@ -164,6 +172,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-module6': item.moduleColor === 'module6',
                             'bg-module7': item.moduleColor === 'module7',
                             'bg-emerald-500': item.moduleColor === 'module8',
+                            'bg-orange-500': item.moduleColor === 'module9',
                           }
                         )} />
                       )}

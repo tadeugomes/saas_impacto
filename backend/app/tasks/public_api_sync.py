@@ -61,3 +61,51 @@ def sync_ibge_dados():
         logger.info("sync_ibge_dados_ok")
 
     _run_async(_sync())
+
+
+def sync_focos_incendio():
+    """
+    Atualiza focos de incêndio INPE para portos principais.
+
+    Agenda recomendada: a cada 3h (dados INPE atualizam frequentemente).
+    """
+    from app.clients.inpe import get_inpe_client, PORTO_COORDENADAS
+
+    async def _sync():
+        inpe = get_inpe_client()
+        portos_prioritarios = [
+            "Santos", "Paranaguá", "Vitória", "Rio de Janeiro",
+            "Salvador", "Manaus", "Belém", "São Luís",
+        ]
+        for porto in portos_prioritarios:
+            coords = PORTO_COORDENADAS.get(porto)
+            if coords:
+                try:
+                    await inpe.buscar_focos_incendio(
+                        coords["lat"], coords["lon"], raio_km=50, dias=7
+                    )
+                except Exception as e:
+                    logger.warning("sync_inpe_error", porto=porto, error=str(e))
+        logger.info("sync_focos_incendio_ok")
+
+    _run_async(_sync())
+
+
+def sync_nivel_rios():
+    """
+    Atualiza nível de rios para portos fluviais.
+
+    Agenda recomendada: a cada 6h.
+    """
+    from app.clients.ana import get_ana_client, PORTO_TO_ESTACAO_HIDRO
+
+    async def _sync():
+        ana = get_ana_client()
+        for porto, estacao in PORTO_TO_ESTACAO_HIDRO.items():
+            try:
+                await ana.consultar_nivel_rio(estacao["codigo"])
+            except Exception as e:
+                logger.warning("sync_ana_error", porto=porto, error=str(e))
+        logger.info("sync_nivel_rios_ok")
+
+    _run_async(_sync())

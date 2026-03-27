@@ -74,8 +74,14 @@ async def lifespan(app: FastAPI):
     try:
         from app.clients.bacen import get_bacen_client
         from app.clients.ibge import get_ibge_client
+        from app.clients.mares import get_mares_client
+        from app.clients.ana import get_ana_client
+        from app.clients.inpe import get_inpe_client
         await get_bacen_client().close()
         await get_ibge_client().close()
+        await get_mares_client().close()
+        await get_ana_client().close()
+        await get_inpe_client().close()
     except Exception:
         pass
 

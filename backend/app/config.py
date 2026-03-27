@@ -135,9 +135,13 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     docs_access_token: Optional[str] = None
 
-    # APIs Públicas Externas (BACEN, IBGE etc.)
+    # APIs Públicas Externas (BACEN, IBGE, Marés, ANA, INPE, Transparência)
     bacen_api_base_url: str = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
     ibge_api_base_url: str = "https://servicodados.ibge.gov.br/api/v3"
+    mares_api_base_url: str = "https://www.marinha.mil.br/chm/dados-de-mare"
+    ana_api_base_url: str = "https://telemetriaws1.ana.gov.br/ServiceANA.asmx"
+    inpe_api_base_url: str = "https://terrabrasilis.dpi.inpe.br/queimadas/bdqueimadas"
+    transparencia_api_base_url: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
     transparencia_api_key: Optional[str] = None
     public_api_timeout_seconds: float = 30.0
     public_api_max_retries: int = 3
@@ -145,7 +149,8 @@ class Settings(BaseSettings):
     # Cache TTLs por fonte de dados externa
     cache_ttl_bacen: int = 21600       # 6h — BACEN atualiza 1x/dia
     cache_ttl_ibge: int = 86400        # 24h — IBGE menos frequente
-    cache_ttl_ambiental: int = 3600    # 1h — dados em tempo real (Fase 2)
+    cache_ttl_mares: int = 43200       # 12h — previsões de maré
+    cache_ttl_ambiental: int = 3600    # 1h — dados em tempo real
 
     # Internacionalização backend
     default_language: str = "pt-BR"

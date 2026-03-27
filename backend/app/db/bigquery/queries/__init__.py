@@ -143,16 +143,45 @@ from app.db.bigquery.queries.module8_macro import (
     QUERIES_MODULE_8,
 )
 
+# Module 1 - Tides (async API queries)
+from app.db.bigquery.queries.module1_tides import (
+    query_taxa_aproveitamento_mare,
+    query_janela_navegavel_media,
+    QUERIES_MODULE_1_TIDES,
+)
+
+# Module 6 - External fiscal data (TCEs + Transparência)
+from app.db.bigquery.queries.module6_external import (
+    query_autonomia_fiscal,
+    query_investimento_per_capita,
+    query_execucao_orcamentaria,
+    query_investimento_federal,
+    query_emendas_parlamentares,
+    query_servidores_federais,
+    QUERIES_MODULE_6_EXTERNAL,
+)
+
+# Module 9 - Environmental (ANA + INPE)
+from app.db.bigquery.queries.module9_ambiental import (
+    query_risco_hidrico,
+    query_risco_incendio,
+    query_indice_risco_ambiental,
+    QUERIES_MODULE_9,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
+    **QUERIES_MODULE_1_TIDES,
     **QUERIES_MODULE_2,
     **QUERIES_MODULE_3,
     **QUERIES_MODULE_4,
     **QUERIES_MODULE_5,
     **QUERIES_MODULE_6,
+    **QUERIES_MODULE_6_EXTERNAL,
     **QUERIES_MODULE_7,
     **QUERIES_MODULE_8,
+    **QUERIES_MODULE_9,
 }
 
 __all__ = [
