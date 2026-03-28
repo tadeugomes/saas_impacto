@@ -91,6 +91,7 @@ class BasePublicApiClient:
         *,
         params: Optional[dict] = None,
         headers: Optional[dict] = None,
+        json_body: Optional[dict] = None,
     ) -> Any:
         """
         Request com retry (3x, backoff exponencial 1s->2s->4s).
@@ -104,7 +105,7 @@ class BasePublicApiClient:
         for attempt in range(self.MAX_RETRIES):
             try:
                 resp = await client.request(
-                    method, path, params=params, headers=headers
+                    method, path, params=params, headers=headers, json=json_body
                 )
                 resp.raise_for_status()
                 return resp.json()

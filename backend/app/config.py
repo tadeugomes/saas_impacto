@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     inpe_api_base_url: str = "https://terrabrasilis.dpi.inpe.br/queimadas/bdqueimadas"
     transparencia_api_base_url: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
     transparencia_api_key: Optional[str] = None
+    pncp_api_base_url: str = "https://pncp.gov.br/api/consulta/v1"
+    tcu_api_base_url: str = "https://portal.tcu.gov.br/api"
+    querido_diario_api_base_url: str = "https://queridodiario.ok.org.br/api"
+    datajud_api_base_url: str = "https://datajud-wiki.cnj.jus.br/api-publica"
+    datajud_api_key: Optional[str] = None
     public_api_timeout_seconds: float = 30.0
     public_api_max_retries: int = 3
 
@@ -151,6 +156,7 @@ class Settings(BaseSettings):
     cache_ttl_ibge: int = 86400        # 24h — IBGE menos frequente
     cache_ttl_mares: int = 43200       # 12h — previsões de maré
     cache_ttl_ambiental: int = 3600    # 1h — dados em tempo real
+    cache_ttl_compliance: int = 43200  # 12h — dados de compliance
 
     # Internacionalização backend
     default_language: str = "pt-BR"

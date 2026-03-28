@@ -85,4 +85,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.public_api_sync.sync_nivel_rios",
         "schedule": crontab(minute=30, hour="*/6"),  # A cada 6h (offset 30min)
     },
+    "sync-compliance": {
+        "task": "app.tasks.public_api_sync.sync_compliance",
+        "schedule": crontab(hour=8, minute=0),  # Diário às 08:00 UTC
+    },
 }

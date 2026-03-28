@@ -187,6 +187,19 @@ from app.db.bigquery.queries.module9_ambiental import (
     QUERIES_MODULE_9,
 )
 
+# Module 10 - Compliance (async API queries)
+from app.db.bigquery.queries.module10_compliance import (
+    query_licitacoes_portuarias,
+    query_sancoes_ecossistema_portuario,
+    query_acordaos_tcu_portuarios,
+    query_mencoes_diario_oficial,
+    query_processos_judiciais_portuarios,
+    query_regularidade_licitatoria,
+    query_indice_risco_regulatorio,
+    query_indice_governanca_portuaria,
+    QUERIES_MODULE_10,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
@@ -202,6 +215,7 @@ ALL_QUERIES = {
     **QUERIES_MODULE_8,
     **QUERIES_MODULE_9,
     **QUERIES_DEFLATED,
+    **QUERIES_MODULE_10,
 }
 
 __all__ = [

@@ -11,6 +11,7 @@ import {
   LineChart,
   Settings,
   Shield,
+  FileCheck,
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -93,6 +94,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       moduleColor: 'module9',
     },
     {
+      path: '/dashboard/module10',
+      icon: FileCheck,
+      label: t('navigation.module10'),
+      description: 'PNCP, TCU, DataJud (8)',
+      moduleColor: 'module10',
+    },
+    {
       path: '/admin',
       icon: Settings,
       label: 'Admin',
@@ -173,6 +181,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-module7': item.moduleColor === 'module7',
                             'bg-emerald-500': item.moduleColor === 'module8',
                             'bg-orange-500': item.moduleColor === 'module9',
+                            'bg-rose-500': item.moduleColor === 'module10',
                           }
                         )} />
                       )}

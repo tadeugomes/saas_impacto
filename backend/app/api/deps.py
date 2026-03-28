@@ -33,7 +33,7 @@ security_optional = HTTPBearer(auto_error=False)
 MODULE_PLAN_LIMITS = {
     "basic": {1, 2, 3, 4},
     "pro": {1, 2, 3, 4, 5, 6, 7, 8},
-    "enterprise": {1, 2, 3, 4, 5, 6, 7, 8, 9},
+    "enterprise": {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 }
 
 ROLE_PERMISSIONS = {

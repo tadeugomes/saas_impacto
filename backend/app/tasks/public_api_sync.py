@@ -121,3 +121,36 @@ def sync_nivel_rios():
         logger.info("sync_nivel_rios_ok")
 
     _run_async(_sync())
+
+
+@celery_app.task(name="app.tasks.public_api_sync.sync_compliance")
+def sync_compliance():
+    """
+    Pre-fetch dados de compliance para portos principais.
+
+    Agenda recomendada: diário às 08:00 UTC.
+    """
+    from app.clients.querido_diario import get_querido_diario_client
+
+    # Municípios com portos principais (IBGE)
+    municipios_portuarios = {
+        "Santos": "3548500",
+        "Rio de Janeiro": "3304557",
+        "Paranaguá": "4118204",
+        "Vitória": "3205309",
+        "Salvador": "2927408",
+        "São Luís": "2111300",
+        "Manaus": "1302603",
+        "Suape": "2607208",
+    }
+
+    async def _sync():
+        diario = get_querido_diario_client()
+        for porto, ibge in municipios_portuarios.items():
+            try:
+                await diario.analisar_mencoes_com_temas(ibge, porto, 12)
+            except Exception as e:
+                logger.warning("sync_compliance_error", porto=porto, error=str(e))
+        logger.info("sync_compliance_ok")
+
+    _run_async(_sync())

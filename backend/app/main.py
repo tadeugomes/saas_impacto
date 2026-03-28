@@ -77,11 +77,19 @@ async def lifespan(app: FastAPI):
         from app.clients.mares import get_mares_client
         from app.clients.ana import get_ana_client
         from app.clients.inpe import get_inpe_client
+        from app.clients.pncp import get_pncp_client
+        from app.clients.tcu_federal import get_tcu_client
+        from app.clients.querido_diario import get_querido_diario_client
+        from app.clients.datajud import get_datajud_client
         await get_bacen_client().close()
         await get_ibge_client().close()
         await get_mares_client().close()
         await get_ana_client().close()
         await get_inpe_client().close()
+        await get_pncp_client().close()
+        await get_tcu_client().close()
+        await get_querido_diario_client().close()
+        await get_datajud_client().close()
     except Exception:
         pass
 
