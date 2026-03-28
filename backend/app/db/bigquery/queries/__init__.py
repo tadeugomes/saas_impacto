@@ -200,6 +200,16 @@ from app.db.bigquery.queries.module10_compliance import (
     QUERIES_MODULE_10,
 )
 
+# Module 11 - Forecasting (async, SARIMAX)
+from app.db.bigquery.queries.module11_forecasting import (
+    query_forecast_tonelagem,
+    query_cenarios_tonelagem,
+    query_decomposicao_drivers,
+    query_backtesting,
+    query_forecast_fob_comercio,
+    QUERIES_MODULE_11,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
@@ -216,6 +226,7 @@ ALL_QUERIES = {
     **QUERIES_MODULE_9,
     **QUERIES_DEFLATED,
     **QUERIES_MODULE_10,
+    **QUERIES_MODULE_11,
 }
 
 __all__ = [

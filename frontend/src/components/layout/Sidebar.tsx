@@ -101,6 +101,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       moduleColor: 'module10',
     },
     {
+      path: '/dashboard/module11',
+      icon: TrendingUp,
+      label: t('navigation.module11'),
+      description: 'SARIMAX (5)',
+      moduleColor: 'module11',
+    },
+    {
       path: '/admin',
       icon: Settings,
       label: 'Admin',
@@ -182,6 +189,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-emerald-500': item.moduleColor === 'module8',
                             'bg-orange-500': item.moduleColor === 'module9',
                             'bg-rose-500': item.moduleColor === 'module10',
+                            'bg-violet-500': item.moduleColor === 'module11',
                           }
                         )} />
                       )}

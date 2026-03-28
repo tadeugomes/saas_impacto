@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     querido_diario_api_base_url: str = "https://queridodiario.ok.org.br/api"
     datajud_api_base_url: str = "https://datajud-wiki.cnj.jus.br/api-publica"
     datajud_api_key: Optional[str] = None
+    conab_api_base_url: str = "https://www.conab.gov.br/info-agro/safras/serie-historica-das-safras"
+    inmet_api_base_url: str = "https://apitempo.inmet.gov.br"
+    noaa_oni_base_url: str = "https://www.cpc.ncep.noaa.gov/data/indices"
     public_api_timeout_seconds: float = 30.0
     public_api_max_retries: int = 3
 

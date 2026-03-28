@@ -1553,6 +1553,58 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Instalação/Município/Ano",
         "fonte_dados": "Compliance (IND-10.07) + TCE (IND-6.12/6.14)",
     },
+
+    # Module 11 - Forecasting de Throughput Portuário
+    "IND-11.01": {
+        "codigo": "IND-11.01",
+        "nome": "Forecast de Tonelagem",
+        "modulo": 11,
+        "unidade": "Toneladas/mês",
+        "unctad": False,
+        "descricao": "Previsão SARIMAX 12 meses com IC 80/95%, drivers macro+clima+safra+operação",
+        "granularidade": "Instalação/Mês",
+        "fonte_dados": "ANTAQ + BACEN + INMET + CONAB + NOAA ONI + ANA",
+    },
+    "IND-11.02": {
+        "codigo": "IND-11.02",
+        "nome": "Cenários de Tonelagem",
+        "modulo": 11,
+        "unidade": "Toneladas/ano",
+        "unctad": False,
+        "descricao": "3 cenários (base/otimista/pessimista) com premissas macro e climáticas",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "SARIMAX + premissas de cenário",
+    },
+    "IND-11.03": {
+        "codigo": "IND-11.03",
+        "nome": "Decomposição de Drivers",
+        "modulo": 11,
+        "unidade": "% contribuição",
+        "unctad": False,
+        "descricao": "Importância relativa de cada variável no forecast, agrupada por bloco",
+        "granularidade": "Instalação",
+        "fonte_dados": "Coeficientes SARIMAX",
+    },
+    "IND-11.04": {
+        "codigo": "IND-11.04",
+        "nome": "Backtesting",
+        "modulo": 11,
+        "unidade": "MAE / MAPE",
+        "unctad": False,
+        "descricao": "Walk-forward validation: treina no histórico, prevê últimos 12 meses, compara com real",
+        "granularidade": "Instalação",
+        "fonte_dados": "SARIMAX backtesting",
+    },
+    "IND-11.05": {
+        "codigo": "IND-11.05",
+        "nome": "Forecast de FOB Comércio",
+        "modulo": 11,
+        "unidade": "USD/mês",
+        "unctad": False,
+        "descricao": "Previsão de valor FOB (exportações + importações) — 12 meses",
+        "granularidade": "Município/Mês",
+        "fonte_dados": "Comex Stat + SARIMAX",
+    },
 }
 
 
