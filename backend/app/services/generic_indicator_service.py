@@ -29,6 +29,53 @@ from app.services.indicator_query_cache import IndicatorQueryCache
 
 logger = logging.getLogger(__name__)
 
+
+# Indicadores com campos monetários (R$) que podem ser deflacionados.
+# Mapeamento {codigo: [campo_monetario, ...]}
+# Se vazio, tenta auto-detectar campos com "receita", "salario", "pib" etc.
+MONETARY_FIELDS_BY_INDICATOR: Dict[str, List[str]] = {
+    # Módulo 3 — Recursos Humanos
+    "IND-3.03": ["salario_medio"],
+    "IND-3.04": ["massa_salarial"],
+    "IND-3.06": ["receita_por_empregado"],
+    "IND-3.09": ["remuneracao_media"],
+    "IND-3.10": ["remuneracao_media"],
+    "IND-3.11": ["remuneracao_media"],
+    "IND-3.12": ["remuneracao_media", "referencia_nacional"],
+    # Módulo 5 — Impacto Econômico
+    "IND-5.01": ["pib"],
+    "IND-5.02": ["pib_per_capita"],
+    # Módulo 6 — Finanças Públicas
+    "IND-6.01": ["icms"],
+    "IND-6.02": ["iss"],
+    "IND-6.03": ["receita_total"],
+    "IND-6.04": ["receita_per_capita"],
+    "IND-6.06": ["icms_por_tonelada"],
+    "IND-6.07": ["receita_fiscal_total"],
+    "IND-6.08": ["receita_fiscal_per_capita"],
+    "IND-6.09": ["receita_fiscal_por_tonelada"],
+    # Módulo 8 — Macro
+    "IND-8.06": ["pib_per_capita"],
+}
+
+# Padrões de campo para auto-detecção de valores monetários
+_MONETARY_PATTERNS = re.compile(
+    r"(receita|salario|remuneracao|pib|icms|iss|massa_salarial|valor|fob|investimento)"
+    r"(?!.*(_real|_usd|_pct|_percentual|_ratio|deflator|fator))",
+    re.IGNORECASE,
+)
+
+
+def _detect_monetary_fields(row: Dict[str, Any]) -> List[str]:
+    """Auto-detecta campos monetários em um registro."""
+    return [
+        k for k, v in row.items()
+        if isinstance(v, (int, float))
+        and _MONETARY_PATTERNS.search(k)
+        and v > 0
+    ]
+
+
 # Mapping between Port names (frontend) and IBGE 7-digit IDs
 # This is essential for municipal-level indicators (RAIS, PIB, SICONFI)
 # Comprehensive mapping covering all major Brazilian ports and installations
@@ -1162,6 +1209,402 @@ INDICATORS_METADATA: Dict[str, Dict[str, Any]] = {
         "granularidade": "Instalação",
         "fonte_dados": "ANTAQ - v_carga_validada",
     },
+
+    # Module 8 - Contexto Macroeconômico (APIs BACEN + IBGE)
+    "IND-8.01": {
+        "codigo": "IND-8.01",
+        "nome": "Taxa Selic Meta",
+        "modulo": 8,
+        "unidade": "% a.a.",
+        "unctad": False,
+        "descricao": "Taxa Selic Meta definida pelo Copom — custo de oportunidade do investidor",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 432",
+    },
+    "IND-8.02": {
+        "codigo": "IND-8.02",
+        "nome": "IPCA Acumulado 12 Meses",
+        "modulo": 8,
+        "unidade": "%",
+        "unctad": False,
+        "descricao": "Inflação acumulada em 12 meses — erosão do retorno real",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 433",
+    },
+    "IND-8.03": {
+        "codigo": "IND-8.03",
+        "nome": "Câmbio PTAX Venda",
+        "modulo": 8,
+        "unidade": "BRL/USD",
+        "unctad": False,
+        "descricao": "Taxa de câmbio dólar PTAX venda — competitividade exportadora",
+        "granularidade": "Nacional/Dia",
+        "fonte_dados": "BACEN SGS - Série 3698",
+    },
+    "IND-8.04": {
+        "codigo": "IND-8.04",
+        "nome": "IBC-Br",
+        "modulo": 8,
+        "unidade": "Índice",
+        "unctad": False,
+        "descricao": "Índice de Atividade Econômica do BC — proxy mensal do PIB",
+        "granularidade": "Nacional/Mês",
+        "fonte_dados": "BACEN SGS - Série 24364",
+    },
+    "IND-8.05": {
+        "codigo": "IND-8.05",
+        "nome": "População Municipal",
+        "modulo": 8,
+        "unidade": "Habitantes",
+        "unctad": False,
+        "descricao": "População estimada do município portuário (IBGE atualizada)",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "IBGE - Agregado 6579",
+    },
+    "IND-8.06": {
+        "codigo": "IND-8.06",
+        "nome": "PIB per Capita Municipal",
+        "modulo": 8,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "PIB per capita do município portuário — tamanho da economia local",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "IBGE - Agregados 5938 + 6579",
+    },
+
+    # Module 1 - Tide Indicators (Tábua de Marés - Marinha do Brasil)
+    "IND-1.13": {
+        "codigo": "IND-1.13",
+        "nome": "Taxa de Aproveitamento de Maré",
+        "modulo": 1,
+        "unidade": "%",
+        "unctad": False,
+        "descricao": "% do tempo com maré suficiente para operação no calado de referência",
+        "granularidade": "Instalação",
+        "fonte_dados": "Marinha do Brasil — Tábua de Marés",
+    },
+    "IND-1.14": {
+        "codigo": "IND-1.14",
+        "nome": "Janela Navegável Média",
+        "modulo": 1,
+        "unidade": "Horas/dia",
+        "unctad": False,
+        "descricao": "Horas por dia com calado suficiente para navegação",
+        "granularidade": "Instalação",
+        "fonte_dados": "Marinha do Brasil — Tábua de Marés",
+    },
+
+    # Module 6 - External Fiscal Indicators (TCEs + Portal da Transparência)
+    "IND-6.12": {
+        "codigo": "IND-6.12",
+        "nome": "Autonomia Fiscal",
+        "modulo": 6,
+        "unidade": "Razão (0-1)",
+        "unctad": False,
+        "descricao": "Receita própria / Receita total do município portuário",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "TCE Estadual",
+    },
+    "IND-6.13": {
+        "codigo": "IND-6.13",
+        "nome": "Investimento per Capita",
+        "modulo": 6,
+        "unidade": "R$/hab",
+        "unctad": False,
+        "descricao": "Despesas de capital / População do município portuário",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "TCE Estadual + IBGE",
+    },
+    "IND-6.14": {
+        "codigo": "IND-6.14",
+        "nome": "Eficiência na Execução Orçamentária",
+        "modulo": 6,
+        "unidade": "Razão (0-1)",
+        "unctad": False,
+        "descricao": "Despesa executada / Despesa autorizada",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "TCE Estadual",
+    },
+    "IND-6.15": {
+        "codigo": "IND-6.15",
+        "nome": "Investimento Federal no Município",
+        "modulo": 6,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Soma de contratos e emendas federais no município portuário",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Portal da Transparência",
+    },
+    "IND-6.16": {
+        "codigo": "IND-6.16",
+        "nome": "Emendas Parlamentares",
+        "modulo": 6,
+        "unidade": "R$",
+        "unctad": False,
+        "descricao": "Valor total de emendas parlamentares no município portuário",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Portal da Transparência",
+    },
+    "IND-6.17": {
+        "codigo": "IND-6.17",
+        "nome": "Servidores Federais",
+        "modulo": 6,
+        "unidade": "Contagem",
+        "unctad": False,
+        "descricao": "Quantidade de servidores federais no município (proxy presença federal)",
+        "granularidade": "Município",
+        "fonte_dados": "Portal da Transparência",
+    },
+
+    # Module 9 - Environmental Risk (ANA + INPE)
+    "IND-9.01": {
+        "codigo": "IND-9.01",
+        "nome": "Índice de Risco Hídrico",
+        "modulo": 9,
+        "unidade": "Índice (0-1)",
+        "unctad": False,
+        "descricao": "Nível do rio vs. calado mínimo operacional (portos fluviais)",
+        "granularidade": "Instalação",
+        "fonte_dados": "ANA — Agência Nacional de Águas",
+    },
+    "IND-9.02": {
+        "codigo": "IND-9.02",
+        "nome": "Focos de Incêndio Próximos",
+        "modulo": 9,
+        "unidade": "Contagem",
+        "unctad": False,
+        "descricao": "Focos de incêndio detectados em raio de 50km da instalação portuária",
+        "granularidade": "Instalação",
+        "fonte_dados": "INPE — Queimadas",
+    },
+    "IND-9.03": {
+        "codigo": "IND-9.03",
+        "nome": "Índice de Risco Ambiental Composto",
+        "modulo": 9,
+        "unidade": "Índice (0-1)",
+        "unctad": False,
+        "descricao": "Índice composto: risco hídrico + risco de incêndio (com bloco composicao)",
+        "granularidade": "Instalação",
+        "fonte_dados": "ANA + INPE",
+    },
+
+    # Module 7 - Composite Synthetic Indices (Fase 3)
+    "IND-7.08": {
+        "codigo": "IND-7.08",
+        "nome": "Índice de Desenvolvimento Portuário Municipal (IDPM)",
+        "modulo": 7,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Combina PIB per capita, emprego, eficiência, autonomia fiscal e sustentabilidade (com bloco composicao)",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "IBGE + RAIS + ANTAQ + TCE + ANA/INPE",
+    },
+    "IND-7.09": {
+        "codigo": "IND-7.09",
+        "nome": "Índice de Risco Operacional (IRO)",
+        "modulo": 7,
+        "unidade": "Índice (0-1)",
+        "unctad": False,
+        "descricao": "Combina risco de maré, hídrico e incêndio com pesos configuráveis (com bloco composicao)",
+        "granularidade": "Instalação",
+        "fonte_dados": "Marinha + ANA + INPE",
+    },
+    "IND-7.10": {
+        "codigo": "IND-7.10",
+        "nome": "Índice de Governança Portuária (IGP)",
+        "modulo": 7,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Combina execução orçamentária, investimento federal e autonomia fiscal (com bloco composicao)",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "TCE + Portal da Transparência + IBGE",
+    },
+
+    # Deflated Indicators (cross-module)
+    "IND-2.14": {
+        "codigo": "IND-2.14",
+        "nome": "Receita Real por Tonelada",
+        "modulo": 2,
+        "unidade": "R$ (constantes)",
+        "unctad": False,
+        "descricao": "Receita portuária deflacionada por IPCA / tonelagem movimentada",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "ANTAQ + BACEN (IPCA série 433)",
+    },
+    "IND-4.11": {
+        "codigo": "IND-4.11",
+        "nome": "FOB Exportações Ajustado",
+        "modulo": 4,
+        "unidade": "USD + R$ (constantes)",
+        "unctad": False,
+        "descricao": "Valor FOB exportações com conversão PTAX e deflação IPCA",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Comex Stat + BACEN (PTAX + IPCA)",
+    },
+    "IND-4.12": {
+        "codigo": "IND-4.12",
+        "nome": "FOB Importações Ajustado",
+        "modulo": 4,
+        "unidade": "USD + R$ (constantes)",
+        "unctad": False,
+        "descricao": "Valor FOB importações com conversão PTAX",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Comex Stat + BACEN (PTAX)",
+    },
+    "IND-6.18": {
+        "codigo": "IND-6.18",
+        "nome": "Receita Municipal Real per Capita",
+        "modulo": 6,
+        "unidade": "R$/hab (constantes)",
+        "unctad": False,
+        "descricao": "Receita total municipal deflacionada por IPCA / população",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "SICONFI + IBGE + BACEN (IPCA)",
+    },
+    "IND-6.19": {
+        "codigo": "IND-6.19",
+        "nome": "ICMS Real por Tonelada",
+        "modulo": 6,
+        "unidade": "R$/ton (constantes)",
+        "unctad": False,
+        "descricao": "ICMS arrecadado deflacionado / tonelagem portuária",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "SICONFI + ANTAQ + BACEN (IPCA)",
+    },
+
+    # Module 10 - Compliance e Governança Portuária
+    "IND-10.01": {
+        "codigo": "IND-10.01",
+        "nome": "Licitações Portuárias",
+        "modulo": 10,
+        "unidade": "Contagem + R$",
+        "unctad": False,
+        "descricao": "Volume de contratação pública portuária (filtrado por termos/órgãos)",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "PNCP — Portal Nacional de Contratações Públicas",
+    },
+    "IND-10.02": {
+        "codigo": "IND-10.02",
+        "nome": "Sanções no Ecossistema Portuário",
+        "modulo": 10,
+        "unidade": "Contagem",
+        "unctad": False,
+        "descricao": "Operadores/fornecedores portuários com sanções ativas (CEIS)",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "Portal da Transparência — CEIS/CNEP",
+    },
+    "IND-10.03": {
+        "codigo": "IND-10.03",
+        "nome": "Acórdãos TCU Portuários",
+        "modulo": 10,
+        "unidade": "Contagem",
+        "unctad": False,
+        "descricao": "Decisões do TCU envolvendo o porto (filtrado por termos portuários)",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "TCU — Tribunal de Contas da União",
+    },
+    "IND-10.04": {
+        "codigo": "IND-10.04",
+        "nome": "Menções em Diário Oficial",
+        "modulo": 10,
+        "unidade": "Contagem + Sentimento",
+        "unctad": False,
+        "descricao": "Frequência e sentimento das menções ao porto em diários oficiais, com detalhamento por temas",
+        "granularidade": "Município/Instalação",
+        "fonte_dados": "Querido Diário — OK Brasil",
+    },
+    "IND-10.05": {
+        "codigo": "IND-10.05",
+        "nome": "Processos Judiciais Portuários",
+        "modulo": 10,
+        "unidade": "Contagem",
+        "unctad": False,
+        "descricao": "Litígios ativos envolvendo partes do ecossistema portuário",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "DataJud/CNJ",
+    },
+    "IND-10.06": {
+        "codigo": "IND-10.06",
+        "nome": "Regularidade Licitatória",
+        "modulo": 10,
+        "unidade": "Razão (0-1)",
+        "unctad": False,
+        "descricao": "Contratos portuários com publicação regular no PNCP vs. total",
+        "granularidade": "Município/Ano",
+        "fonte_dados": "PNCP",
+    },
+    "IND-10.07": {
+        "codigo": "IND-10.07",
+        "nome": "Índice de Risco Regulatório",
+        "modulo": 10,
+        "unidade": "Índice (0-1)",
+        "unctad": False,
+        "descricao": "Índice composto: sanções + TCU + processos + irregularidade + menções (com bloco composicao)",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "PNCP + TCU + Transparência + Querido Diário + DataJud",
+    },
+    "IND-10.08": {
+        "codigo": "IND-10.08",
+        "nome": "Índice de Governança Portuária",
+        "modulo": 10,
+        "unidade": "Índice (0-100)",
+        "unctad": False,
+        "descricao": "Combina compliance + finanças + transparência (com bloco composicao). Quanto MAIOR, melhor.",
+        "granularidade": "Instalação/Município/Ano",
+        "fonte_dados": "Compliance (IND-10.07) + TCE (IND-6.12/6.14)",
+    },
+
+    # Module 11 - Forecasting de Throughput Portuário
+    "IND-11.01": {
+        "codigo": "IND-11.01",
+        "nome": "Forecast de Tonelagem",
+        "modulo": 11,
+        "unidade": "Toneladas/mês",
+        "unctad": False,
+        "descricao": "Previsão SARIMAX 60 meses (5 anos) com IC 80/95%, por horizonte (curto/médio/longo), drivers macro+clima+safra+operação",
+        "granularidade": "Instalação/Mês",
+        "fonte_dados": "ANTAQ + BACEN + INMET + CONAB + NOAA ONI + ANA",
+    },
+    "IND-11.02": {
+        "codigo": "IND-11.02",
+        "nome": "Cenários de Tonelagem",
+        "modulo": 11,
+        "unidade": "Toneladas/ano",
+        "unctad": False,
+        "descricao": "3 cenários 5 anos (base/otimista/pessimista) com mean-reversion e CAGR",
+        "granularidade": "Instalação/Ano",
+        "fonte_dados": "SARIMAX + premissas de cenário",
+    },
+    "IND-11.03": {
+        "codigo": "IND-11.03",
+        "nome": "Decomposição de Drivers",
+        "modulo": 11,
+        "unidade": "% contribuição",
+        "unctad": False,
+        "descricao": "Importância relativa de cada variável no forecast, agrupada por bloco",
+        "granularidade": "Instalação",
+        "fonte_dados": "Coeficientes SARIMAX",
+    },
+    "IND-11.04": {
+        "codigo": "IND-11.04",
+        "nome": "Backtesting",
+        "modulo": 11,
+        "unidade": "MAE / MAPE",
+        "unctad": False,
+        "descricao": "Walk-forward validation: treina no histórico, prevê últimos 12 meses, compara com real",
+        "granularidade": "Instalação",
+        "fonte_dados": "SARIMAX backtesting",
+    },
+    "IND-11.05": {
+        "codigo": "IND-11.05",
+        "nome": "Forecast de FOB Comércio",
+        "modulo": 11,
+        "unidade": "USD/mês",
+        "unctad": False,
+        "descricao": "Previsão de valor FOB (exportações + importações) — 12 meses",
+        "granularidade": "Município/Mês",
+        "fonte_dados": "Comex Stat + SARIMAX",
+    },
 }
 
 
@@ -1399,15 +1842,32 @@ class GenericIndicatorService:
                 params["id_municipio"] = resolved_municipio
 
         # Executa a query regular
-        query = query_func(**params)
-        bytes_estimated = await self._estimate_query_bytes(query)
-        self._enforce_bytes_quota(
-            codigo=codigo,
-            bytes_estimated=bytes_estimated,
-            tenant_policy=tenant_policy,
-        )
-        results = await self.bq_client.execute_query(query)
-        warnings = self._validate_indicator_quality(codigo, results)
+        # Módulo 8+ usa funções async (APIs externas); módulos 1-7 retornam SQL string
+        is_async_query = inspect.iscoroutinefunction(query_func)
+
+        if is_async_query:
+            # Indicador de API externa (BACEN, IBGE etc.) — sem BigQuery
+            results = await query_func(**params)
+            bytes_estimated = None
+        else:
+            query = query_func(**params)
+            bytes_estimated = await self._estimate_query_bytes(query)
+            self._enforce_bytes_quota(
+                codigo=codigo,
+                bytes_estimated=bytes_estimated,
+                tenant_policy=tenant_policy,
+            )
+            results = await self.bq_client.execute_query(query)
+
+        # Deflação pós-query: aplica IPCA a todos os campos monetários
+        if request.deflacionar and results:
+            results, deflation_warnings = await self._apply_deflation(
+                codigo, results, request.ano_base_deflacao,
+            )
+            warnings = self._validate_indicator_quality(codigo, results)
+            warnings.extend(deflation_warnings)
+        else:
+            warnings = self._validate_indicator_quality(codigo, results)
         if codigo in MODULE3_INDICATORS_WITH_YEAR_COVERAGE and request.ano:
             warnings.extend(
                 await self._append_no_data_warnings_module3(
@@ -2028,6 +2488,95 @@ class GenericIndicatorService:
             )
 
         return warnings
+
+    async def _apply_deflation(
+        self,
+        codigo: str,
+        results: List[Dict[str, Any]],
+        ano_base: Optional[int],
+    ) -> tuple:
+        """
+        Aplica deflação IPCA pós-query a campos monetários.
+
+        Detecta o campo 'ano' nos resultados e aplica o deflator IPCA do
+        DeflationService a todos os campos monetários identificados.
+
+        Returns:
+            (results_deflacionados, warnings)
+        """
+        warnings: List[DataQualityWarning] = []
+
+        if not results:
+            return results, warnings
+
+        # Identifica campo de ano
+        first = results[0]
+        ano_field = None
+        for candidate in ("ano", "year", "ano_referencia"):
+            if candidate in first:
+                ano_field = candidate
+                break
+
+        if ano_field is None:
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_sem_campo_ano",
+                codigo_indicador=codigo,
+                mensagem="Deflação não aplicada: campo 'ano' não encontrado nos resultados.",
+                campo="ano",
+            ))
+            return results, warnings
+
+        # Identifica campos monetários
+        known_fields = MONETARY_FIELDS_BY_INDICATOR.get(codigo, [])
+        if known_fields:
+            # Usa campos conhecidos, filtra para os que existem nos resultados
+            monetary_fields = [f for f in known_fields if f in first]
+        else:
+            # Auto-detecta
+            monetary_fields = _detect_monetary_fields(first)
+
+        if not monetary_fields:
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_sem_campo_monetario",
+                codigo_indicador=codigo,
+                mensagem="Deflação não aplicada: nenhum campo monetário identificado.",
+                campo=codigo,
+            ))
+            return results, warnings
+
+        # Aplica deflação
+        try:
+            from app.services.deflation_service import get_deflation_service
+            deflation_svc = get_deflation_service()
+
+            for field in monetary_fields:
+                results = await deflation_svc.deflacionar_serie(
+                    results,
+                    campo_valor=field,
+                    campo_ano=ano_field,
+                    ano_base=ano_base,
+                )
+
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_aplicada",
+                codigo_indicador=codigo,
+                mensagem=(
+                    f"Valores deflacionados por IPCA (BACEN série 433). "
+                    f"Campos: {', '.join(f'{f}_real' for f in monetary_fields)}. "
+                    f"Ano base: {ano_base or 'mais recente da série'}."
+                ),
+                campo=",".join(monetary_fields),
+            ))
+        except Exception as e:
+            logger.warning("deflation_error codigo=%s err=%s", codigo, e)
+            warnings.append(DataQualityWarning(
+                tipo="deflacao_erro",
+                codigo_indicador=codigo,
+                mensagem=f"Erro ao aplicar deflação: {str(e)[:200]}. Valores nominais retornados.",
+                campo=",".join(monetary_fields),
+            ))
+
+        return results, warnings
 
     @classmethod
     def _validate_indicator_quality(

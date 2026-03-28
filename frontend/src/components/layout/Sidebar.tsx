@@ -10,6 +10,8 @@ import {
   Building,
   LineChart,
   Settings,
+  Shield,
+  FileCheck,
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -76,6 +78,34 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       label: t('navigation.module7'),
       description: 'Índices Sintéticos (7)',
       moduleColor: 'module7',
+    },
+    {
+      path: '/dashboard/module8',
+      icon: TrendingUp,
+      label: t('navigation.module8'),
+      description: 'Selic, IPCA, Câmbio, PIB (6)',
+      moduleColor: 'module8',
+    },
+    {
+      path: '/dashboard/module9',
+      icon: Shield,
+      label: t('navigation.module9'),
+      description: 'ANA, INPE (3)',
+      moduleColor: 'module9',
+    },
+    {
+      path: '/dashboard/module10',
+      icon: FileCheck,
+      label: t('navigation.module10'),
+      description: 'PNCP, TCU, DataJud (8)',
+      moduleColor: 'module10',
+    },
+    {
+      path: '/dashboard/module11',
+      icon: TrendingUp,
+      label: t('navigation.module11'),
+      description: 'SARIMAX (5)',
+      moduleColor: 'module11',
     },
     {
       path: '/admin',
@@ -156,6 +186,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-module5': item.moduleColor === 'module5',
                             'bg-module6': item.moduleColor === 'module6',
                             'bg-module7': item.moduleColor === 'module7',
+                            'bg-emerald-500': item.moduleColor === 'module8',
+                            'bg-orange-500': item.moduleColor === 'module9',
+                            'bg-rose-500': item.moduleColor === 'module10',
+                            'bg-violet-500': item.moduleColor === 'module11',
                           }
                         )} />
                       )}

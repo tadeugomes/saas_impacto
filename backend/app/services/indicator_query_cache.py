@@ -64,13 +64,14 @@ class IndicatorQueryCache:
         except Exception:
             return None
 
-    async def set(self, key: str, value: list[dict[str, Any]]) -> None:
+    async def set(self, key: str, value: list[dict[str, Any]], ttl: Optional[int] = None) -> None:
         """Armazena valor no cache; falha silenciosa para não quebrar consultas."""
         if not self.enabled:
             return
         try:
             client = await self._get_redis_client()
-            await client.set(key, json.dumps(value, ensure_ascii=False), ex=self.ttl_seconds)
+            ex = ttl if ttl is not None else self.ttl_seconds
+            await client.set(key, json.dumps(value, ensure_ascii=False), ex=ex)
         except Exception:
             return
 

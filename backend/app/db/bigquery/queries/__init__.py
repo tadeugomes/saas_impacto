@@ -132,15 +132,101 @@ from app.db.bigquery.queries.module7_synthetic_indices import (
     QUERIES_MODULE_7,
 )
 
+# Module 8 - Macro (async API queries, not BigQuery SQL)
+from app.db.bigquery.queries.module8_macro import (
+    query_selic_meta,
+    query_ipca_acumulado,
+    query_cambio_ptax,
+    query_ibc_br,
+    query_populacao_municipal as query_populacao_municipal_ibge,
+    query_pib_per_capita_municipal,
+    QUERIES_MODULE_8,
+)
+
+# Module 1 - Tides (async API queries)
+from app.db.bigquery.queries.module1_tides import (
+    query_taxa_aproveitamento_mare,
+    query_janela_navegavel_media,
+    QUERIES_MODULE_1_TIDES,
+)
+
+# Module 6 - External fiscal data (TCEs + Transparência)
+from app.db.bigquery.queries.module6_external import (
+    query_autonomia_fiscal,
+    query_investimento_per_capita,
+    query_execucao_orcamentaria,
+    query_investimento_federal,
+    query_emendas_parlamentares,
+    query_servidores_federais,
+    QUERIES_MODULE_6_EXTERNAL,
+)
+
+# Deflated indicators (cross-module, async)
+from app.db.bigquery.queries.deflated_indicators import (
+    query_receita_real_por_tonelada,
+    query_fob_exportacoes_usd_ajustado,
+    query_fob_importacoes_usd_ajustado,
+    query_receita_municipal_real_per_capita,
+    query_icms_real_por_tonelada,
+    QUERIES_DEFLATED,
+)
+
+# Module 7 - Composite Synthetic Indices (cross-module, async)
+from app.db.bigquery.queries.module7_composite import (
+    query_idpm,
+    query_indice_risco_operacional as query_iro,
+    query_indice_governanca as query_igp,
+    QUERIES_MODULE_7_COMPOSITE,
+)
+
+# Module 9 - Environmental (ANA + INPE)
+from app.db.bigquery.queries.module9_ambiental import (
+    query_risco_hidrico,
+    query_risco_incendio,
+    query_indice_risco_ambiental,
+    QUERIES_MODULE_9,
+)
+
+# Module 10 - Compliance (async API queries)
+from app.db.bigquery.queries.module10_compliance import (
+    query_licitacoes_portuarias,
+    query_sancoes_ecossistema_portuario,
+    query_acordaos_tcu_portuarios,
+    query_mencoes_diario_oficial,
+    query_processos_judiciais_portuarios,
+    query_regularidade_licitatoria,
+    query_indice_risco_regulatorio,
+    query_indice_governanca_portuaria,
+    QUERIES_MODULE_10,
+)
+
+# Module 11 - Forecasting (async, SARIMAX)
+from app.db.bigquery.queries.module11_forecasting import (
+    query_forecast_tonelagem,
+    query_cenarios_tonelagem,
+    query_decomposicao_drivers,
+    query_backtesting,
+    query_forecast_fob_comercio,
+    QUERIES_MODULE_11,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
+    **QUERIES_MODULE_1_TIDES,
     **QUERIES_MODULE_2,
     **QUERIES_MODULE_3,
     **QUERIES_MODULE_4,
     **QUERIES_MODULE_5,
     **QUERIES_MODULE_6,
+    **QUERIES_MODULE_6_EXTERNAL,
     **QUERIES_MODULE_7,
+    **QUERIES_MODULE_7_COMPOSITE,
+    **QUERIES_MODULE_8,
+    **QUERIES_MODULE_9,
+    **QUERIES_DEFLATED,
+    **QUERIES_MODULE_10,
+    **QUERIES_MODULE_11,
 }
 
 __all__ = [

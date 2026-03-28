@@ -30,7 +30,12 @@ celery_app = Celery(
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
     # Registro automático das tasks ao importar o pacote
-    include=["app.tasks.impacto_economico", "app.tasks.maintenance", "app.tasks.notifications"],
+    include=[
+        "app.tasks.impacto_economico",
+        "app.tasks.maintenance",
+        "app.tasks.notifications",
+        "app.tasks.public_api_sync",
+    ],
 )
 
 # ── Configuração global ────────────────────────────────────────────────────
@@ -62,5 +67,26 @@ celery_app.conf.beat_schedule = {
     "purge-expired-audit-logs": {
         "task": "app.tasks.maintenance.purge_expired_audit_logs",
         "schedule": crontab(hour=3, minute=0),
-    }
+    },
+    # ── APIs Públicas — sync periódico ────────────────────────────────────
+    "sync-bacen-series": {
+        "task": "app.tasks.public_api_sync.sync_bacen_series",
+        "schedule": crontab(hour=10, minute=0),  # Diário às 10h (após abertura do mercado)
+    },
+    "sync-ibge-dados": {
+        "task": "app.tasks.public_api_sync.sync_ibge_dados",
+        "schedule": crontab(day_of_month=1, hour=6, minute=0),  # Mensal, dia 1 às 6h
+    },
+    "sync-focos-incendio": {
+        "task": "app.tasks.public_api_sync.sync_focos_incendio",
+        "schedule": crontab(minute=0, hour="*/3"),  # A cada 3h
+    },
+    "sync-nivel-rios": {
+        "task": "app.tasks.public_api_sync.sync_nivel_rios",
+        "schedule": crontab(minute=30, hour="*/6"),  # A cada 6h (offset 30min)
+    },
+    "sync-compliance": {
+        "task": "app.tasks.public_api_sync.sync_compliance",
+        "schedule": crontab(hour=8, minute=0),  # Diário às 08:00 UTC
+    },
 }

@@ -318,6 +318,19 @@ class GenericIndicatorRequest(BaseModel):
         default=False,
         description="Inclui detalhamento por município quando aplicável (ex.: município de influência).",
     )
+    deflacionar: bool = Field(
+        default=False,
+        description=(
+            "Aplica deflação IPCA aos valores monetários (R$), convertendo para "
+            "valores reais. Adiciona campos *_real, deflator_ipca e ano_base_deflacao."
+        ),
+    )
+    ano_base_deflacao: Optional[int] = Field(
+        default=None,
+        description="Ano base para deflação IPCA (default: ano mais recente da série). Ex: 2023",
+        ge=2000,
+        le=2100,
+    )
 
 
 class TenantModulePermissionItem(BaseModel):

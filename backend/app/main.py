@@ -38,6 +38,7 @@ from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.admin_dashboard import router as admin_dashboard_router
 from app.api.v1.impacto_economico.router import router as impacto_economico_router
 from app.api.v1.employment import router as employment_router
+from app.api.v1.public_apis import router as public_apis_router
 from app.db.base import engine
 from app.db.bigquery.client import BigQueryError, BigQueryClient, get_bigquery_client
 import redis.asyncio as aioredis
@@ -68,8 +69,35 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown — cleanup de clientes HTTP de APIs externas
     logger.info("app_shutdown")
+    try:
+        from app.clients.bacen import get_bacen_client
+        from app.clients.ibge import get_ibge_client
+        from app.clients.mares import get_mares_client
+        from app.clients.ana import get_ana_client
+        from app.clients.inpe import get_inpe_client
+        from app.clients.pncp import get_pncp_client
+        from app.clients.tcu_federal import get_tcu_client
+        from app.clients.querido_diario import get_querido_diario_client
+        from app.clients.datajud import get_datajud_client
+        from app.clients.conab import get_conab_client
+        from app.clients.inmet import get_inmet_client
+        from app.clients.noaa_enso import get_noaa_enso_client
+        await get_bacen_client().close()
+        await get_ibge_client().close()
+        await get_mares_client().close()
+        await get_ana_client().close()
+        await get_inpe_client().close()
+        await get_pncp_client().close()
+        await get_tcu_client().close()
+        await get_querido_diario_client().close()
+        await get_datajud_client().close()
+        await get_conab_client().close()
+        await get_inmet_client().close()
+        await get_noaa_enso_client().close()
+    except Exception:
+        pass
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
@@ -281,6 +309,7 @@ api_router.include_router(reports_router)
 api_router.include_router(users_router)
 api_router.include_router(impacto_economico_router)
 api_router.include_router(employment_router)
+api_router.include_router(public_apis_router)
 
 app.include_router(api_router)
 
