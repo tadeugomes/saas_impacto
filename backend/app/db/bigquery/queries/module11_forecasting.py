@@ -23,10 +23,16 @@ async def query_forecast_tonelagem(
     **kwargs,
 ) -> List[Dict[str, Any]]:
     """
-    IND-11.01: Forecast de Tonelagem — 12 meses com IC 80/95%.
+    IND-11.01: Forecast de Tonelagem — 60 meses (5 anos) com IC 80/95%.
 
-    Treina SARIMAX com exógenas auto-selecionadas e retorna
-    previsão mensal + decomposição de drivers + métricas do modelo.
+    Treina SARIMAX com exógenas auto-selecionadas (stepwise AIC,
+    max features = n_obs / 25) e retorna previsão mensal e anual
+    + decomposição de drivers + métricas do modelo.
+
+    Saída inclui projeção por horizonte:
+      - Curto prazo (1-12m): maior confiança
+      - Médio prazo (13-36m): IC se abre
+      - Longo prazo (37-60m): tendência estrutural
     """
     if not id_instalacao:
         return []
@@ -44,7 +50,7 @@ async def query_forecast_tonelagem(
             return [{"error": "Dados insuficientes (mínimo 24 meses)", "id_instalacao": id_instalacao}]
 
         fit_info = engine.fit(df, target="tonelagem")
-        forecast = engine.forecast(steps=12)
+        forecast = engine.forecast(steps=60)  # 5 anos
         drivers = engine.decompose_drivers()
 
         return [{
@@ -87,11 +93,11 @@ async def query_cenarios_tonelagem(
 
         engine.fit(df, target="tonelagem")
         scenario_gen = ScenarioEngine(engine._feature_names)
-        exog_scenarios = scenario_gen.generate_exog_scenarios(df, steps=12)
+        exog_scenarios = scenario_gen.generate_exog_scenarios(df, steps=60)
 
         forecasts = {}
         for name, exog_future in exog_scenarios.items():
-            forecasts[name] = engine.forecast(steps=12, exog_future=exog_future)
+            forecasts[name] = engine.forecast(steps=60, exog_future=exog_future)
 
         result = scenario_gen.format_scenarios_response(forecasts, df)
         result["id_instalacao"] = id_instalacao

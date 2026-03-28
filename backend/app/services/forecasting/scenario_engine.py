@@ -1,8 +1,12 @@
 """
-Motor de cenários para forecast de tonelagem.
+Motor de cenários para forecast de tonelagem (horizonte 5 anos).
 
 Gera 3 cenários (base, otimista, pessimista) ajustando as variáveis
 exógenas de acordo com premissas macro e climáticas.
+
+Para horizonte longo (>12m), os choques são aplicados com convergência
+gradual ao cenário base (mean-reversion), refletindo que choques
+extremos não se sustentam por 5 anos.
 """
 
 from __future__ import annotations
@@ -59,7 +63,7 @@ class ScenarioEngine:
     def generate_exog_scenarios(
         self,
         df: pd.DataFrame,
-        steps: int = 12,
+        steps: int = 60,
     ) -> Dict[str, pd.DataFrame]:
         """
         Gera DataFrames de exógenas futuras para cada cenário.
@@ -97,19 +101,24 @@ class ScenarioEngine:
             future_data = {}
             for col in self.feature_names:
                 base_val = last_values.get(col, 0.0)
-
-                # Aplica choque da premissa ao col relevante
                 shock = self._get_shock_for_feature(col, assumptions)
-                projected = base_val * (1 + shock)
 
-                # Adiciona sazonalidade para precipitação
-                if "precip" in col:
-                    future_data[col] = [
-                        projected * (1 + 0.3 * np.sin(2 * np.pi * (i + last_date.month) / 12))
-                        for i in range(steps)
-                    ]
-                else:
-                    future_data[col] = [projected] * steps
+                # Mean-reversion: choque decai 20% ao ano para horizontes longos
+                # Ano 1: 100% do choque, Ano 2: 80%, Ano 3: 64%, Ano 4: 51%, Ano 5: 41%
+                values = []
+                for i in range(steps):
+                    year_fraction = i / 12
+                    decay = 0.8 ** year_fraction  # 20% decay por ano
+                    effective_shock = shock * decay
+                    projected = base_val * (1 + effective_shock)
+
+                    # Sazonalidade para precipitação
+                    if "precip" in col:
+                        projected *= (1 + 0.3 * np.sin(2 * np.pi * (i + last_date.month) / 12))
+
+                    values.append(projected)
+
+                future_data[col] = values
 
             scenarios[scenario_name] = pd.DataFrame(
                 future_data, index=future_dates
@@ -124,34 +133,61 @@ class ScenarioEngine:
     ) -> Dict[str, Any]:
         """
         Formata os resultados dos 3 cenários para a resposta da API.
+
+        Inclui projeção anual para cada um dos 5 anos e variação
+        acumulada no período completo.
         """
-        # Tonelagem do último ano completo
         last_year = df.index[-1].year - 1
-        yearly = df[df.index.year == last_year]["tonelagem"].sum()
+        yearly_ref = df[df.index.year == last_year]["tonelagem"].sum()
 
         scenarios_out = []
         for name, forecast in forecasts.items():
             assumptions = SCENARIO_ASSUMPTIONS.get(name, {})
-            previsoes = forecast.get("previsoes", [])
-            total_previsto = sum(p.get("tonelagem_prevista", 0) for p in previsoes)
-            variacao = round((total_previsto / yearly - 1) * 100, 1) if yearly > 0 else None
+            previsoes_anuais = forecast.get("previsoes_anuais", [])
+            previsoes_mensais = forecast.get("previsoes_mensais", [])
+
+            # Total no horizonte
+            total_horizonte = sum(
+                p.get("tonelagem_anual", 0) for p in previsoes_anuais
+            )
+
+            # Tonelagem no último ano projetado vs. referência
+            if previsoes_anuais:
+                ultimo_ano = previsoes_anuais[-1]
+                ton_ultimo = ultimo_ano.get("tonelagem_anual", 0)
+                variacao_final = round((ton_ultimo / yearly_ref - 1) * 100, 1) if yearly_ref > 0 else None
+                cagr = None
+                n_anos = len(previsoes_anuais)
+                if yearly_ref > 0 and ton_ultimo > 0 and n_anos > 0:
+                    cagr = round(((ton_ultimo / yearly_ref) ** (1 / n_anos) - 1) * 100, 1)
+            else:
+                variacao_final = None
+                cagr = None
 
             scenarios_out.append({
                 "cenario": name,
                 "descricao": assumptions.get("descricao", ""),
-                "tonelagem_anual_prevista": round(total_previsto, 0),
-                "tonelagem_ano_anterior": round(yearly, 0),
-                "variacao_pct": variacao,
-                "previsoes_mensais": previsoes,
+                "horizonte_anos": len(previsoes_anuais),
+                "tonelagem_ano_referencia": round(yearly_ref, 0),
+                "ano_referencia": last_year,
+                "previsoes_anuais": previsoes_anuais,
+                "variacao_acumulada_pct": variacao_final,
+                "cagr_pct": cagr,
                 "premissas": {
                     k: v for k, v in assumptions.items()
                     if k != "descricao"
                 },
+                "nota_mean_reversion": (
+                    "Choques decaem 20% ao ano (mean-reversion). "
+                    "Ano 1: 100% do choque, Ano 5: ~41%. "
+                    "Reflete que condições extremas não se sustentam por 5 anos."
+                ),
             })
 
         return {
             "cenarios": scenarios_out,
             "ano_referencia": last_year,
+            "horizonte": "5 anos",
         }
 
     @staticmethod

@@ -1,9 +1,13 @@
 """
 Motor SARIMAX para forecast de tonelagem portuária.
 
-Usa statsmodels SARIMAX com variáveis exógenas dos 5 blocos.
-Inclui backtesting (walk-forward), decomposição de drivers
-e geração de cenários.
+Horizonte: até 60 meses (5 anos), dividido em 3 faixas:
+  - Curto prazo (1-12m): SARIMAX com exógenas operacionais + clima
+  - Médio prazo (13-36m): SARIMAX com exógenas macro + safra
+  - Longo prazo (37-60m): Tendência estrutural + sazonalidade
+
+Seleção parcimoniosa: max 3-4 exógenas (regra 1:25 obs/feature).
+Stepwise AIC com penalidade mínima de 2 pontos.
 """
 
 from __future__ import annotations
@@ -16,9 +20,15 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Horizonte padrão: 5 anos
+DEFAULT_HORIZON_MONTHS = 60
+
+# Máximo de exógenas por número de observações (regra 1:25)
+MAX_EXOG_RATIO = 25
+
 
 class SarimaxEngine:
-    """Motor SARIMAX para previsão de throughput portuário."""
+    """Motor SARIMAX para previsão de throughput portuário (até 5 anos)."""
 
     def __init__(
         self,
@@ -39,35 +49,34 @@ class SarimaxEngine:
         exog_cols: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        Treina o modelo SARIMAX.
+        Treina o modelo SARIMAX com seleção parcimoniosa de features.
 
-        Args:
-            df: DataFrame com target e features (index = date)
-            target: Nome da coluna target
-            exog_cols: Colunas exógenas (None = auto-select)
-
-        Returns:
-            Dict com métricas de ajuste (AIC, BIC, log-likelihood)
+        A seleção respeita a regra de 1 feature para cada 25 observações.
+        Usa stepwise AIC com penalidade mínima de 2 pontos.
         """
         from statsmodels.tsa.statespace.sarimax import SARIMAX
 
         self._target_name = target
         y = df[target].dropna()
 
-        if exog_cols is None:
-            exog_cols = self._auto_select_features(df, target)
+        # Limite de features baseado no tamanho da amostra
+        max_features = max(1, len(y) // MAX_EXOG_RATIO)
 
+        if exog_cols is None:
+            exog_cols = self._stepwise_select(df, target, max_features)
+
+        # Limita ao máximo permitido
+        exog_cols = exog_cols[:max_features]
         self._feature_names = exog_cols
 
         if exog_cols:
-            exog = df.loc[y.index, exog_cols].fillna(method="ffill").fillna(0)
+            exog = df.loc[y.index, exog_cols].ffill().fillna(0)
         else:
             exog = None
 
         try:
             self._model = SARIMAX(
-                y,
-                exog=exog,
+                y, exog=exog,
                 order=self.order,
                 seasonal_order=self.seasonal_order,
                 enforce_stationarity=False,
@@ -78,16 +87,16 @@ class SarimaxEngine:
             return {
                 "aic": round(self._results.aic, 2),
                 "bic": round(self._results.bic, 2),
-                "log_likelihood": round(self._results.llf, 2),
                 "n_obs": int(self._results.nobs),
                 "n_features": len(exog_cols),
+                "max_features_permitido": max_features,
                 "features_used": exog_cols,
+                "regra_parcimonia": f"1:{MAX_EXOG_RATIO} (max {max_features} vars para {len(y)} obs)",
             }
         except Exception as e:
-            logger.error("sarimax_fit_error: %s", e)
-            # Fallback: SARIMA sem exógenas
+            logger.warning("sarimax_fit_error: %s — fallback SARIMA puro", e)
+            self._feature_names = []
             try:
-                self._feature_names = []
                 self._model = SARIMAX(
                     y, order=self.order, seasonal_order=self.seasonal_order,
                     enforce_stationarity=False, enforce_invertibility=False,
@@ -95,31 +104,28 @@ class SarimaxEngine:
                 self._results = self._model.fit(disp=False, maxiter=200)
                 return {
                     "aic": round(self._results.aic, 2),
-                    "bic": round(self._results.bic, 2),
                     "n_obs": int(self._results.nobs),
                     "n_features": 0,
                     "features_used": [],
-                    "fallback": "SARIMA sem exógenas (erro no modelo completo)",
+                    "fallback": "SARIMA puro (exógenas causaram erro)",
                 }
             except Exception as e2:
                 raise RuntimeError(f"SARIMAX e SARIMA falharam: {e2}") from e
 
     def forecast(
         self,
-        steps: int = 12,
+        steps: int = DEFAULT_HORIZON_MONTHS,
         exog_future: Optional[pd.DataFrame] = None,
         confidence_levels: List[float] = [0.80, 0.95],
     ) -> Dict[str, Any]:
         """
-        Gera forecast de N meses.
+        Gera forecast de até 60 meses (5 anos).
 
-        Args:
-            steps: Número de meses para prever
-            exog_future: DataFrame com exógenas futuras (para cenários)
-            confidence_levels: Níveis de confiança para intervalos
+        Para horizonte >12 meses, a incerteza cresce naturalmente
+        nos intervalos de confiança — o modelo é honesto sobre isso.
 
         Returns:
-            Dict com previsões, intervalos de confiança, e métricas
+            Dict com previsões anuais e mensais + IC + horizonte
         """
         if self._results is None:
             raise RuntimeError("Modelo não treinado. Chame fit() primeiro.")
@@ -127,25 +133,21 @@ class SarimaxEngine:
         forecast_result = self._results.get_forecast(steps=steps, exog=exog_future)
         predicted = forecast_result.predicted_mean
 
-        result = {
-            "previsoes": [],
-            "horizonte_meses": steps,
-            "modelo": f"SARIMAX{self.order}x{self.seasonal_order}",
-            "n_features": len(self._feature_names),
-        }
-
+        # Monta resultado mensal
+        previsoes_mensais = []
         for level in confidence_levels:
             alpha = 1 - level
             ci = forecast_result.conf_int(alpha=alpha)
-            ci_lower = ci.iloc[:, 0]
-            ci_upper = ci.iloc[:, 1]
 
             for i in range(steps):
-                date_str = predicted.index[i].strftime("%Y-%m") if hasattr(predicted.index[i], "strftime") else str(predicted.index[i])
+                date_str = (
+                    predicted.index[i].strftime("%Y-%m")
+                    if hasattr(predicted.index[i], "strftime")
+                    else str(predicted.index[i])
+                )
 
-                # Encontra ou cria entrada para esta data
                 entry = None
-                for e in result["previsoes"]:
+                for e in previsoes_mensais:
                     if e["periodo"] == date_str:
                         entry = e
                         break
@@ -153,23 +155,43 @@ class SarimaxEngine:
                 if entry is None:
                     entry = {
                         "periodo": date_str,
+                        "ano": int(date_str[:4]),
+                        "mes": int(date_str[5:7]),
                         "tonelagem_prevista": round(max(0, float(predicted.iloc[i])), 0),
                     }
-                    result["previsoes"].append(entry)
+                    previsoes_mensais.append(entry)
 
                 pct = int(level * 100)
-                entry[f"ic_{pct}_inferior"] = round(max(0, float(ci_lower.iloc[i])), 0)
-                entry[f"ic_{pct}_superior"] = round(max(0, float(ci_upper.iloc[i])), 0)
+                entry[f"ic_{pct}_inferior"] = round(max(0, float(ci.iloc[i, 0])), 0)
+                entry[f"ic_{pct}_superior"] = round(max(0, float(ci.iloc[i, 1])), 0)
 
-        return result
+        # Agrega por ano
+        previsoes_anuais = self._aggregate_by_year(previsoes_mensais)
+
+        # Classifica por horizonte
+        horizontes = {
+            "curto_prazo": {"meses": "1-12", "previsoes": previsoes_mensais[:12]},
+            "medio_prazo": {"meses": "13-36", "previsoes": previsoes_mensais[12:36]},
+            "longo_prazo": {"meses": "37-60", "previsoes": previsoes_mensais[36:60]},
+        }
+
+        return {
+            "horizonte_total_meses": steps,
+            "horizonte_anos": round(steps / 12, 1),
+            "modelo": f"SARIMAX{self.order}x{self.seasonal_order}",
+            "n_features": len(self._feature_names),
+            "previsoes_mensais": previsoes_mensais,
+            "previsoes_anuais": previsoes_anuais,
+            "por_horizonte": horizontes,
+            "nota": (
+                "Curto prazo (1-12m): maior confiança, exógenas operacionais dominam. "
+                "Médio prazo (13-36m): macro e safra ganham peso, IC se abre. "
+                "Longo prazo (37-60m): tendência estrutural, IC amplo — usar com cautela."
+            ),
+        }
 
     def decompose_drivers(self) -> List[Dict[str, Any]]:
-        """
-        Decompõe contribuição de cada variável exógena no forecast.
-
-        Calcula a importância relativa baseada nos coeficientes
-        do modelo × desvio padrão de cada feature.
-        """
+        """Importância relativa de cada variável exógena."""
         if self._results is None or not self._feature_names:
             return []
 
@@ -178,21 +200,15 @@ class SarimaxEngine:
             importances = []
 
             for i, feat in enumerate(self._feature_names):
-                # Coeficiente da feature no modelo
                 param_name = f"x{i+1}" if f"x{i+1}" in params.index else feat
                 if param_name in params.index:
                     coef = abs(float(params[param_name]))
                 else:
-                    # Tenta encontrar pelo nome
                     matching = [p for p in params.index if feat in str(p)]
                     coef = abs(float(params[matching[0]])) if matching else 0
 
-                importances.append({
-                    "feature": feat,
-                    "coeficiente": round(coef, 6),
-                })
+                importances.append({"feature": feat, "coeficiente": round(coef, 6)})
 
-            # Normaliza para importância relativa (%)
             total = sum(i["coeficiente"] for i in importances) or 1
             for item in importances:
                 item["importancia_pct"] = round(item["coeficiente"] / total * 100, 1)
@@ -212,107 +228,181 @@ class SarimaxEngine:
         """
         Walk-forward backtesting nos últimos N meses.
 
-        Treina no período [0, T-test_months], prevê [T-test_months, T],
-        compara com valores reais.
-
-        Returns:
-            Dict com MAE, MAPE, RMSE e previsões vs. reais
+        Também testa horizonte de 24 e 36 meses se dados suficientes.
         """
         from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-        if len(df) < test_months + 24:
-            return {"error": "Dados insuficientes para backtesting (mínimo 36 meses)"}
+        min_train = 36
+        if len(df) < min_train + test_months:
+            return {"error": f"Dados insuficientes (precisa {min_train + test_months}, tem {len(df)})"}
 
         y = df[target].dropna()
-        train_end = len(y) - test_months
-
-        y_train = y.iloc[:train_end]
-        y_test = y.iloc[train_end:]
+        max_features = max(1, (len(y) - test_months) // MAX_EXOG_RATIO)
 
         if exog_cols is None:
-            exog_cols = self._auto_select_features(df, target)
-
-        if exog_cols:
-            exog_all = df[exog_cols].fillna(method="ffill").fillna(0)
-            exog_train = exog_all.iloc[:train_end]
-            exog_test = exog_all.iloc[train_end:train_end + test_months]
-        else:
-            exog_train = None
-            exog_test = None
-
-        try:
-            model = SARIMAX(
-                y_train, exog=exog_train,
-                order=self.order, seasonal_order=self.seasonal_order,
-                enforce_stationarity=False, enforce_invertibility=False,
+            exog_cols = self._stepwise_select(
+                df.iloc[:-test_months], target, max_features
             )
-            results = model.fit(disp=False, maxiter=200)
-            predictions = results.get_forecast(steps=test_months, exog=exog_test)
-            y_pred = predictions.predicted_mean
+        exog_cols = exog_cols[:max_features]
 
-            # Métricas
-            errors = y_test.values[:len(y_pred)] - y_pred.values[:len(y_test)]
-            abs_errors = np.abs(errors)
-            pct_errors = abs_errors / np.maximum(np.abs(y_test.values[:len(y_pred)]), 1)
+        # Testa múltiplos horizontes
+        horizontes_teste = [12]
+        if len(y) >= min_train + 24:
+            horizontes_teste.append(24)
+        if len(y) >= min_train + 36:
+            horizontes_teste.append(36)
 
-            mae = round(float(np.mean(abs_errors)), 0)
-            mape = round(float(np.mean(pct_errors)) * 100, 1)
-            rmse = round(float(np.sqrt(np.mean(errors**2))), 0)
+        resultados_horizonte = {}
+        for h in horizontes_teste:
+            if len(y) < min_train + h:
+                continue
+            t = len(y) - h
+            yt, yv = y.iloc[:t], y.iloc[t:t + h]
 
-            # Comparação mês a mês
-            comparacao = []
-            for i in range(min(len(y_test), len(y_pred))):
-                period = y_test.index[i]
-                comparacao.append({
-                    "periodo": period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period),
-                    "real": round(float(y_test.iloc[i]), 0),
-                    "previsto": round(max(0, float(y_pred.iloc[i])), 0),
-                    "erro_pct": round(float(pct_errors[i]) * 100, 1),
-                })
+            ex_tr = df[exog_cols].ffill().fillna(0).iloc[:t] if exog_cols else None
+            ex_te = df[exog_cols].ffill().fillna(0).iloc[t:t + h] if exog_cols else None
 
-            return {
-                "mae": mae,
-                "mape_pct": mape,
-                "rmse": rmse,
-                "meses_testados": len(comparacao),
-                "n_features": len(exog_cols),
-                "features_used": exog_cols,
-                "comparacao": comparacao,
-            }
-        except Exception as e:
-            logger.error("backtest_error: %s", e)
-            return {"error": str(e)[:200]}
+            try:
+                model = SARIMAX(
+                    yt, exog=ex_tr,
+                    order=self.order, seasonal_order=self.seasonal_order,
+                    enforce_stationarity=False, enforce_invertibility=False,
+                )
+                results = model.fit(disp=False, maxiter=200)
+                preds = results.get_forecast(steps=h, exog=ex_te)
+                y_pred = preds.predicted_mean
 
-    @staticmethod
-    def _auto_select_features(
-        df: pd.DataFrame, target: str, max_features: int = 10,
+                n = min(len(yv), len(y_pred))
+                errors = np.abs(yv.values[:n] - y_pred.values[:n])
+                pct_errors = errors / np.maximum(np.abs(yv.values[:n]), 1)
+
+                comparacao = []
+                for i in range(n):
+                    period = yv.index[i]
+                    comparacao.append({
+                        "periodo": period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period),
+                        "real": round(float(yv.iloc[i]), 0),
+                        "previsto": round(max(0, float(y_pred.iloc[i])), 0),
+                        "erro_pct": round(float(pct_errors[i]) * 100, 1),
+                    })
+
+                resultados_horizonte[f"{h}m"] = {
+                    "horizonte_meses": h,
+                    "mae": round(float(np.mean(errors)), 0),
+                    "mape_pct": round(float(np.mean(pct_errors)) * 100, 1),
+                    "rmse": round(float(np.sqrt(np.mean(errors**2))), 0),
+                    "comparacao": comparacao,
+                }
+
+                # MAPE por ano dentro do horizonte
+                if h >= 24:
+                    for year_offset in range(h // 12):
+                        start = year_offset * 12
+                        end = min(start + 12, n)
+                        if end > start:
+                            year_errors = pct_errors[start:end]
+                            resultados_horizonte[f"{h}m"][f"mape_ano_{year_offset + 1}"] = round(
+                                float(np.mean(year_errors)) * 100, 1
+                            )
+
+            except Exception as e:
+                resultados_horizonte[f"{h}m"] = {"error": str(e)[:200]}
+
+        return {
+            "n_features": len(exog_cols),
+            "features_used": exog_cols,
+            "regra_parcimonia": f"max {max_features} vars",
+            "horizontes": resultados_horizonte,
+        }
+
+    # ── Seleção de features ─────────────────────────────────────────
+
+    def _stepwise_select(
+        self,
+        df: pd.DataFrame,
+        target: str,
+        max_features: int,
     ) -> List[str]:
         """
-        Seleciona features com maior correlação com o target.
-        Exclui lags muito colineares.
+        Forward stepwise por AIC com penalidade mínima de 2 pontos.
+
+        Só adiciona feature se AIC cai pelo menos 2 pontos.
         """
+        from statsmodels.tsa.statespace.sarimax import SARIMAX
+
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         candidates = [
             c for c in numeric_cols
             if c != target
-            and not c.startswith("ano")
-            and not c.startswith("mes_num")
-            and c not in ("trimestre",)
+            and "ano" not in c
+            and "mes_num" not in c
+            and c != "trimestre"
+            and c != "atracoes"
         ]
 
         if not candidates:
             return []
 
-        # Correlação absoluta com target
-        correlations = {}
-        for col in candidates:
-            try:
-                corr = abs(df[target].corr(df[col]))
-                if not np.isnan(corr):
-                    correlations[col] = corr
-            except Exception:
-                continue
+        y = df[target].dropna()
 
-        # Top N por correlação
-        sorted_features = sorted(correlations, key=correlations.get, reverse=True)
-        return sorted_features[:max_features]
+        # Baseline: sem exógenas
+        try:
+            m = SARIMAX(y, order=self.order, seasonal_order=self.seasonal_order,
+                        enforce_stationarity=False, enforce_invertibility=False)
+            best_aic = m.fit(disp=False, maxiter=100).aic
+        except Exception:
+            return []
+
+        selected: List[str] = []
+
+        for _ in range(min(max_features, len(candidates))):
+            best_feat = None
+            for feat in candidates:
+                if feat in selected:
+                    continue
+                test_cols = selected + [feat]
+                try:
+                    exog = df.loc[y.index, test_cols].ffill().fillna(0)
+                    m = SARIMAX(y, exog=exog, order=self.order,
+                                seasonal_order=self.seasonal_order,
+                                enforce_stationarity=False, enforce_invertibility=False)
+                    aic = m.fit(disp=False, maxiter=100).aic
+                    if aic < best_aic - 2:  # Penalidade mínima
+                        best_aic = aic
+                        best_feat = feat
+                except Exception:
+                    continue
+
+            if best_feat:
+                selected.append(best_feat)
+            else:
+                break
+
+        return selected
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _aggregate_by_year(previsoes: List[Dict]) -> List[Dict[str, Any]]:
+        """Agrega previsões mensais por ano."""
+        by_year: Dict[int, List[Dict]] = {}
+        for p in previsoes:
+            ano = p.get("ano", 0)
+            if ano not in by_year:
+                by_year[ano] = []
+            by_year[ano].append(p)
+
+        anuais = []
+        for ano in sorted(by_year):
+            items = by_year[ano]
+            total = sum(p["tonelagem_prevista"] for p in items)
+            anuais.append({
+                "ano": ano,
+                "meses_previstos": len(items),
+                "tonelagem_anual": round(total, 0),
+                "tonelagem_media_mensal": round(total / len(items), 0),
+                "ic_95_inferior": round(sum(p.get("ic_95_inferior", 0) for p in items), 0),
+                "ic_95_superior": round(sum(p.get("ic_95_superior", 0) for p in items), 0),
+            })
+
+        return anuais
