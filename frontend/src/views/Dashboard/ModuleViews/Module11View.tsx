@@ -5,6 +5,7 @@ import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
 import { PORTO_OPTIONS } from '../../../components/filters/InstallationSelector';
 import { indicatorsService } from '../../../api/indicators';
+import { useI18n } from '../../../i18n/I18nContext';
 import type { IndicatorResponse } from '../../../types/api';
 import {
   TrendingUp, BarChart3, PieChart, Target,
@@ -44,6 +45,7 @@ function formatTon(value: number): string {
 }
 
 export function Module11View() {
+  const { t } = useI18n();
   const { selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ export function Module11View() {
         );
         setIndicators(results);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar forecast');
+        setError(err instanceof Error ? err.message : t('common.errorLoading'));
       } finally {
         setLoading(false);
       }
@@ -88,14 +90,14 @@ export function Module11View() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Previsão de Movimentação de Cargas</h1>
-          <p className="text-gray-600 mt-1">Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module11.title')}</h1>
+          <p className="text-gray-600 mt-1">{t('module11.subtitle')}</p>
         </div>
         <FilterBar showYear={false} />
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
           <Info className="mx-auto mb-2 text-amber-500" size={32} />
-          <p className="text-amber-800 font-medium">Selecione um porto para gerar a previsão de cargas.</p>
-          <p className="text-amber-600 text-sm mt-1">A projeção utiliza o histórico operacional da instalação selecionada.</p>
+          <p className="text-amber-800 font-medium">{t('module11.selectPort')}</p>
+          <p className="text-amber-600 text-sm mt-1">{t('module11.selectPortHint')}</p>
         </div>
       </div>
     );
@@ -128,9 +130,9 @@ export function Module11View() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Previsão de Movimentação de Cargas</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('module11.title')}</h1>
         <p className="text-gray-600 mt-1">
-          Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima
+          {t('module11.subtitle')}
         </p>
       </div>
 

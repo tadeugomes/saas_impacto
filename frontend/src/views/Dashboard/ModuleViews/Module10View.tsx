@@ -4,6 +4,7 @@ import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
+import { useI18n } from '../../../i18n/I18nContext';
 import type { IndicatorResponse } from '../../../types/api';
 import {
   FileCheck, AlertTriangle, Scale, Newspaper, Gavel, CheckCircle,
@@ -92,6 +93,7 @@ function getRiskColor(cls: string): string {
 }
 
 export function Module10View() {
+  const { t } = useI18n();
   const { selectedInstallation, selectedYear } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,7 @@ export function Module10View() {
         );
         setIndicators(results);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar indicadores');
+        setError(err instanceof Error ? err.message : t('common.errorLoading'));
       } finally {
         setLoading(false);
       }
@@ -142,9 +144,9 @@ export function Module10View() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Compliance e Governança</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('module10.title')}</h1>
         <p className="text-gray-600 mt-1">
-          Monitoramento regulatório do ecossistema portuário — dados filtrados por relevância portuária
+          {t('module10.subtitle')}
         </p>
       </div>
 

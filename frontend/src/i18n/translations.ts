@@ -44,7 +44,39 @@ export type TranslationKey =
   // Module 5 — diagnostics
   | 'module5.diagnostics.title'
   | 'module5.diagnostics.observations'
-  | 'module5.diagnostics.parallelTrends';
+  | 'module5.diagnostics.parallelTrends'
+  // Common
+  | 'common.errorLoading'
+  | 'common.noData'
+  | 'common.filters'
+  | 'common.clearFilters'
+  // Module titles & subtitles
+  | 'module1.title'
+  | 'module1.subtitle'
+  | 'module2.title'
+  | 'module2.subtitle'
+  | 'module4.title'
+  | 'module4.subtitle'
+  | 'module6.title'
+  | 'module6.subtitle'
+  | 'module7.title'
+  | 'module7.subtitle'
+  | 'module7.compositeSection'
+  | 'module8.title'
+  | 'module8.subtitle'
+  | 'module9.title'
+  | 'module9.subtitle'
+  | 'module10.title'
+  | 'module10.subtitle'
+  | 'module11.title'
+  | 'module11.subtitle'
+  | 'module11.selectPort'
+  | 'module11.selectPortHint'
+  | 'dashboard.title'
+  | 'dashboard.totalIndicators'
+  | 'dashboard.internationalStandard'
+  | 'dashboard.totalModules'
+  | 'dashboard.status';
 
 type MessageCatalog = Record<TranslationKey, string>;
 
@@ -94,6 +126,38 @@ const messages: Record<Locale, MessageCatalog> = {
     'module5.diagnostics.title': 'Diagnósticos do Resultado',
     'module5.diagnostics.observations': 'Observações',
     'module5.diagnostics.parallelTrends': 'Parallel trends (p)',
+    // Common
+    'common.errorLoading': 'Erro ao carregar dados',
+    'common.noData': 'Sem dados disponíveis',
+    'common.filters': 'Filtros:',
+    'common.clearFilters': 'Limpar filtros',
+    // Module titles
+    'module1.title': 'Módulo 1 - Operações de Navios',
+    'module1.subtitle': 'Indicadores operacionais padronizados e análises para investidores',
+    'module2.title': 'Módulo 2 - Operações de Carga',
+    'module2.subtitle': '7 indicadores de operações de carga',
+    'module4.title': 'Módulo 4 - Comércio Exterior',
+    'module4.subtitle': '6 indicadores de comércio exterior',
+    'module6.title': 'Módulo 6 - Finanças Públicas',
+    'module6.subtitle': '11 indicadores de impacto fiscal com leitura causal e associativa',
+    'module7.title': 'Módulo 7 - Índices de Desempenho',
+    'module7.subtitle': '10 indicadores de desempenho (7 operacionais + 3 integrados entre módulos)',
+    'module7.compositeSection': 'Indicadores Integrados',
+    'module8.title': 'Contexto Macroeconômico',
+    'module8.subtitle': 'Indicadores econômicos nacionais para contexto de investimento no setor portuário',
+    'module9.title': 'Risco Ambiental',
+    'module9.subtitle': 'Monitoramento de riscos hídricos e ambientais para instalações portuárias',
+    'module10.title': 'Conformidade e Governança',
+    'module10.subtitle': 'Monitoramento regulatório do ecossistema portuário',
+    'module11.title': 'Previsão de Movimentação de Cargas',
+    'module11.subtitle': 'Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima',
+    'module11.selectPort': 'Selecione um porto para gerar a previsão de cargas.',
+    'module11.selectPortHint': 'A projeção utiliza o histórico operacional da instalação selecionada.',
+    'dashboard.title': 'Dashboard',
+    'dashboard.totalIndicators': 'Total Indicadores',
+    'dashboard.internationalStandard': 'Padrão Internacional',
+    'dashboard.totalModules': 'Total Módulos',
+    'dashboard.status': 'Status',
   },
   'en-US': {
     'app.title': 'SaaS Port Economic Impact',
@@ -140,6 +204,38 @@ const messages: Record<Locale, MessageCatalog> = {
     'module5.diagnostics.title': 'Result Diagnostics',
     'module5.diagnostics.observations': 'Observations',
     'module5.diagnostics.parallelTrends': 'Parallel trends (p)',
+    // Common
+    'common.errorLoading': 'Error loading data',
+    'common.noData': 'No data available',
+    'common.filters': 'Filters:',
+    'common.clearFilters': 'Clear filters',
+    // Module titles
+    'module1.title': 'Module 1 - Ship Operations',
+    'module1.subtitle': 'Standardized operational indicators and investor analytics',
+    'module2.title': 'Module 2 - Cargo Operations',
+    'module2.subtitle': '7 cargo operations indicators',
+    'module4.title': 'Module 4 - International Trade',
+    'module4.subtitle': '6 international trade indicators',
+    'module6.title': 'Module 6 - Public Finance',
+    'module6.subtitle': '11 fiscal impact indicators with causal and associative analysis',
+    'module7.title': 'Module 7 - Performance Indices',
+    'module7.subtitle': '10 performance indicators (7 operational + 3 cross-module)',
+    'module7.compositeSection': 'Integrated Indicators',
+    'module8.title': 'Macroeconomic Context',
+    'module8.subtitle': 'National economic indicators for port investment context',
+    'module9.title': 'Environmental Risk',
+    'module9.subtitle': 'Monitoring water and environmental risks for port facilities',
+    'module10.title': 'Compliance & Governance',
+    'module10.subtitle': 'Regulatory monitoring of the port ecosystem',
+    'module11.title': 'Cargo Movement Forecast',
+    'module11.subtitle': '5-year projection based on economic, operational, crop, and climate indicators',
+    'module11.selectPort': 'Select a port to generate the cargo forecast.',
+    'module11.selectPortHint': 'The projection uses the operational history of the selected facility.',
+    'dashboard.title': 'Dashboard',
+    'dashboard.totalIndicators': 'Total Indicators',
+    'dashboard.internationalStandard': 'International Standard',
+    'dashboard.totalModules': 'Total Modules',
+    'dashboard.status': 'Status',
   },
 };
 

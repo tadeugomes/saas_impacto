@@ -7,6 +7,7 @@ import { BarChart } from '../../../components/charts/BarChart';
 import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
+import { useI18n } from '../../../i18n/I18nContext';
 import type { IndicatorResponse } from '../../../types/api';
 import { TrendingUp, Shield, Building } from 'lucide-react';
 
@@ -63,6 +64,7 @@ function getLabelFromData(item: IndicatorRow): string {
 }
 
 export function Module7View() {
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [compositeIndicators, setCompositeIndicators] = useState<IndicatorMap>({});
@@ -112,8 +114,8 @@ export function Module7View() {
         setCompositeIndicators(compMapped);
       } catch (err: unknown) {
         const errorResponse = err as { response?: { data?: { detail?: unknown } } };
-        const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao carregar indicadores';
-        setError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao carregar indicadores');
+        const errorMessage = errorResponse?.response?.data?.detail || t('common.errorLoading');
+        setError(typeof errorMessage === 'string' ? errorMessage : t('common.errorLoading'));
       } finally {
         setIsLoading(false);
       }
@@ -125,7 +127,7 @@ export function Module7View() {
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Módulo 7 - Índices Sintéticos</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('module7.title')}</h1>
         <LoadingSpinner />
       </div>
     );
@@ -135,9 +137,9 @@ export function Module7View() {
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Módulo 7 - Índices Sintéticos</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module7.title')}</h1>
           <p className="text-gray-500 mt-1">
-            10 indicadores de desempenho (7 operacionais + 3 integrados entre módulos)
+            {t('module7.subtitle')}
           </p>
         </div>
         <ExportButton moduleCode="7" />
@@ -186,7 +188,7 @@ export function Module7View() {
 
       {/* Composite Indices (Fase 3) */}
       <div className="mt-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Índices Compostos</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('module7.compositeSection')}</h2>
         <p className="text-gray-500 mb-6 text-sm">
           Indicadores integrados que combinam dados operacionais, econômicos, fiscais e ambientais.
           Cada índice inclui transparência total sobre os componentes utilizados.

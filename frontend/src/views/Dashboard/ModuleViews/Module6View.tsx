@@ -17,6 +17,7 @@ import {
 } from '../../../utils/municipioLabels';
 import { indicatorsService } from '../../../api/indicators';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
+import { useI18n } from '../../../i18n/I18nContext';
 import type { IndicatorResponse } from '../../../types/api';
 
 type IndicatorRow = Record<string, unknown>;
@@ -305,6 +306,7 @@ function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolea
 }
 
 export function Module6View() {
+  const { t } = useI18n();
   const { selectedYear, selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -454,7 +456,7 @@ export function Module6View() {
       } catch (err: unknown) {
         const errorResponse = err as { response?: { data?: { detail?: unknown } } };
         const msg = errorResponse?.response?.data?.detail;
-        setError(typeof msg === 'string' ? msg : 'Erro ao carregar indicadores');
+        setError(typeof msg === 'string' ? msg : t('common.errorLoading'));
       } finally {
         setIsLoading(false);
       }
@@ -466,7 +468,7 @@ export function Module6View() {
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Módulo 6 - Finanças Públicas</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('module6.title')}</h1>
         <LoadingSpinner />
       </div>
     );
@@ -476,9 +478,9 @@ export function Module6View() {
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Módulo 6 - Finanças Públicas</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module6.title')}</h1>
           <p className="text-gray-500 mt-1">
-            11 indicadores de impacto fiscal com leitura causal e associativa
+            {t('module6.subtitle')}
           </p>
         </div>
         <ExportButton moduleCode="6" />

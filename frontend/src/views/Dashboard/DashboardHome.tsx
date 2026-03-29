@@ -4,6 +4,7 @@ import { FilterBar } from '../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { indicatorsService } from '../../api/indicators';
+import { useI18n } from '../../i18n/I18nContext';
 import type { ModulesOverview } from '../../types/api';
 import {
   Anchor,
@@ -27,6 +28,7 @@ const MODULE_INFO = [
 ];
 
 export function DashboardHome() {
+  const { t } = useI18n();
   const [overview, setOverview] = useState<ModulesOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function DashboardHome() {
         const errorResponse = err as { response?: { data?: { detail?: unknown } } };
         const detail = errorResponse?.response?.data?.detail;
         console.error('Erro ao carregar overview:', err);
-        setError(typeof detail === 'string' ? detail : 'Erro ao carregar overview');
+        setError(typeof detail === 'string' ? detail : t('common.errorLoading'));
       } finally {
         setIsLoading(false);
       }
@@ -64,7 +66,7 @@ export function DashboardHome() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('dashboard.title')}</h1>
           <p className="text-gray-500 mt-1">
             {sistemaNome} - Visão geral dos {totalIndicadores} indicadores
           </p>
@@ -79,19 +81,19 @@ export function DashboardHome() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="card">
-          <p className="text-sm text-gray-500">Total Indicadores</p>
+          <p className="text-sm text-gray-500">{t('dashboard.totalIndicators')}</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">{totalIndicadores}</p>
         </div>
         <div className="card">
-          <p className="text-sm text-gray-500">Padrão Internacional</p>
+          <p className="text-sm text-gray-500">{t('dashboard.internationalStandard')}</p>
           <p className="text-3xl font-bold text-blue-600 mt-1">{unctadCompliant}</p>
         </div>
         <div className="card">
-          <p className="text-sm text-gray-500">Total Módulos</p>
+          <p className="text-sm text-gray-500">{t('dashboard.totalModules')}</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">{totalModulos}</p>
         </div>
         <div className="card">
-          <p className="text-sm text-gray-500">Status</p>
+          <p className="text-sm text-gray-500">{t('dashboard.status')}</p>
           <p className="text-3xl font-bold text-green-600 mt-1">Ativo</p>
         </div>
       </div>

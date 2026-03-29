@@ -4,6 +4,7 @@ import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
+import { useI18n } from '../../../i18n/I18nContext';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import { Droplets, Flame, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
@@ -73,6 +74,7 @@ function getRiskBadge(classificacao: string) {
 }
 
 export function Module9View() {
+  const { t } = useI18n();
   const { selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
@@ -102,7 +104,7 @@ export function Module9View() {
         );
         setIndicators(results);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar indicadores');
+        setError(err instanceof Error ? err.message : t('common.errorLoading'));
       } finally {
         setLoading(false);
       }
@@ -122,9 +124,9 @@ export function Module9View() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Risco Ambiental</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('module9.title')}</h1>
         <p className="text-gray-600 mt-1">
-          Monitoramento de riscos hídricos (ANA) e incêndios (INPE) para instalações portuárias
+          {t('module9.subtitle')}
         </p>
       </div>
 

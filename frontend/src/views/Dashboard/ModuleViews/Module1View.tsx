@@ -8,6 +8,7 @@ import { indicatorsService } from '../../../api/indicators';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import { apiClient } from '../../../api/client';
+import { useI18n } from '../../../i18n/I18nContext';
 
 interface IndicatorConfig {
   code: string;
@@ -115,6 +116,7 @@ function scoreBarColor(score: number): string {
 }
 
 export function Module1View() {
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -153,8 +155,8 @@ export function Module1View() {
         setIndicators(mapped);
       } catch (err: unknown) {
         const errorResponse = err as { response?: { data?: { detail?: unknown } } };
-        const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao carregar indicadores';
-        setError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao carregar indicadores');
+        const errorMessage = errorResponse?.response?.data?.detail || t('common.errorLoading');
+        setError(typeof errorMessage === 'string' ? errorMessage : t('common.errorLoading'));
       } finally {
         setIsLoading(false);
       }
@@ -214,7 +216,7 @@ export function Module1View() {
   if (isLoading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Módulo 1 - Operações de Navios</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('module1.title')}</h1>
         <LoadingSpinner />
       </div>
     );
@@ -224,8 +226,8 @@ export function Module1View() {
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Módulo 1 - Operações de Navios</h1>
-          <p className="text-gray-500 mt-1">Indicadores operacionais padronizados e análises para investidores</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module1.title')}</h1>
+          <p className="text-gray-500 mt-1">{t('module1.subtitle')}</p>
         </div>
         <ExportButton moduleCode="1" />
       </div>

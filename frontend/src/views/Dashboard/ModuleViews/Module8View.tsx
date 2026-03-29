@@ -4,6 +4,7 @@ import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
+import { useI18n } from '../../../i18n/I18nContext';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, Users, Building } from 'lucide-react';
@@ -49,6 +50,7 @@ const MACRO_ICONS: Record<string, typeof TrendingUp> = {
 };
 
 export function Module8View() {
+  const { t } = useI18n();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
@@ -81,7 +83,7 @@ export function Module8View() {
 
         setIndicators(results);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar indicadores');
+        setError(err instanceof Error ? err.message : t('common.errorLoading'));
       } finally {
         setLoading(false);
       }
@@ -113,9 +115,9 @@ export function Module8View() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Contexto Macroeconômico</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module8.title')}</h1>
           <p className="text-gray-600 mt-1">
-            Indicadores BACEN e IBGE para contexto de investimento no setor portuário
+            {t('module8.subtitle')}
           </p>
         </div>
       </div>

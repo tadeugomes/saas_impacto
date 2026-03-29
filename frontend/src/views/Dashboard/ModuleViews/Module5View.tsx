@@ -14,6 +14,7 @@ import { AnalysisStatusBadge } from '../../../components/impactoEconomico/Analys
 import { AnalysisResultCard } from '../../../components/impactoEconomico/AnalysisResultCard';
 import { EventStudyChart } from '../../../components/impactoEconomico/EventStudyChart';
 import { MethodComparisonTable } from '../../../components/impactoEconomico/MethodComparisonTable';
+import { ImpactCalculator } from '../../../components/impactoEconomico/ImpactCalculator';
 import { useAnalysis } from '../../../hooks/useAnalysis';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
 import { formatDecimal } from '../../../utils/numberFormat';
@@ -34,9 +35,6 @@ import type {
   AnalysisMethod,
   AnalysisScope,
   AnalysisResponse,
-  SimulationShockMode,
-  ImpactSimulationRequest,
-  ImpactSimulationResponse,
   MatchingResponse,
   IndicatorMetadata,
   IndicatorResponse,
@@ -512,7 +510,6 @@ const INDICATORS_INFO: Array<{
   { code: 'IND-5.21', name: 'Concentração da Atividade Portuária', unit: '0–100', desc: 'Índice composto de dependência econômica do porto', valueField: 'indice_concentracao_portuaria', interpretation: 'Use para comparação relativa entre municípios e para ranking de dependência portuária.', group: 'porto' },
 ];
 
-const IMPACT_SIMULATION_REFERENCE_DEFAULT = 'toneladas_antaq_log';
 
 
 function valueToString(value: unknown): string {
@@ -984,68 +981,6 @@ function parseNumeric(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseImpactValue(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return '—';
-  }
-  const rounded = formatDecimal(value, 4);
-  if (rounded === '—') {
-    return '—';
-  }
-  const fixedSign = value > 0 ? `+${rounded}` : rounded;
-  return `${fixedSign}%`;
-}
-
-function formatImpactRange(
-  low: number | null | undefined,
-  high: number | null | undefined,
-): string {
-  if (
-    low === null
-    || low === undefined
-    || high === null
-    || high === undefined
-    || !Number.isFinite(low)
-    || !Number.isFinite(high)
-  ) {
-    return '—';
-  }
-  return `${parseImpactValue(low)} a ${parseImpactValue(high)}`;
-}
-
-function formatSimulationDate(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
-}
-
-function buildSimulationConfidenceTag(confidence: ImpactSimulationResponse['projected_outcomes'][number]['confidence']): string {
-  if (confidence === 'forte') {
-    return '🟢 Forte';
-  }
-  if (confidence === 'moderada') {
-    return '🟡 Moderada';
-  }
-  return '🔴 Fraca';
-}
-
-function resolveSimulationOutcomes(detail: AnalysisDetail | null): string[] {
-  if (!detail?.result_full) {
-    return [];
-  }
-  if (detail.request_params && Array.isArray(detail.request_params.outcomes)) {
-    return (detail.request_params.outcomes as unknown[]).filter(
-      (outcome): outcome is string => typeof outcome === 'string' && outcome.trim().length > 0,
-    );
-  }
-  return Object.keys(detail.result_full as Record<string, unknown>);
-}
-
 function renderWarnings(
   warnings: unknown[],
   municipioLabels: MunicipioLabelMap,
@@ -1122,14 +1057,6 @@ export function Module5View() {
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
   const [reportFormat, setReportFormat] = useState<'docx' | 'pdf' | 'xlsx'>('docx');
   const [isMatchingControls, setIsMatchingControls] = useState(false);
-  const [simulationShockMode, setSimulationShockMode] = useState<SimulationShockMode>('movement');
-  const [simulationShockPct, setSimulationShockPct] = useState(10);
-  const [simulationInvestmentElasticity, setSimulationInvestmentElasticity] =
-    useState<number>(0.8);
-  const [simulationLoading, setSimulationLoading] = useState(false);
-  const [simulationResult, setSimulationResult] =
-    useState<ImpactSimulationResponse | null>(null);
-  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   const {
     analysis: polledAnalysis,
@@ -1387,11 +1314,6 @@ export function Module5View() {
     }
   }, [activeAnalysis, loadRecentAnalyses]);
 
-  useEffect(() => {
-    setSimulationResult(null);
-    setSimulationError(null);
-  }, [analysisToDisplay?.id]);
-
   const handleStartAnalysis = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAnalysisError(null);
@@ -1440,8 +1362,6 @@ export function Module5View() {
     setCreatingAnalysis(true);
     try {
       const created = await impactoEconomicoService.createAnalysis(payload);
-      setSimulationResult(null);
-      setSimulationError(null);
       setActiveAnalysisId(created.id);
       await loadRecentAnalyses();
     } catch (err: unknown) {
@@ -1491,68 +1411,7 @@ export function Module5View() {
     }
   };
 
-  const handleRunSimulation = async () => {
-    if (!analysisToDisplay) {
-      setSimulationError('Nenhuma análise carregada para simular.');
-      return;
-    }
-    if (analysisToDisplay.status !== 'success') {
-      setSimulationError('A análise precisa estar concluída para executar a simulação.');
-      return;
-    }
-
-    const shockInput = Number(simulationShockPct);
-    if (!Number.isFinite(shockInput)) {
-      setSimulationError('Informe uma intensidade de choque válida.');
-      return;
-    }
-
-    if (
-      simulationShockMode === 'investment'
-      && (!Number.isFinite(simulationInvestmentElasticity) || simulationInvestmentElasticity <= 0)
-    ) {
-      setSimulationError('Informe uma elasticidade maior que zero no modo investimento.');
-      return;
-    }
-
-    const request: ImpactSimulationRequest = {
-      shock_mode: simulationShockMode,
-      shock_intensity_pct: shockInput,
-      investment_to_movement_elasticity:
-        simulationShockMode === 'investment' ? simulationInvestmentElasticity : undefined,
-      reference_outcome: IMPACT_SIMULATION_REFERENCE_DEFAULT,
-      target_outcomes: simulationTargetOutcomes,
-    };
-    if (!request.target_outcomes || request.target_outcomes.length === 0) {
-      setSimulationError('Não há outcome disponível para simulação nesta análise.');
-      setSimulationLoading(false);
-      return;
-    }
-
-    setSimulationLoading(true);
-    setSimulationError(null);
-    try {
-      const response = await impactoEconomicoService.simulateImpact(
-        analysisToDisplay.id,
-        request,
-      );
-      setSimulationResult(response);
-    } catch (err: unknown) {
-      const errorResponse = err as ApiErrorLike;
-      const errorMessage = errorResponse?.response?.data?.detail || 'Erro ao calcular simulação.';
-      setSimulationError(typeof errorMessage === 'string' ? errorMessage : 'Erro ao calcular simulação.');
-      setSimulationResult(null);
-    } finally {
-      setSimulationLoading(false);
-    }
-  };
-
   // analysisMainRows: substituído por causalSummaryRows no painel técnico (Bloco B)
-
-  const simulationTargetOutcomes = useMemo(
-    () => resolveSimulationOutcomes(analysisToDisplay),
-    [analysisToDisplay],
-  );
 
   const compareData = useMemo(() => {
     if (!analysisToDisplay?.result_full || analysisToDisplay.method !== 'compare') {
@@ -2276,205 +2135,9 @@ export function Module5View() {
               )}
 
               {/* Simulador de impacto (cenário) */}
-              <div className="card">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Simulador de Impacto</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Projete cenário gerencial usando os coeficientes causais da análise ativa.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleRunSimulation}
-                    disabled={simulationLoading || !analysisToDisplay || analysisToDisplay.method === 'compare'}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {simulationLoading ? 'Calculando...' : 'Calcular cenário'}
-                  </button>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs font-medium text-gray-700">Fonte do cenário:</p>
-                  <div className="flex flex-wrap gap-3">
-                    <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-                      <input
-                        type="radio"
-                        name="simulationShockMode"
-                        value="movement"
-                        checked={simulationShockMode === 'movement'}
-                        onChange={() => setSimulationShockMode('movement')}
-                        className="h-3.5 w-3.5 accent-indigo-600"
-                      />
-                      Choque de movimentação (%)
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-                      <input
-                        type="radio"
-                        name="simulationShockMode"
-                        value="investment"
-                        checked={simulationShockMode === 'investment'}
-                        onChange={() => setSimulationShockMode('investment')}
-                        className="h-3.5 w-3.5 accent-indigo-600"
-                      />
-                      Choque de investimento (%)
-                    </label>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-end gap-3">
-                  <label className="text-xs text-gray-600">
-                    {simulationShockMode === 'investment'
-                      ? 'Variação de investimento (%)'
-                      : 'Variação de movimentação (%)'}
-                  </label>
-                  <input
-                    type="number"
-                    min={-100}
-                    max={500}
-                    step={1}
-                    value={simulationShockPct}
-                    onChange={(e) => setSimulationShockPct(parseNumeric(e.target.value) || 0)}
-                    className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                  <span className="text-xs text-gray-500">Comparado ao cenário base</span>
-                </div>
-
-                {simulationShockMode === 'investment' && (
-                  <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <label className="text-xs text-gray-600">
-                      Elasticidade (Δmovimentação / Δinvestimento):
-                    </label>
-                    <input
-                      type="number"
-                      min={0.01}
-                      step={0.01}
-                      value={simulationInvestmentElasticity}
-                      onChange={(e) => setSimulationInvestmentElasticity(parseNumeric(e.target.value) || 0)}
-                      className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                    />
-                    <span className="text-xs text-gray-500">
-                      Ex.: 0,8 = 10% investimento gera ~8% movimentação
-                    </span>
-                  </div>
-                )}
-
-                <p className="text-xs text-gray-500 mt-2">
-                  Referência fixa: <strong>{IMPACT_SIMULATION_REFERENCE_DEFAULT}</strong> (movimentação)
-                </p>
-
-                {simulationError && <ErrorAlert message={simulationError} />}
-
-                    {simulationResult ? (
-                      <>
-                        <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-700">
-                          {simulationResult.assumptions.map((item) => (
-                            <p key={item} className="leading-6">
-                          • {item}
-                        </p>
-                      ))}
-                        </div>
-
-                        <div className="mt-3 space-y-1.5 rounded-md border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
-                          <p className="font-medium text-gray-800">Parâmetros técnicos</p>
-                          <p>
-                            Modelo: {simulationResult.simulation_metadata.model_version}
-                            {' '}| gerado em {formatSimulationDate(simulationResult.simulation_metadata.as_of)}
-                            {' '}| origem: {simulationResult.simulation_metadata.generated_by}
-                          </p>
-                          <p>
-                            Impacto referência para cenário de 100%: {parseImpactValue(simulationResult.reference_effect_100pct)} em {IMPACT_SIMULATION_REFERENCE_DEFAULT}
-                          </p>
-                          {simulationResult.simulation_metadata.notes.length > 0 && (
-                            <ul className="list-disc pl-4 space-y-1 mt-2">
-                              {simulationResult.simulation_metadata.notes.map((note) => (
-                                <li key={note}>{note}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-
-                        {simulationResult.projected_outcomes.length > 0 && (
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            {simulationResult.projected_outcomes.map((projection) => {
-                              const deltaText = parseImpactValue(projection.projected_delta_pct);
-                              const effect100Text = parseImpactValue(projection.treatment_effect_100pct);
-                              const effect100CiText = projection.treatment_effect_100pct_ci_lower !== null
-                                && projection.treatment_effect_100pct_ci_upper !== null
-                                ? `${parseImpactValue(projection.treatment_effect_100pct_ci_lower)} a ${parseImpactValue(projection.treatment_effect_100pct_ci_upper)}`
-                                : '—';
-                              const conservativeText = formatImpactRange(
-                                projection.projected_delta_pct_conservative,
-                                projection.projected_delta_pct_optimistic,
-                              );
-                              return (
-                                <div
-                                  key={projection.outcome}
-                                  className="rounded-lg border border-gray-200 p-3 space-y-2"
-                                >
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium text-gray-800">{projection.outcome_label}</p>
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                                  {buildSimulationConfidenceTag(projection.confidence)}
-                                </span>
-                              </div>
-                              <p className="text-2xl font-bold text-gray-900">
-                                {deltaText}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                Projeção para choque de {simulationResult.applied_shock_intensity_pct.toFixed(1)}%
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                Efeito 100%: {effect100Text}.
-                                Método: {projection.method_used}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                IC 95% do efeito 100%: {effect100CiText}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                Faixa conservador/otimista:
-                                {' '}
-                                {conservativeText}
-                              </p>
-                              {projection.warning && (
-                                <p className="text-xs text-amber-700">{projection.warning}</p>
-                              )}
-                              <p className="text-xs text-gray-400">
-                                Resultado em português: {simulationResult.applied_shock_intensity_pct.toFixed(1)}% de choque de movimentação equivalente pode alterar {projection.outcome_label}
-                                {' '}em {deltaText}.
-                              </p>
-                              {projection.notes.length > 0 && (
-                                <ul className="list-disc pl-4 text-xs text-gray-500 space-y-1">
-                                  {projection.notes.map((note) => (
-                                    <li key={`${projection.outcome}-${note}`}>{note}</li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {simulationResult.executive_summary.length > 0 && (
-                      <div className="mt-4 space-y-1.5">
-                        <p className="text-sm font-medium text-gray-800">Resumo executivo</p>
-                        <ul className="list-disc pl-5 text-xs text-gray-600 space-y-1">
-                          {simulationResult.executive_summary.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  !simulationLoading && (
-                    <p className="text-xs text-gray-400 mt-3">
-                      Execute o cálculo para visualizar a simulação de impacto com base na análise ativa.
-                    </p>
-                  )
-                )}
-              </div>
+              {analysisToDisplay && (
+                <ImpactCalculator analysis={analysisToDisplay} />
+              )}
 
               {/* Gráfico comparativo de efeitos */}
               {causalSummaryRows.length > 1 && analysisToDisplay.method !== 'compare' && (
