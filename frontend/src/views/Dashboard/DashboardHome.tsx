@@ -23,7 +23,7 @@ const MODULE_INFO = [
   { id: 4, name: 'Comércio Exterior', icon: Globe, color: 'module4', path: '/dashboard/module4', indicators: 10 },
   { id: 5, name: 'Impacto Econômico', icon: TrendingUp, color: 'module5', path: '/dashboard/module5', indicators: 21 },
   { id: 6, name: 'Finanças Públicas', icon: Building, color: 'module6', path: '/dashboard/module6', indicators: 11 },
-  { id: 7, name: 'Índices Sintéticos', icon: LineChart, color: 'module7', path: '/dashboard/module7', indicators: 7 },
+  { id: 7, name: 'Índices de Desempenho', icon: LineChart, color: 'module7', path: '/dashboard/module7', indicators: 7 },
 ];
 
 export function DashboardHome() {
@@ -83,7 +83,7 @@ export function DashboardHome() {
           <p className="text-3xl font-bold text-gray-900 mt-1">{totalIndicadores}</p>
         </div>
         <div className="card">
-          <p className="text-sm text-gray-500">Padrão UNCTAD</p>
+          <p className="text-sm text-gray-500">Padrão Internacional</p>
           <p className="text-3xl font-bold text-blue-600 mt-1">{unctadCompliant}</p>
         </div>
         <div className="card">
@@ -142,7 +142,7 @@ export function DashboardHome() {
                   <span className="font-medium text-gray-900">{moduleData?.total_indicadores ?? module.indicators}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mt-1">
-                  <span className="text-gray-500">UNCTAD</span>
+                  <span className="text-gray-500">Padrão Internacional</span>
                   <span className="font-medium text-blue-600">{moduleData?.unctad_compliant ?? 0}</span>
                 </div>
               </div>

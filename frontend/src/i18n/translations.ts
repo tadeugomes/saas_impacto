@@ -66,10 +66,10 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module10': 'Compliance',
     'navigation.module11': 'Previsão de Cargas',
     // Module 3 — multiplier panel
-    'module3.multiplier.causalBeta': 'Estimativa causal aproximada (beta)',
-    'module3.multiplier.causalActive': 'Estimativa causal ativa',
-    'module3.multiplier.literaryProxy': 'Proxy literário · não causal',
-    'module3.multiplier.coefficient': 'Coeficiente',
+    'module3.multiplier.causalBeta': 'Estimativa de impacto aproximada',
+    'module3.multiplier.causalActive': 'Estimativa de impacto ativa',
+    'module3.multiplier.literaryProxy': 'Estimativa de referência · não causal',
+    'module3.multiplier.coefficient': 'Fator de impacto',
     'module3.multiplier.range': 'Intervalo',
     'module3.multiplier.confidence': 'Confiança',
     'module3.multiplier.region': 'Região',
@@ -80,9 +80,9 @@ const messages: Record<Locale, MessageCatalog> = {
     'module3.shock.quickScenarios': 'Cenários rápidos:',
     'module3.shock.add': 'Adicionar',
     'module3.shock.municipality': 'Município',
-    'module3.shock.disclaimer': 'Δ Total estimado de empregos (diretos + indiretos + induzidos) para cada cenário de variação de tonelagem. Base: multiplicadores de literatura (UNCTAD/MInfra). Hipótese linear — não constitui previsão causal.',
+    'module3.shock.disclaimer': 'Δ Total estimado de empregos (diretos + indiretos + induzidos) para cada cenário de variação de tonelagem. Base: multiplicadores de referência internacional. Hipótese linear — não constitui previsão causal.',
     // Module 3 — causal link
-    'module3.causal.linkDescription': 'Para verificar se o impacto no emprego é causal (e não apenas correlação), execute uma análise econométrica no Módulo 5 com o indicador de vínculos.',
+    'module3.causal.linkDescription': 'Para verificar se o impacto no emprego é causal (e não apenas correlação), execute uma análise de impacto no Módulo 5 com o indicador de vínculos.',
     'module3.causal.linkButton': 'Analisar impacto causal no emprego →',
     // Module 5 — matching
     'module5.matching.suggest': 'Sugerir automaticamente',
@@ -91,7 +91,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'module5.report.generating': 'Gerando...',
     'module5.report.button': 'Relatório',
     // Module 5 — diagnostics
-    'module5.diagnostics.title': 'Diagnósticos da Estimativa',
+    'module5.diagnostics.title': 'Diagnósticos do Resultado',
     'module5.diagnostics.observations': 'Observações',
     'module5.diagnostics.parallelTrends': 'Parallel trends (p)',
   },
@@ -112,10 +112,10 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module10': 'Compliance',
     'navigation.module11': 'Cargo Forecast',
     // Module 3 — multiplier panel
-    'module3.multiplier.causalBeta': 'Approximate causal estimate (beta)',
-    'module3.multiplier.causalActive': 'Active causal estimate',
-    'module3.multiplier.literaryProxy': 'Literary proxy · non-causal',
-    'module3.multiplier.coefficient': 'Coefficient',
+    'module3.multiplier.causalBeta': 'Approximate impact estimate',
+    'module3.multiplier.causalActive': 'Active impact estimate',
+    'module3.multiplier.literaryProxy': 'Reference estimate · non-causal',
+    'module3.multiplier.coefficient': 'Impact factor',
     'module3.multiplier.range': 'Range',
     'module3.multiplier.confidence': 'Confidence',
     'module3.multiplier.region': 'Region',
@@ -126,9 +126,9 @@ const messages: Record<Locale, MessageCatalog> = {
     'module3.shock.quickScenarios': 'Quick scenarios:',
     'module3.shock.add': 'Add',
     'module3.shock.municipality': 'Municipality',
-    'module3.shock.disclaimer': 'Δ Estimated total jobs (direct + indirect + induced) for each tonnage variation scenario. Base: literature multipliers (UNCTAD/MInfra). Linear hypothesis — does not constitute a causal forecast.',
+    'module3.shock.disclaimer': 'Δ Estimated total jobs (direct + indirect + induced) for each tonnage variation scenario. Based on international reference multipliers. Linear assumption — does not constitute a causal forecast.',
     // Module 3 — causal link
-    'module3.causal.linkDescription': 'To verify whether the employment impact is causal (not just correlation), run an econometric analysis in Module 5 using the employment indicator.',
+    'module3.causal.linkDescription': 'To verify whether the employment impact is causal (not just correlation), run an impact analysis in Module 5 using the employment indicator.',
     'module3.causal.linkButton': 'Analyze causal employment impact →',
     // Module 5 — matching
     'module5.matching.suggest': 'Auto-suggest',
@@ -137,7 +137,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'module5.report.generating': 'Generating...',
     'module5.report.button': 'Report',
     // Module 5 — diagnostics
-    'module5.diagnostics.title': 'Estimation Diagnostics',
+    'module5.diagnostics.title': 'Result Diagnostics',
     'module5.diagnostics.observations': 'Observations',
     'module5.diagnostics.parallelTrends': 'Parallel trends (p)',
   },

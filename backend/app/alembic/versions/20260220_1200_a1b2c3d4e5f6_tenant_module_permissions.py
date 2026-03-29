@@ -5,7 +5,7 @@ Revisão:
   - FK para tenants com CASCADE
   - campos: role, module_number, action
   - constraint única por (tenant_id, role, module_number, action)
-  - constraints para módulo em 1..7 e action em {read, execute, write}
+  - constraints para módulo em 1..11 e action em {read, execute, write}
 """
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ def upgrade() -> None:
             "tenant_id",
             postgresql.UUID(as_uuid=True),
             nullable=False,
-            index=True,
         ),
         sa.Column("role", sa.String(length=50), nullable=False),
         sa.Column("module_number", sa.Integer(), nullable=False),
@@ -60,7 +59,7 @@ def upgrade() -> None:
             name="ck_tenant_module_permissions_action",
         ),
         sa.CheckConstraint(
-            "module_number BETWEEN 1 AND 7",
+            "module_number BETWEEN 1 AND 11",
             name="ck_tenant_module_permissions_module_number",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_tenant_module_permissions"),
