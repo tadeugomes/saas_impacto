@@ -88,9 +88,11 @@ export function Module9View() {
         await Promise.allSettled(
           INDICATORS_INFO.map(async (ind) => {
             try {
-              const resp = await indicatorsService.queryIndicator({
+              const resp = await indicatorsService.queryIndicator<RawIndicatorRow>({
                 codigo_indicador: ind.code,
-                id_instalacao: selectedInstallation || undefined,
+                params: {
+                  id_instalacao: selectedInstallation || undefined,
+                },
               });
               results[ind.code] = resp;
             } catch {
@@ -115,7 +117,6 @@ export function Module9View() {
   // Extract composite data for IND-9.03
   const compositeData = indicators['IND-9.03']?.data?.[0] as RawIndicatorRow | undefined;
   const composicao = compositeData?.composicao as Composicao | undefined;
-  const classificacao = (compositeData?.classificacao as string) || 'sem_dados';
 
   return (
     <div className="space-y-6">
@@ -225,8 +226,15 @@ export function Module9View() {
         {INDICATORS_INFO.slice(0, 2).map((ind) => (
           <IndicatorDashboardCard
             key={ind.code}
-            indicator={indicators[ind.code] || { codigo_indicador: ind.code, nome: ind.code, unidade: '', unctad: false, data: [] }}
-            config={ind}
+            title={ind.name}
+            description={ind.desc}
+            unit={ind.unit}
+            isLoading={loading}
+            data={indicators[ind.code] || { codigo_indicador: ind.code, nome: ind.code, unidade: '', unctad: false, data: [] }}
+            chartType={ind.chartType}
+            valueField={ind.valueField}
+            labelField={ind.labelField}
+            indicatorCode={ind.code}
           />
         ))}
       </div>

@@ -11,9 +11,9 @@ import type { IndicatorResponse } from '../../../types/api';
 import { TrendingUp, Shield, Building } from 'lucide-react';
 
 const INDICATORS_INFO = [
-  { code: 'IND-7.01', name: 'Índice de Eficiência Portuária', unit: '0-100', desc: 'Índice composto de eficiência', valueField: 'indice_eficiencia' },
-  { code: 'IND-7.02', name: 'Índice de Relevância', unit: '0-100', desc: 'Índice composto de relevância', valueField: 'indice_relevancia' },
-  { code: 'IND-7.03', name: 'Índice de Integração', unit: '0-100', desc: 'Índice composto de integração', valueField: 'indice_integracao' },
+  { code: 'IND-7.01', name: 'Índice de Eficiência Portuária', unit: '0-100', desc: 'Medida combinada de eficiência operacional', valueField: 'indice_eficiencia' },
+  { code: 'IND-7.02', name: 'Índice de Relevância', unit: '0-100', desc: 'Medida de importância econômica do porto', valueField: 'indice_relevancia' },
+  { code: 'IND-7.03', name: 'Índice de Integração', unit: '0-100', desc: 'Medida de conexão com a economia local', valueField: 'indice_integracao' },
   { code: 'IND-7.04', name: 'Índice de Concentração', unit: '0-100', desc: 'Índice de concentração', valueField: 'indice_concentracao' },
 ];
 
@@ -137,7 +137,7 @@ export function Module7View() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Módulo 7 - Índices Sintéticos</h1>
           <p className="text-gray-500 mt-1">
-            10 indicadores de índices sintéticos (7 operacionais + 3 compostos cross-module)
+            10 indicadores de desempenho (7 operacionais + 3 integrados entre módulos)
           </p>
         </div>
         <ExportButton moduleCode="7" />
@@ -188,7 +188,7 @@ export function Module7View() {
       <div className="mt-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Índices Compostos</h2>
         <p className="text-gray-500 mb-6 text-sm">
-          Índices cross-module que combinam dados operacionais, macroeconômicos, fiscais e ambientais.
+          Indicadores integrados que combinam dados operacionais, econômicos, fiscais e ambientais.
           Cada índice inclui transparência total sobre os componentes utilizados.
         </p>
 

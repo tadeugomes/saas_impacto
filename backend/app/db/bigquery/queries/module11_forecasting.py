@@ -63,14 +63,23 @@ async def query_forecast_tonelagem(
         forecast = engine.forecast(steps=60, exog_future=exog_future)
         drivers = engine.decompose_drivers()
 
-        return [{
+        result: Dict[str, Any] = {
             "id_instalacao": id_instalacao,
             "blocos_status": builder.blocks_status,
             "modelo": fit_info,
             "forecast": forecast,
             "drivers": drivers,
             "features_disponiveis": builder.feature_names,
-        }]
+        }
+
+        try:
+            from app.services.forecasting.forecast_interpreter import create_interpreter
+            interpreter = create_interpreter(id_instalacao, df, target="tonelagem")
+            result["interpretacao"] = interpreter.interpret_all(drivers=drivers)
+        except Exception as ie:
+            logger.warning("forecast_interpreter_error porto=%s: %s", id_instalacao, ie)
+
+        return [result]
     except Exception as e:
         logger.error("forecast_tonelagem_error porto=%s: %s", id_instalacao, e)
         return [{"error": str(e)[:300], "id_instalacao": id_instalacao}]
@@ -115,6 +124,17 @@ async def query_cenarios_tonelagem(
         result = scenario_gen.format_scenarios_response(forecasts, df)
         result["id_instalacao"] = id_instalacao
         result["blocos_status"] = builder.blocks_status
+
+        try:
+            from app.services.forecasting.forecast_interpreter import create_interpreter
+            interpreter = create_interpreter(id_instalacao, df, target="tonelagem")
+            drivers = engine.decompose_drivers()
+            result["interpretacao"] = interpreter.interpret_all(
+                drivers=drivers,
+                scenarios=result,
+            )
+        except Exception as ie:
+            logger.warning("cenarios_interpreter_error porto=%s: %s", id_instalacao, ie)
 
         return [result]
     except Exception as e:

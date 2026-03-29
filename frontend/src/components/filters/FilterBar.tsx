@@ -1,13 +1,16 @@
 import { YearSelector } from './YearSelector';
 import { InstallationSelector } from './InstallationSelector';
+import { MunicipioSelector } from './MunicipioSelector';
 import { useFilterStore } from '../../store/filterStore';
 import { Filter, X } from 'lucide-react';
 
 interface FilterBarProps {
   showInstallation?: boolean;
+  showYear?: boolean;
+  selectorMode?: 'porto' | 'municipio';
 }
 
-export function FilterBar({ showInstallation = true }: FilterBarProps) {
+export function FilterBar({ showInstallation = true, showYear = true, selectorMode = 'porto' }: FilterBarProps) {
   const { selectedYear, resetFilters } = useFilterStore();
 
   return (
@@ -17,11 +20,14 @@ export function FilterBar({ showInstallation = true }: FilterBarProps) {
           <Filter className="w-5 h-5" />
         <span className="font-medium">Filtros:</span>
         </div>
-        <YearSelector />
-        {showInstallation && <InstallationSelector />}
-        <span className="text-sm text-gray-500">
-          {selectedYear}
-        </span>
+        {showYear && <YearSelector />}
+        {showInstallation && selectorMode === 'porto' && <InstallationSelector />}
+        {showInstallation && selectorMode === 'municipio' && <MunicipioSelector />}
+        {showYear && (
+          <span className="text-sm text-gray-500">
+            {selectedYear}
+          </span>
+        )}
       </div>
 
       <button

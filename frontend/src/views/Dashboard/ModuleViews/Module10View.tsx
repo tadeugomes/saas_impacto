@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
-import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import {
   FileCheck, AlertTriangle, Scale, Newspaper, Gavel, CheckCircle,
@@ -22,16 +21,16 @@ interface IndicatorConfig {
 
 const INDICATORS_INFO: IndicatorConfig[] = [
   { code: 'IND-10.01', name: 'Licitações Portuárias', unit: 'Contagem + R$', desc: 'Contratação pública portuária', chartType: 'metric', valueField: 'total_contratacoes' },
-  { code: 'IND-10.02', name: 'Sanções Portuárias', unit: 'Contagem', desc: 'Operadores sancionados (CEIS)', chartType: 'metric', valueField: 'empresas_sancionadas' },
-  { code: 'IND-10.03', name: 'Acórdãos TCU', unit: 'Contagem', desc: 'Decisões TCU portuárias', chartType: 'metric', valueField: 'total_acordaos' },
-  { code: 'IND-10.04', name: 'Menções em Diário', unit: 'Sentimento', desc: 'Análise temática de diários oficiais', chartType: 'metric', valueField: 'total_mencoes' },
+  { code: 'IND-10.02', name: 'Sanções Portuárias', unit: 'Contagem', desc: 'Operadores sancionados (Cadastro de Inelegíveis)', chartType: 'metric', valueField: 'empresas_sancionadas' },
+  { code: 'IND-10.03', name: 'Decisões do Tribunal de Contas', unit: 'Contagem', desc: 'Decisões do TCU sobre portos', chartType: 'metric', valueField: 'total_acordaos' },
+  { code: 'IND-10.04', name: 'Menções em Diário Oficial', unit: 'Avaliação', desc: 'Análise de menções em publicações oficiais', chartType: 'metric', valueField: 'total_mencoes' },
   { code: 'IND-10.05', name: 'Processos Judiciais', unit: 'Contagem', desc: 'Litígios do ecossistema portuário', chartType: 'metric', valueField: 'total_processos' },
   { code: 'IND-10.06', name: 'Regularidade Licitatória', unit: 'Razão (0-1)', desc: 'Publicação regular no PNCP', chartType: 'metric', valueField: 'regularidade' },
 ];
 
 const COMPOSITE_INDICATORS = [
-  { code: 'IND-10.07', name: 'Risco Regulatório', desc: 'Índice composto 0-1' },
-  { code: 'IND-10.08', name: 'Governança Portuária', desc: 'Índice composto 0-100' },
+  { code: 'IND-10.07', name: 'Risco Regulatório', desc: 'Medida combinada de risco (0-1)' },
+  { code: 'IND-10.08', name: 'Governança Portuária', desc: 'Medida de qualidade de governança (0-100)' },
 ];
 
 type RawRow = Record<string, unknown>;
@@ -108,10 +107,12 @@ export function Module10View() {
         await Promise.allSettled(
           allCodes.map(async (code) => {
             try {
-              const resp = await indicatorsService.queryIndicator({
+              const resp = await indicatorsService.queryIndicator<RawRow>({
                 codigo_indicador: code,
-                id_instalacao: selectedInstallation || undefined,
-                ano: selectedYear || undefined,
+                params: {
+                  id_instalacao: selectedInstallation || undefined,
+                  ano: selectedYear || undefined,
+                },
               });
               results[code] = resp;
             } catch {
@@ -168,7 +169,7 @@ export function Module10View() {
             </span>
           </div>
           <p className="text-3xl font-bold text-gray-900">
-            {riskData?.valor !== null && riskData?.valor !== undefined ? String(riskData.valor) : '—'}
+            {riskData?.valor !== null && riskData?.valor !== undefined ? String(riskData?.valor) : '—'}
           </p>
         </div>
 
@@ -189,17 +190,17 @@ export function Module10View() {
             </span>
           </div>
           <p className="text-3xl font-bold text-gray-900">
-            {govData?.valor !== null && govData?.valor !== undefined ? `${govData.valor}/100` : '—'}
+            {govData?.valor !== null && govData?.valor !== undefined ? `${String(govData?.valor)}/100` : '—'}
           </p>
         </div>
       </div>
 
-      {/* Individual Indicator Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {INDICATORS_INFO.map((ind) => {
-          const Icon = INDICATOR_ICONS[ind.code] || FileCheck;
+        {INDICATORS_INFO.map((ind): React.ReactNode => {
+          const Icon: typeof FileCheck = INDICATOR_ICONS[ind.code] || FileCheck;
           const data = indicators[ind.code]?.data?.[0] as RawRow | undefined;
-          const valor = data?.[ind.valueField];
+          const rawValor = data?.[ind.valueField];
+          const valor: string = rawValor !== null && rawValor !== undefined ? String(rawValor) : '—';
 
           return (
             <div key={ind.code} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -211,7 +212,7 @@ export function Module10View() {
                 </div>
               </div>
               <p className="text-xl font-bold text-gray-900">
-                {valor !== null && valor !== undefined ? String(valor) : '—'}
+                {valor}
               </p>
               <p className="text-xs text-gray-500 mt-1">{ind.unit}</p>
             </div>
@@ -227,8 +228,8 @@ export function Module10View() {
             Análise de Menções em Diário Oficial
           </h2>
           <p className="text-sm text-gray-500 mb-4">
-            Score geral: <span className="font-medium">{mencoesData?.score_sentimento ?? '—'}</span>
-            {' '}({mencoesData?.sentimento_geral ?? '—'}) — {mencoesData?.total_mencoes ?? 0} menções
+            Avaliação geral: <span className="font-medium">{mencoesData?.score_sentimento !== undefined ? String(mencoesData.score_sentimento) : '—'}</span>
+            {' '}({mencoesData?.sentimento_geral !== undefined ? String(mencoesData.sentimento_geral) : '—'}) — {mencoesData?.total_mencoes !== undefined ? String(mencoesData.total_mencoes) : 0} menções
           </p>
 
           <div className="space-y-3">
@@ -263,7 +264,7 @@ export function Module10View() {
       )}
 
       {/* Composicao block for IND-10.07 */}
-      {riskData?.composicao && (
+      {!!riskData?.composicao && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-gray-500" />

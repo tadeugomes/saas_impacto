@@ -3,30 +3,17 @@ import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { useFilterStore } from '../../../store/filterStore';
+import { PORTO_OPTIONS } from '../../../components/filters/InstallationSelector';
 import { indicatorsService } from '../../../api/indicators';
 import type { IndicatorResponse } from '../../../types/api';
 import {
-  TrendingUp, BarChart3, PieChart, Target, DollarSign,
+  TrendingUp, BarChart3, PieChart, Target,
   ArrowUp, ArrowDown, Minus, Info,
 } from 'lucide-react';
 
 type RawRow = Record<string, unknown>;
 type ModuleResponse = IndicatorResponse<RawRow>;
 type IndicatorMap = Record<string, ModuleResponse>;
-
-interface ForecastPoint {
-  periodo: string;
-  tonelagem_prevista: number;
-  ic_80_inferior?: number;
-  ic_80_superior?: number;
-  ic_95_inferior?: number;
-  ic_95_superior?: number;
-}
-
-interface Driver {
-  feature: string;
-  importancia_pct: number;
-}
 
 interface Bloco {
   bloco: string;
@@ -40,13 +27,6 @@ interface Cenario {
   tonelagem_anual_prevista: number;
   tonelagem_ano_anterior: number;
   variacao_pct: number | null;
-}
-
-interface BacktestPoint {
-  periodo: string;
-  real: number;
-  previsto: number;
-  erro_pct: number;
 }
 
 const BLOCK_COLORS: Record<string, string> = {
@@ -80,9 +60,11 @@ export function Module11View() {
         await Promise.allSettled(
           codes.map(async (code) => {
             try {
-              results[code] = await indicatorsService.queryIndicator({
+              results[code] = await indicatorsService.queryIndicator<RawRow>({
                 codigo_indicador: code,
-                id_instalacao: selectedInstallation || undefined,
+                params: {
+                  id_instalacao: selectedInstallation || undefined,
+                },
               });
             } catch {
               results[code] = { codigo_indicador: code, nome: code, unidade: '', unctad: false, data: [] };
@@ -102,6 +84,23 @@ export function Module11View() {
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorAlert message={error} />;
 
+  if (!selectedInstallation) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Previsão de Movimentação de Cargas</h1>
+          <p className="text-gray-600 mt-1">Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima</p>
+        </div>
+        <FilterBar showYear={false} />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <Info className="mx-auto mb-2 text-amber-500" size={32} />
+          <p className="text-amber-800 font-medium">Selecione um porto para gerar a previsão de cargas.</p>
+          <p className="text-amber-600 text-sm mt-1">A projeção utiliza o histórico operacional da instalação selecionada.</p>
+        </div>
+      </div>
+    );
+  }
+
   const forecastData = indicators['IND-11.01']?.data?.[0] as RawRow | undefined;
   const scenarioData = indicators['IND-11.02']?.data?.[0] as RawRow | undefined;
   const driversData = indicators['IND-11.03']?.data?.[0] as RawRow | undefined;
@@ -109,19 +108,29 @@ export function Module11View() {
 
   const forecastObj = forecastData?.forecast as RawRow | undefined;
   const previsoes_anuais = (forecastObj?.previsoes_anuais as Array<Record<string, number>>) || [];
-  const previsoes_mensais = (forecastObj?.previsoes_mensais as ForecastPoint[]) || [];
   const cenarios = (scenarioData?.cenarios as Cenario[]) || [];
   const blocos = (driversData?.blocos as Bloco[]) || [];
   const horizontes = (backtestData?.horizontes as Record<string, Record<string, unknown>>) || {};
   const bt12 = horizontes['12m'] as Record<string, unknown> | undefined;
   const mape = bt12?.mape_pct as number | undefined;
 
+  // Label legível da instalação (ex: "Itaqui (MA)")
+  const instalacaoLabel = PORTO_OPTIONS.find(o => o.value === selectedInstallation)?.label ?? selectedInstallation ?? '';
+
+  // Interpretações em linguagem de negócio
+  const interp11 = forecastData?.interpretacao as RawRow | undefined;
+  const interp12 = scenarioData?.interpretacao as RawRow | undefined;
+  const resumoExecutivo = (interp11?.resumo_executivo ?? interp12?.resumo_executivo) as string | undefined;
+  const interpMape = interp11?.mape as RawRow | undefined;
+  const interpDrivers = (interp11?.drivers ?? interp12?.drivers) as RawRow | undefined;
+  const interpCenarios = interp12?.cenarios as RawRow | undefined;
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Forecast de Throughput</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Previsão de Movimentação de Cargas</h1>
         <p className="text-gray-600 mt-1">
-          Previsão SARIMAX com variáveis macro, operacionais, safra e clima
+          Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima
         </p>
       </div>
 
@@ -132,23 +141,23 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <Target className="w-5 h-5 text-blue-500" />
-            <p className="text-sm font-medium text-gray-600">Precisão (MAPE)</p>
+            <p className="text-sm font-medium text-gray-600">Precisão do Modelo</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">
             {mape !== undefined ? `${mape}%` : '—'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Walk-forward 12 meses</p>
+          <p className="text-xs text-gray-500 mt-1">Validação nos últimos 12 meses</p>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <BarChart3 className="w-5 h-5 text-emerald-500" />
-            <p className="text-sm font-medium text-gray-600">Features no Modelo</p>
+            <p className="text-sm font-medium text-gray-600">Variáveis Consideradas</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">
-            {(forecastData?.modelo as RawRow)?.n_features ?? '—'}
+            {(forecastData?.modelo as RawRow)?.n_features !== undefined ? String((forecastData?.modelo as RawRow).n_features) : '—'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">5 blocos de variáveis</p>
+          <p className="text-xs text-gray-500 mt-1">5 categorias de dados</p>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -157,7 +166,7 @@ export function Module11View() {
             <p className="text-sm font-medium text-gray-600">Horizonte</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">5 anos</p>
-          <p className="text-xs text-gray-500 mt-1">60 meses, IC 80% e 95%</p>
+          <p className="text-xs text-gray-500 mt-1">60 meses com faixa de confiança de 80% e 95%</p>
         </div>
       </div>
 
@@ -166,7 +175,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-gray-500" />
-            Previsão de Tonelagem (5 anos)
+            Projeção de Tonelagem — 5 Anos
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -207,8 +216,8 @@ export function Module11View() {
             </table>
           </div>
           <p className="text-xs text-gray-400 mt-3">
-            Confiança: Alta (Ano 1, exógenas observadas), Média (Anos 2-3, macro projetado),
-            Baixa (Anos 4-5, tendência estrutural — IC amplo, usar com cautela).
+            Confiança: Alta (Ano 1, fatores observados), Média (Anos 2-3, cenário macroeconômico projetado),
+            Baixa (Anos 4-5, tendência de longo prazo — faixa ampla, usar com cautela).
           </p>
         </div>
       )}
@@ -218,14 +227,16 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Cenários — 5 Anos</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {cenarios.map((c: Record<string, unknown>, i: number) => {
+            {(cenarios as unknown as Record<string, unknown>[]).map((c: Record<string, unknown>, i: number) => {
               const variacao = c.variacao_acumulada_pct as number | null;
               const cagr = c.cagr_pct as number | null;
               const isPositive = (variacao ?? 0) > 0;
               const Icon = isPositive ? ArrowUp : (variacao ?? 0) < 0 ? ArrowDown : Minus;
               const color = (c.cenario as string) === 'otimista' ? 'text-green-600' : (c.cenario as string) === 'pessimista' ? 'text-red-600' : 'text-blue-600';
-              const anuais = (c.previsoes_anuais as Array<Record<string, number>>) || [];
-              const ultimoAno = anuais[anuais.length - 1];
+              type AnoPrevisao = Record<string, number> & { parcial?: boolean };
+              const anuais = (c.previsoes_anuais as AnoPrevisao[]) || [];
+              const anuaisCompletos = anuais.filter(a => !a.parcial);
+              const ultimoAno = anuaisCompletos[anuaisCompletos.length - 1] ?? anuais[anuais.length - 1];
 
               return (
                 <div key={i} className="border border-gray-100 rounded-lg p-4">
@@ -239,18 +250,18 @@ export function Module11View() {
                   <div className="flex items-center gap-1 mt-1">
                     <Icon className={`w-4 h-4 ${color}`} />
                     <span className={`text-sm font-medium ${color}`}>
-                      {variacao !== null ? `${variacao > 0 ? '+' : ''}${variacao}% acum.` : '—'}
+                      {variacao !== null ? `${Math.abs(variacao)}% acum.` : '—'}
                     </span>
                   </div>
                   {cagr !== null && (
-                    <p className="text-xs text-gray-500 mt-1">CAGR: {cagr > 0 ? '+' : ''}{cagr}%/ano</p>
+                    <p className="text-xs text-gray-500 mt-1">Crescimento anual: {cagr > 0 ? '+' : ''}{cagr}%/ano</p>
                   )}
                   {/* Mini table per year */}
                   <div className="mt-3 space-y-1">
-                    {anuais.map((a, j) => (
-                      <div key={j} className="flex justify-between text-xs">
+                    {anuaisCompletos.map((a, j) => (
+                      <div key={j} className="grid grid-cols-2 text-xs">
                         <span className="text-gray-500">{a.ano}</span>
-                        <span className="font-medium text-gray-700">{formatTon(a.tonelagem_anual)}</span>
+                        <span className="font-medium text-gray-700 text-right">{formatTon(a.tonelagem_anual)}</span>
                       </div>
                     ))}
                   </div>
@@ -260,8 +271,23 @@ export function Module11View() {
             })}
           </div>
           <p className="text-xs text-gray-400 mt-3">
-            Choques de cenário decaem 20% ao ano (mean-reversion). Ref: {(scenarioData as RawRow)?.ano_referencia}.
+            Os desvios dos cenários convergem 20% ao ano para a tendência base. Ref: {(scenarioData as RawRow)?.ano_referencia !== undefined ? String((scenarioData as RawRow).ano_referencia) : '—'}.
           </p>
+          {!!(interpCenarios?.texto || interpCenarios?.texto_decisao) && (
+            <div className="mt-4 space-y-3">
+              {!!interpCenarios?.texto && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-700">{String(interpCenarios.texto)}</p>
+                </div>
+              )}
+              {!!interpCenarios?.texto_decisao && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                  <Info className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <p className="text-sm text-amber-800">{String(interpCenarios.texto_decisao)}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -270,7 +296,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <PieChart className="w-5 h-5 text-gray-500" />
-            Decomposição de Drivers
+            Fatores que Influenciam a Previsão
           </h2>
           <div className="space-y-3">
             {blocos.map((b, i) => (
@@ -285,15 +311,20 @@ export function Module11View() {
                   />
                 </div>
                 <span className="text-sm font-bold text-gray-700 w-16 text-right">{b.importancia_pct}%</span>
-                <span className="text-xs text-gray-400 w-20">({b.n_features} vars)</span>
+                <span className="text-xs text-gray-400 w-20">({b.n_features} variáveis)</span>
               </div>
             ))}
           </div>
+          {!!interpDrivers?.texto && (
+            <div className="mt-3 bg-emerald-50 rounded-lg p-4">
+              <p className="text-sm text-emerald-800">{String(interpDrivers.texto)}</p>
+            </div>
+          )}
           <div className="mt-3 bg-blue-50 rounded-lg p-3 flex items-start gap-2">
             <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-700">
-              Importância calculada pelo coeficiente absoluto de cada variável no modelo SARIMAX.
-              Variáveis agrupadas em 5 blocos: Histórico, Macroeconomia, Operação, Safra e Clima.
+              Peso relativo de cada fator na projeção.
+              Os fatores são agrupados em 5 categorias: Histórico, Macroeconomia, Operação, Safra e Clima.
             </p>
           </div>
         </div>
@@ -304,7 +335,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="w-5 h-5 text-gray-500" />
-            Backtesting — Precisão por Horizonte
+            Validação do Modelo — Precisão por Período
           </h2>
 
           {/* Summary table */}
@@ -312,10 +343,10 @@ export function Module11View() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 px-3 text-gray-500">Horizonte</th>
-                  <th className="text-right py-2 px-3 text-gray-500">MAPE</th>
-                  <th className="text-right py-2 px-3 text-gray-500">MAE (ton)</th>
-                  <th className="text-right py-2 px-3 text-gray-500">RMSE (ton)</th>
+                  <th className="text-left py-2 px-3 text-gray-500">Período</th>
+                  <th className="text-right py-2 px-3 text-gray-500">Erro (%)</th>
+                  <th className="text-right py-2 px-3 text-gray-500">Erro Médio (ton)</th>
+                  <th className="text-right py-2 px-3 text-gray-500">Desvio (ton)</th>
                   <th className="text-right py-2 px-3 text-gray-500">Avaliação</th>
                 </tr>
               </thead>
@@ -349,8 +380,37 @@ export function Module11View() {
           </div>
 
           <p className="text-xs text-gray-400">
-            MAPE: erro médio absoluto percentual (out-of-sample, walk-forward).
+            Erro (%): desvio médio percentual medido em dados não usados no treinamento, com janela deslizante de 12 meses.
             Avaliação: Excelente (&lt;5%), Bom (5-10%), Aceitável (10-15%), Fraco (&gt;15%).
+          </p>
+          {!!(interpMape?.texto || interpMape?.impacto_operacional) && (
+            <div className="mt-4 bg-gray-50 rounded-lg p-4 space-y-2">
+              {!!interpMape?.texto && (
+                <p className="text-sm text-gray-700">{String(interpMape.texto)}</p>
+              )}
+              {!!interpMape?.impacto_operacional && (
+                <p className="text-sm text-gray-600 italic">{String(interpMape.impacto_operacional)}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Resumo executivo — leitura de negócio para investidores */}
+      {resumoExecutivo && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Resumo Executivo</p>
+              <p className="text-base font-semibold text-blue-900 mt-0.5">
+                Porto de {instalacaoLabel}
+              </p>
+            </div>
+            <Info className="w-5 h-5 text-blue-400 shrink-0 mt-1" />
+          </div>
+          <p className="text-sm text-blue-900 leading-relaxed">{resumoExecutivo}</p>
+          <p className="text-xs text-blue-500 mt-3">
+            Análise gerada automaticamente com base no histórico operacional do porto selecionado.
+            Escrita para gestores e investidores.
           </p>
         </div>
       )}

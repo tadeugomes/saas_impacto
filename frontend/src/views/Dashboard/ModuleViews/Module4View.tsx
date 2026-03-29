@@ -50,7 +50,7 @@ function toIndicatorRows(response: ModuleIndicatorResponse): RawIndicatorRow[] {
 }
 
 export function Module4View() {
-  const { selectedYear, selectedInstallation } = useFilterStore();
+  const { selectedYear, selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -158,7 +158,7 @@ export function Module4View() {
                 codigo_indicador: ind.code,
                 params: {
                   ano: selectedYear,
-                  id_instalacao: selectedInstallation || undefined,
+                  id_municipio: selectedMunicipio || undefined,
                 },
               })
             .catch(() => createEmptyIndicatorResponse(ind.code))
@@ -180,7 +180,7 @@ export function Module4View() {
     };
 
     fetchIndicators();
-  }, [selectedYear, selectedInstallation]);
+  }, [selectedYear, selectedMunicipio]);
 
   const visibleIndicators = useMemo(() => {
     if (selectedIndicator === 'all') {
@@ -208,7 +208,7 @@ export function Module4View() {
         <ExportButton moduleCode="4" />
       </div>
 
-      <FilterBar />
+      <FilterBar selectorMode="municipio" />
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div>

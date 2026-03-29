@@ -123,13 +123,13 @@ interface OutcomeMetadata {
 }
 
 const ANALYSIS_METHOD_LABELS: Record<AnalysisMethod, string> = {
-  did: 'Diferenças em Diferenças',
-  iv: 'Variáveis Instrumentais',
-  panel_iv: 'Painel com Instrumento',
-  event_study: 'Estudo de Evento',
+  did: 'Comparação Antes-Depois',
+  iv: 'Análise com Variáveis de Controle',
+  panel_iv: 'Análise Temporal com Controle',
+  event_study: 'Análise de Impacto ao Longo do Tempo',
   compare: 'Comparação de Métodos',
-  scm: 'Controle Sintético',
-  augmented_scm: 'Controle Sintético Aumentado',
+  scm: 'Comparação com Cenário Simulado',
+  augmented_scm: 'Comparação Simulada Aperfeiçoada',
 };
 
 const ANALYSIS_METHOD_DESCRIPTIONS: Record<AnalysisMethod, string> = {
@@ -139,7 +139,7 @@ const ANALYSIS_METHOD_DESCRIPTIONS: Record<AnalysisMethod, string> = {
   event_study: 'Mostra a evolução do impacto ano a ano, validando se não havia diferença antes do evento',
   compare: 'Roda múltiplos métodos e verifica se chegam à mesma conclusão',
   scm: 'Constrói um "município fictício" para comparação contrafactual',
-  augmented_scm: 'Controle sintético com correção de viés por regressão',
+  augmented_scm: 'Comparação simulada com ajuste estatístico para maior precisão',
 };
 
 const OUTCOME_METADATA: Record<string, OutcomeMetadata> = {

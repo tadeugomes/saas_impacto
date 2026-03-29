@@ -225,7 +225,7 @@ export function Module1View() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Módulo 1 - Operações de Navios</h1>
-          <p className="text-gray-500 mt-1">Indicadores operacionais UNCTAD + inteligência analítica para investidores</p>
+          <p className="text-gray-500 mt-1">Indicadores operacionais padronizados e análises para investidores</p>
         </div>
         <ExportButton moduleCode="1" />
       </div>
@@ -358,7 +358,7 @@ export function Module1View() {
                         <span className="font-semibold">{item.valor_anterior?.toFixed(1) ?? '—'} {item.unidade}</span>
                       </div>
                       <div>
-                        <span className="block text-gray-400">Var. YoY</span>
+                        <span className="block text-gray-400">Var. Anual</span>
                         <span className={`font-semibold ${
                           item.variacao_yoy_pct != null
                             ? (item.polaridade_inversa
@@ -370,7 +370,7 @@ export function Module1View() {
                         </span>
                       </div>
                       <div>
-                        <span className="block text-gray-400">CAGR 3a</span>
+                        <span className="block text-gray-400">Cresc. 3 anos</span>
                         <span className="font-semibold">
                           {item.cagr_3y_pct != null ? `${item.cagr_3y_pct > 0 ? '+' : ''}${item.cagr_3y_pct.toFixed(1)}%` : '—'}
                         </span>
@@ -383,7 +383,7 @@ export function Module1View() {
                 <p className="text-xs text-blue-800">
                   <span className="font-semibold">Nota:</span>{' '}
                   Para indicadores de tempo, queda = melhoria operacional. Para atracações, crescimento = melhoria.
-                  Classificação: variação {'>'} 5% = IMPROVING/DETERIORATING conforme polaridade.
+                  Classificação: variação {'>'} 5% = Em Melhora / Em Deterioração, conforme a direção do indicador.
                 </p>
               </div>
             </>

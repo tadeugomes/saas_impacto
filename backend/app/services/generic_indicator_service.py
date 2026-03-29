@@ -88,11 +88,13 @@ PORT_TO_IBGE_MAPPING = {
     'Manaus': '1302603',
     'Pecém': '2312403',
     'Porto Velho': '1100205',
+    'Santana': '1600600',
     'Santarém': '1506807',
     'Vila do Conde': '1504139',
 
     # REGIÃO NORDESTE
     'Aratu': '2906501',
+    'Areia Branca': '2400703',
     'Cabedelo': '2504009',
     'Fortaleza': '2304400',
     'Mucuripe': '2304400',
@@ -161,7 +163,9 @@ PORT_TO_IBGE_MAPPING = {
     'Laguna': '4210004',
     'Navegantes': '4211655',
     'Paranaguá': '4118204',
+    'Pelotas': '4313409',
     'Penha': '4215304',
+    'Porto Alegre': '4314902',
     'Porto de Balneário Camboriú': '4202105',
     'Porto de Braço do Norte': '4203508',
     'Porto de Capivari de Baixo': '4204607',

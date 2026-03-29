@@ -32,7 +32,7 @@ const CATEGORIA_LABELS: Record<string, string> = {
 
 // Indicadores do Módulo 3 - Recursos Humanos (RAIS)
 const INDICATORS_INFO = [
-  { code: 'IND-3.01', name: 'Empregos Portuários', unit: 'Empregos', desc: 'Total de empregos no setor portuário (RAIS)', valueField: 'empregos_portuarios' },
+  { code: 'IND-3.01', name: 'Empregos Portuários', unit: 'Empregos', desc: 'Total de empregos no setor portuário', valueField: 'empregos_portuarios' },
   { code: 'IND-3.02', name: 'Paridade de Gênero', unit: '%', desc: 'Percentual de mulheres no setor portuário', valueField: 'percentual_feminino' },
   { code: 'IND-3.05', name: 'Salário Médio', unit: 'R$', desc: 'Remuneração média mensal', valueField: 'salario_medio' },
   { code: 'IND-3.06', name: 'Massa Salarial', unit: 'R$', desc: 'Massa salarial anual estimada', valueField: 'massa_salarial_anual' },
@@ -70,11 +70,6 @@ const RACA_CATEGORIES = [
 ] as const;
 
 type SexoOption = 'MASCULINO' | 'FEMININO';
-
-interface InstallationMunicipioResolutionState {
-  municipioId: string | null;
-  message: string | null;
-}
 
 interface RemuneracaoEscolaridadeSexoRow {
   escolaridade: string;
@@ -121,14 +116,6 @@ function normalizeText(value: unknown): string {
     .replace(/[^A-Z0-9 ]/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
-}
-
-function normalizeMunicipioCode(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const digits = value.replace(/\D/g, '');
-  if (!digits) return null;
-  if (digits.length === 6) return `0${digits}`;
-  return digits.length === 7 ? digits : null;
 }
 
 function normalizeEscolaridade(value: unknown): string | null {
@@ -257,7 +244,7 @@ function renderDataStatus(hasError?: string, helperText?: string) {
         <>
           <p>Dados não disponíveis</p>
           <p className="text-sm text-gray-500 mt-1">
-            Verifique os filtros ou aguarde disponibilização dos dados RAIS
+            Verifique os filtros ou aguarde disponibilização dos dados de emprego
           </p>
           {helperText && <p className="text-xs text-gray-400 mt-2 text-center max-w-xs">{helperText}</p>}
         </>
@@ -284,11 +271,6 @@ function getLabelFromData(item: any): string {
   return item.nome_municipio || item.municipio || item.id_municipio || item.id_instalacao || 'N/A';
 }
 
-function isLikelyMunicipioCode(value: string | null | undefined): value is string {
-  if (!value) return false;
-  return /^\d{6,7}$/.test(value.trim());
-}
-
 function resolveImpactEstimate(
   response: EmploymentMultiplierResponse,
   preferCausal: boolean,
@@ -302,16 +284,10 @@ function resolveImpactEstimate(
 export function Module3View() {
   const navigate = useNavigate();
   const { t } = useI18n();
-  const { selectedYear, selectedInstallation } = useFilterStore();
+  const { selectedYear, selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [installationMunicipioResolution, setInstallationMunicipioResolution] = useState<InstallationMunicipioResolutionState>({
-    municipioId: null,
-    message: null,
-  });
-  const [isResolvingMunicipio, setIsResolvingMunicipio] = useState(false);
-  const [municipioResolutionError, setMunicipioResolutionError] = useState<string | null>(null);
   const [impactData, setImpactData] = useState<EmploymentMultiplierResponse[]>([]);
   const [isImpactLoading, setIsImpactLoading] = useState(false);
   const [deltaPct, setDeltaPct] = useState<number>(10);
@@ -320,75 +296,6 @@ export function Module3View() {
   const [selectedSexoChart3, setSelectedSexoChart3] = useState<SexoOption>('MASCULINO');
 
   useEffect(() => {
-    let isActive = true;
-    const resolveInstallationMunicipio = async () => {
-      setIsResolvingMunicipio(true);
-      setIsLoading(true);
-      setMunicipioResolutionError(null);
-
-      if (!selectedInstallation) {
-        if (isActive) {
-          setInstallationMunicipioResolution({ municipioId: null, message: null });
-          setIsResolvingMunicipio(false);
-        }
-        return;
-      }
-
-        if (isLikelyMunicipioCode(selectedInstallation)) {
-          const normalizedMunicipio = normalizeMunicipioCode(selectedInstallation);
-          if (isActive) {
-            setInstallationMunicipioResolution({
-              municipioId: normalizedMunicipio,
-              message: `Município selecionado diretamente por código IBGE: ${normalizedMunicipio}.`,
-            });
-            setIsResolvingMunicipio(false);
-          }
-          return;
-        }
-
-      try {
-        const response = await indicatorsService.resolveInstallationToMunicipio(selectedInstallation);
-        if (!isActive) {
-          return;
-        }
-        const resolvedMunicipio = normalizeMunicipioCode(response.id_municipio);
-        setInstallationMunicipioResolution({
-          municipioId: resolvedMunicipio,
-          message: response.message,
-        });
-        if (!response.municipio_found) {
-          setMunicipioResolutionError(response.message);
-        }
-      } catch (err: any) {
-        if (!isActive) {
-          return;
-        }
-        setInstallationMunicipioResolution({
-          municipioId: null,
-          message: 'Não foi possível validar a associação porto-município.',
-        });
-        setMunicipioResolutionError(
-          err?.response?.data?.detail || err?.message || 'Falha ao associar porto ao município.'
-        );
-      } finally {
-        if (isActive) {
-          setIsResolvingMunicipio(false);
-        }
-      }
-    };
-
-    void resolveInstallationMunicipio();
-
-    return () => {
-      isActive = false;
-    };
-  }, [selectedInstallation]);
-
-  useEffect(() => {
-    if (selectedInstallation && isResolvingMunicipio) {
-      return;
-    }
-
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
@@ -406,8 +313,7 @@ export function Module3View() {
             codigo_indicador: code,
             params: {
               ano: selectedYear,
-              id_instalacao: selectedInstallation || undefined,
-              id_municipio: installationMunicipioResolution.municipioId || undefined,
+              id_municipio: selectedMunicipio || undefined,
             },
           }).catch((err) => {
             console.error(`Erro ao buscar indicador ${code}:`, err);
@@ -454,39 +360,21 @@ export function Module3View() {
     };
 
     fetchData();
-  }, [selectedYear, selectedInstallation, installationMunicipioResolution.municipioId, isResolvingMunicipio, useCausalEstimate]);
+  }, [selectedYear, selectedMunicipio, useCausalEstimate]);
 
   const installationScopeLabel = useMemo(() => {
-    if (!selectedInstallation) {
-      return 'Todas as instalações';
+    if (!selectedMunicipio) {
+      return 'Todos os municípios';
     }
-
-    if (isResolvingMunicipio) {
-      return `Selecionado: ${selectedInstallation} (associando ao município...)`;
-    }
-
-    if (municipioResolutionError || !installationMunicipioResolution.municipioId) {
-      return (
-        `Selecionado: ${selectedInstallation}. Não foi possível associar ao município cadastrado.` +
-        ' O resultado pode refletir recorte agregado por instalação não aplicado.'
-      );
-    }
-
-    return `Selecionado: ${selectedInstallation} → Município ${installationMunicipioResolution.municipioId}.`;
-  }, [selectedInstallation, isResolvingMunicipio, municipioResolutionError, installationMunicipioResolution.municipioId]);
+    return `Município selecionado: ${selectedMunicipio}`;
+  }, [selectedMunicipio]);
 
   const chartMunicipioHint = useMemo<string | undefined>(() => {
-    if (!selectedInstallation) {
+    if (!selectedMunicipio) {
       return undefined;
     }
-    if (isResolvingMunicipio) {
-      return 'Aguarde, associando a instalação selecionada ao município IBGE...';
-    }
-    if (municipioResolutionError || !installationMunicipioResolution.municipioId) {
-      return 'Sem associação porto-município disponível para este recorte. Os dados podem ser retornados de forma agregada.';
-    }
-    return `Recorte aplicado por município: ${installationMunicipioResolution.municipioId}.`;
-  }, [isResolvingMunicipio, municipioResolutionError, selectedInstallation, installationMunicipioResolution.municipioId]);
+    return `Recorte aplicado por município: ${selectedMunicipio}.`;
+  }, [selectedMunicipio]);
 
   const remEscolSexoRows = useMemo(
     () => parseRemuneracaoEscolaridadeSexoRows(indicators['IND-3.13']?.data || []),
@@ -579,30 +467,21 @@ export function Module3View() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Módulo 3 — Capital Humano e Emprego Portuário</h1>
           <p className="text-gray-500 mt-1">
-            Indicadores de emprego, remuneração, produtividade e diversidade para decisão de investimento — dados RAIS + ANTAQ
+            Indicadores de emprego, remuneração, produtividade e diversidade para decisão de investimento — dados de emprego e movimentação portuária
           </p>
         </div>
         <ExportButton
           moduleCode="3"
-          municipioId={installationMunicipioResolution.municipioId ?? undefined}
+          municipioId={selectedMunicipio ?? undefined}
           deltaTonelagemPct={scenarioDeltas.length > 0 ? scenarioDeltas[0] : undefined}
         />
       </div>
 
-      <FilterBar />
+      <FilterBar selectorMode="municipio" />
       <p className="text-sm text-gray-600 mb-4">
         <span className="font-medium">Filtro ativo:</span>{' '}
         {installationScopeLabel}
       </p>
-      {municipioResolutionError && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-          {municipioResolutionError}
-        </p>
-      )}
-      {installationMunicipioResolution.message && !municipioResolutionError && (
-        <p className="text-sm text-gray-500 mb-4">{installationMunicipioResolution.message}</p>
-      )}
-
       {error && <ErrorAlert message={error} className="mb-6" />}
 
       {/* ── Alertas de qualidade de dados ────────────────────────────────────── */}
@@ -639,7 +518,7 @@ export function Module3View() {
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Visão Executiva — Capital Humano Portuário</h2>
           <p className="text-sm text-gray-500 mb-4">
             Leitura orientada a investidores e tomadores de decisão · Dados RAIS {selectedYear}
-            {!selectedInstallation && ' · Visão Nacional (selecione um porto para detalhar)'}
+            {!selectedMunicipio && ' · Visão Nacional (selecione um município para detalhar)'}
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -648,7 +527,7 @@ export function Module3View() {
               const empData = indicators['IND-3.01']?.data;
               const partData = indicators['IND-3.12']?.data;
               if (!Array.isArray(empData) || empData.length === 0) return null;
-              const isNacional = !selectedInstallation && empData.length > 1;
+              const isNacional = !selectedMunicipio && empData.length > 1;
               const totalEmpregos = empData.reduce((sum: number, d: any) => sum + toNumber(d.empregos_portuarios), 0);
               const topMunicipio = empData.length === 1 ? empData[0] : empData.slice().sort((a: any, b: any) => toNumber(b.empregos_portuarios) - toNumber(a.empregos_portuarios))[0];
               const participacao = Array.isArray(partData) && partData.length > 0
@@ -686,7 +565,7 @@ export function Module3View() {
               const salData = indicators['IND-3.05']?.data;
               const compData = indicators['IND-3.16']?.data;
               if (!Array.isArray(salData) || salData.length === 0) return null;
-              const isNacional = !selectedInstallation && salData.length > 1;
+              const isNacional = !selectedMunicipio && salData.length > 1;
               // Para visão nacional: média ponderada não disponível, usar média simples dos municípios
               const salMedio = isNacional
                 ? salData.reduce((sum: number, d: any) => sum + toNumber(d.salario_medio), 0) / salData.length
@@ -720,7 +599,7 @@ export function Module3View() {
             {(() => {
               const prodData = indicators['IND-3.07']?.data;
               if (!Array.isArray(prodData) || prodData.length === 0) return null;
-              const isNacional = !selectedInstallation && prodData.length > 1;
+              const isNacional = !selectedMunicipio && prodData.length > 1;
               const tonEmp = isNacional
                 ? prodData.reduce((sum: number, d: any) => sum + toNumber(d.ton_por_empregado), 0) / prodData.filter((d: any) => toNumber(d.ton_por_empregado) > 0).length
                 : toNumber(prodData[0]?.ton_por_empregado);
@@ -746,7 +625,7 @@ export function Module3View() {
             {(() => {
               const varData = indicators['IND-3.11']?.data;
               if (!Array.isArray(varData) || varData.length === 0) return null;
-              const isNacional = !selectedInstallation && varData.length > 1;
+              const isNacional = !selectedMunicipio && varData.length > 1;
               const variacao = isNacional
                 ? varData.reduce((sum: number, d: any) => sum + toNumber(d.variacao_percentual), 0) / varData.length
                 : toNumber(varData[0]?.variacao_percentual);
@@ -776,7 +655,7 @@ export function Module3View() {
             {(() => {
               const genData = indicators['IND-3.02']?.data;
               if (!Array.isArray(genData) || genData.length === 0) return null;
-              const isNacional = !selectedInstallation && genData.length > 1;
+              const isNacional = !selectedMunicipio && genData.length > 1;
               const pctFem = isNacional
                 ? genData.reduce((sum: number, d: any) => sum + toNumber(d.percentual_feminino), 0) / genData.length
                 : toNumber(genData[0]?.percentual_feminino);
@@ -839,7 +718,7 @@ export function Module3View() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Painel de Impacto em Emprego</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Fonte: RAIS + ANTAQ · {selectedYear} · {useCausalEstimate
+              Fonte: dados de emprego e movimentação · {selectedYear} · {useCausalEstimate
                 ? t('module3.multiplier.causalBeta')
                 : 'Multiplicadores de literatura (MInfra / literatura acadêmica)'}
             </p>
@@ -882,7 +761,7 @@ export function Module3View() {
           <div className="py-6"><LoadingSpinner /></div>
         ) : impactData.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">
-            Selecione um porto para visualizar o painel de impacto, ou aguarde disponibilização dos dados RAIS para os filtros atuais.
+            Selecione um município para visualizar o painel de impacto, ou aguarde disponibilização dos dados de emprego para os filtros atuais.
           </p>
         ) : (
           <>
@@ -981,7 +860,7 @@ export function Module3View() {
                           <div className="flex justify-between items-center text-xs text-gray-400">
                             <span>Método</span>
                             <span className="font-medium text-gray-600">
-                              {resp.causal.method === 'iv_2sls' ? 'IV / 2SLS' : resp.causal.method === 'panel_iv' ? 'Panel IV' : resp.causal.method}
+                              {resp.causal.method === 'iv_2sls' ? 'Regressão em 2 estágios' : resp.causal.method === 'panel_iv' ? 'Análise temporal' : resp.causal.method}
                             </span>
                           </div>
                           {resp.causal.coefficient != null && (
@@ -1145,7 +1024,7 @@ export function Module3View() {
 
       {/* ── Indicadores Descritivos de Recursos Humanos ───────────────────────── */}
       <h2 className="text-base font-semibold text-gray-700 mb-1">Indicadores Descritivos de Recursos Humanos</h2>
-      <p className="text-sm text-gray-400 mb-4">Dados individuais por município — base RAIS e fontes complementares (ANTAQ, IBGE PIB)</p>
+      <p className="text-sm text-gray-400 mb-4">Dados individuais por município — base de emprego e fontes complementares (movimentação portuária, PIB)</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         {INDICATORS_INFO.map((ind) => {
@@ -1191,7 +1070,7 @@ export function Module3View() {
         {/* IND-3.03 — Paridade de Gênero por Categoria Profissional (CBO da RAIS) */}
         <ChartCard
           title="Paridade de Gênero por Categoria (CBO)"
-          description="Percentual de mulheres por categoria profissional derivada do código CBO-2002 da RAIS"
+          description="Percentual de mulheres por categoria profissional derivada do classificação de ocupações profissionais"
           unit="%"
           isLoading={isLoading}
         >

@@ -54,7 +54,7 @@ const INDICATORS_INFO = [
     code: 'IND-6.03',
     name: 'Receita Total Municipal',
     unit: 'R$',
-    desc: 'Receita municipal total conforme FINBRA.',
+    desc: 'Receita municipal total.',
     valueField: 'receita_total',
     group: 'tributacao',
     interpretation:
@@ -65,7 +65,7 @@ const INDICATORS_INFO = [
     code: 'IND-6.04',
     name: 'Receita per Capita',
     unit: 'R$/hab',
-    desc: 'Receita per capita.',
+    desc: 'Receita por habitante.',
     valueField: 'receita_per_capita',
     group: 'percapita',
     interpretation:
@@ -142,7 +142,7 @@ const INDICATORS_INFO = [
   {
     code: 'IND-6.11',
     name: 'Elasticidade Tonelagem/Receita Fiscal',
-    unit: 'elastic.',
+    unit: 'sensibilidade',
     desc: 'Elasticidade log-log histórica.',
     valueField: 'elasticidade',
     valueAlias: 'elasticidade_tonelagem_receita_fiscal',
@@ -305,7 +305,7 @@ function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolea
 }
 
 export function Module6View() {
-  const { selectedYear, selectedInstallation } = useFilterStore();
+  const { selectedYear, selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -418,9 +418,9 @@ export function Module6View() {
 
       try {
         const startYear = selectedYear - TREND_YEARS_BACK;
-        const yearParams = selectedInstallation
+        const yearParams = selectedMunicipio
           ? {
-              id_instalacao: selectedInstallation,
+              id_municipio: selectedMunicipio,
               ano_inicio: startYear,
               ano_fim: selectedYear,
             }
@@ -430,8 +430,8 @@ export function Module6View() {
 
         const promises = INDICATORS_INFO.map((ind) => {
           const params = ind.code === 'IND-6.10' || ind.code === 'IND-6.11'
-            ? (selectedInstallation
-              ? { id_instalacao: selectedInstallation, min_anos: 5 }
+            ? (selectedMunicipio
+              ? { id_municipio: selectedMunicipio, min_anos: 5 }
               : {})
             : selectedYear
               ? yearParams
@@ -461,7 +461,7 @@ export function Module6View() {
     };
 
     void loadIndicators();
-  }, [selectedYear, selectedInstallation]);
+  }, [selectedYear, selectedMunicipio]);
 
   if (isLoading) {
     return (
@@ -484,7 +484,7 @@ export function Module6View() {
         <ExportButton moduleCode="6" />
       </div>
 
-      <FilterBar />
+      <FilterBar selectorMode="municipio" />
 
       {error && <ErrorAlert message={error} className="mb-6" />}
 
@@ -495,7 +495,7 @@ export function Module6View() {
             group === 'tributacao'
               ? 'Imposição e Capacidade Fiscal'
               : group === 'percapita'
-                ? 'Indicadores per capita'
+                ? 'Indicadores por habitante'
                 : group === 'desempenho'
                   ? 'Eficiência e Retorno do Porto'
                   : 'Relação e Sensibilidade (Associação)';

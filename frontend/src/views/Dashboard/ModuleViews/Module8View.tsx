@@ -19,12 +19,12 @@ interface IndicatorConfig {
 }
 
 const INDICATORS_INFO: IndicatorConfig[] = [
-  { code: 'IND-8.01', name: 'Taxa Selic Meta', unit: '% a.a.', desc: 'Custo de oportunidade do investidor', chartType: 'metric', valueField: 'selic_meta_aa', labelField: 'data' },
-  { code: 'IND-8.02', name: 'IPCA Acumulado 12m', unit: '%', desc: 'Erosão do retorno real', chartType: 'bar', valueField: 'ipca_acumulado_12m', labelField: 'data' },
-  { code: 'IND-8.03', name: 'Câmbio PTAX', unit: 'BRL/USD', desc: 'Competitividade exportadora', chartType: 'bar', valueField: 'cambio_ptax_venda', labelField: 'data' },
-  { code: 'IND-8.04', name: 'IBC-Br', unit: 'Índice', desc: 'Proxy mensal do PIB', chartType: 'bar', valueField: 'ibc_br', labelField: 'data' },
+  { code: 'IND-8.01', name: 'Taxa de Juros Básica (Selic)', unit: '% a.a.', desc: 'Custo do capital para o investidor', chartType: 'metric', valueField: 'selic_meta_aa', labelField: 'data' },
+  { code: 'IND-8.02', name: 'Inflação Acumulada (12 meses)', unit: '%', desc: 'Perda de poder de compra no período', chartType: 'bar', valueField: 'ipca_acumulado_12m', labelField: 'data' },
+  { code: 'IND-8.03', name: 'Taxa de Câmbio (R$/US$)', unit: 'BRL/USD', desc: 'Competitividade exportadora', chartType: 'bar', valueField: 'cambio_ptax_venda', labelField: 'data' },
+  { code: 'IND-8.04', name: 'Atividade Econômica Mensal', unit: 'Índice', desc: 'Indicador mensal do desempenho da economia', chartType: 'bar', valueField: 'ibc_br', labelField: 'data' },
   { code: 'IND-8.05', name: 'População Municipal', unit: 'Hab.', desc: 'População do município portuário', chartType: 'metric', valueField: 'populacao' },
-  { code: 'IND-8.06', name: 'PIB per Capita', unit: 'R$', desc: 'Tamanho da economia local', chartType: 'metric', valueField: 'pib_per_capita_reais' },
+  { code: 'IND-8.06', name: 'PIB por Habitante', unit: 'R$', desc: 'Tamanho da economia local', chartType: 'metric', valueField: 'pib_per_capita_reais' },
 ];
 
 type RawIndicatorRow = Record<string, unknown>;
@@ -65,10 +65,12 @@ export function Module8View() {
         await Promise.allSettled(
           INDICATORS_INFO.map(async (ind) => {
             try {
-              const resp = await indicatorsService.queryIndicator({
+              const resp = await indicatorsService.queryIndicator<RawIndicatorRow>({
                 codigo_indicador: ind.code,
-                ano: selectedYear || undefined,
-                id_instalacao: selectedInstallation || undefined,
+                params: {
+                  ano: selectedYear || undefined,
+                  id_instalacao: selectedInstallation || undefined,
+                },
               });
               results[ind.code] = resp;
             } catch {
@@ -152,8 +154,15 @@ export function Module8View() {
         {INDICATORS_INFO.map((ind) => (
           <IndicatorDashboardCard
             key={ind.code}
-            indicator={indicators[ind.code] || createEmptyIndicatorResponse(ind.code)}
-            config={ind}
+            title={ind.name}
+            description={ind.desc}
+            unit={ind.unit}
+            isLoading={loading}
+            data={indicators[ind.code] || createEmptyIndicatorResponse(ind.code)}
+            chartType={ind.chartType}
+            valueField={ind.valueField}
+            labelField={ind.labelField}
+            indicatorCode={ind.code}
           />
         ))}
       </div>

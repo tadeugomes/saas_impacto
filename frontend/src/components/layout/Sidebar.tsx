@@ -104,7 +104,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       path: '/dashboard/module11',
       icon: TrendingUp,
       label: t('navigation.module11'),
-      description: 'SARIMAX (5)',
+      description: 'Projeção 5 anos (5)',
       moduleColor: 'module11',
     },
     {
