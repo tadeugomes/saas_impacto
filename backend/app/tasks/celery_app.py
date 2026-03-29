@@ -35,6 +35,7 @@ celery_app = Celery(
         "app.tasks.maintenance",
         "app.tasks.notifications",
         "app.tasks.public_api_sync",
+        "app.tasks.forecasting",
     ],
 )
 
@@ -57,6 +58,7 @@ celery_app.conf.update(
     # Roteamento de filas
     task_routes={
         "app.tasks.impacto_economico.*": {"queue": "economic_impact"},
+        "app.tasks.forecasting.*": {"queue": "forecasting"},
     },
     # Retentativas padrão (sobrescrito por task individualmente)
     task_default_retry_delay=60,   # 60 s entre tentativas
@@ -88,5 +90,11 @@ celery_app.conf.beat_schedule = {
     "sync-compliance": {
         "task": "app.tasks.public_api_sync.sync_compliance",
         "schedule": crontab(hour=8, minute=0),  # Diário às 08:00 UTC
+    },
+    # ── Forecasting — pre-computação diária ───────────────────────────────
+    "precompute-forecasts": {
+        "task": "app.tasks.forecasting.precompute_forecasts",
+        "schedule": crontab(hour=2, minute=0),  # Madrugada às 02:00 UTC (dados do dia anterior já consolidados)
+        "kwargs": {"portos": None},  # None = lista padrão do sistema
     },
 }

@@ -28,7 +28,7 @@ from app.core.telemetry import init_telemetry
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.tenant import TenantContextMiddleware
 from app.api.v1 import auth
-from app.api.v1.indicators import module1_router, generic_router
+from app.api.v1.indicators import module1_router, generic_router, forecasting_router
 from app.api.v1.admin import router as admin_compliance_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.users import router as users_router
@@ -305,6 +305,7 @@ api_router.include_router(onboarding_router)
 api_router.include_router(admin_dashboard_router)
 api_router.include_router(module1_router)
 api_router.include_router(generic_router)
+api_router.include_router(forecasting_router)
 api_router.include_router(reports_router)
 api_router.include_router(users_router)
 api_router.include_router(impacto_economico_router)

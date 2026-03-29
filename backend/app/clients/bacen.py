@@ -23,7 +23,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 # Séries SGS mais relevantes para o investidor
-SERIES_SELIC_META = 432  # Selic meta definida pelo Copom (% a.a.)
+SERIES_SELIC_META = 4189  # Selic meta definida pelo Copom (% a.m.) — série mensal
 SERIES_IPCA_MENSAL = 433  # IPCA variação mensal (%)
 SERIES_CAMBIO_PTAX = 3698  # Dólar PTAX venda
 SERIES_IBC_BR = 24364  # IBC-Br dessazonalizado
@@ -77,7 +77,7 @@ class BacenClient(BasePublicApiClient):
         cache_key = self._make_cache_key(codigo_serie, data_inicio, data_fim)
 
         async def _fetch():
-            path = f"/{codigo_serie}/dados"
+            path = f"/bcdata.sgs.{codigo_serie}/dados"
             params = {
                 "formato": "json",
                 "dataInicial": data_inicio,
@@ -134,8 +134,12 @@ class BacenClient(BasePublicApiClient):
                 except (ValueError, TypeError):
                     return None
 
+            # Série 4189 retorna % a.m.; converter para % a.a.
+            selic_mensal = _last_valor(selic_data)
+            selic_aa = round(((1 + selic_mensal / 100) ** 12 - 1) * 100, 2) if selic_mensal else None
+
             return {
-                "selic_meta_aa": _last_valor(selic_data),
+                "selic_meta_aa": selic_aa,
                 "ipca_mensal": _last_valor(ipca_data),
                 "ipca_acumulado_12m": _acumulado_12m(ipca_data),
                 "cambio_ptax_venda": _last_valor(cambio_data),

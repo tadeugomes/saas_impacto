@@ -7,6 +7,9 @@ Motor SARIMAX com 5 blocos de variáveis:
   3. Operação (navios, espera, ocupação)
   4. Safra (CONAB)
   5. Clima (INMET precipitação, NOAA El Niño, ANA nível de rio)
+
+Prioriza exógenas reais (Blocos 2-5) sobre derivadas do target (Bloco 1)
+para permitir projeção via cenários no forecast out-of-sample.
 """
 
 from __future__ import annotations
@@ -25,20 +28,15 @@ async def query_forecast_tonelagem(
     """
     IND-11.01: Forecast de Tonelagem — 60 meses (5 anos) com IC 80/95%.
 
-    Treina SARIMAX com exógenas auto-selecionadas (stepwise AIC,
-    max features = n_obs / 25) e retorna previsão mensal e anual
-    + decomposição de drivers + métricas do modelo.
-
-    Saída inclui projeção por horizonte:
-      - Curto prazo (1-12m): maior confiança
-      - Médio prazo (13-36m): IC se abre
-      - Longo prazo (37-60m): tendência estrutural
+    Treina SARIMAX priorizando exógenas reais (BACEN, INMET, CONAB) sobre
+    lags do target. Projeção futura via cenário base (ScenarioEngine).
     """
     if not id_instalacao:
         return []
 
     from app.services.forecasting.feature_builder import FeatureBuilder
     from app.services.forecasting.sarimax_engine import SarimaxEngine
+    from app.services.forecasting.scenario_engine import ScenarioEngine
 
     builder = FeatureBuilder()
     engine = SarimaxEngine()
@@ -49,12 +47,25 @@ async def query_forecast_tonelagem(
         if df.empty or len(df) < 24:
             return [{"error": "Dados insuficientes (mínimo 24 meses)", "id_instalacao": id_instalacao}]
 
-        fit_info = engine.fit(df, target="tonelagem")
-        forecast = engine.forecast(steps=60)  # 5 anos
+        exog_priority = builder.exogenous_features or None
+        fit_info = engine.fit(df, target="tonelagem", exog_priority=exog_priority)
+
+        # Projeção via cenário base para exógenas reais
+        exog_future = None
+        if engine._feature_names:
+            try:
+                scenario_gen = ScenarioEngine(engine._feature_names)
+                scenarios = scenario_gen.generate_exog_scenarios(df, steps=60)
+                exog_future = scenarios.get("base")
+            except Exception:
+                pass  # fallback interno do SarimaxEngine
+
+        forecast = engine.forecast(steps=60, exog_future=exog_future)
         drivers = engine.decompose_drivers()
 
         return [{
             "id_instalacao": id_instalacao,
+            "blocos_status": builder.blocks_status,
             "modelo": fit_info,
             "forecast": forecast,
             "drivers": drivers,
@@ -91,7 +102,9 @@ async def query_cenarios_tonelagem(
         if df.empty or len(df) < 24:
             return [{"error": "Dados insuficientes (mínimo 24 meses)"}]
 
-        engine.fit(df, target="tonelagem")
+        exog_priority = builder.exogenous_features or None
+        engine.fit(df, target="tonelagem", exog_priority=exog_priority)
+
         scenario_gen = ScenarioEngine(engine._feature_names)
         exog_scenarios = scenario_gen.generate_exog_scenarios(df, steps=60)
 
@@ -101,6 +114,7 @@ async def query_cenarios_tonelagem(
 
         result = scenario_gen.format_scenarios_response(forecasts, df)
         result["id_instalacao"] = id_instalacao
+        result["blocos_status"] = builder.blocks_status
 
         return [result]
     except Exception as e:
@@ -115,6 +129,9 @@ async def query_decomposicao_drivers(
 ) -> List[Dict[str, Any]]:
     """
     IND-11.03: Decomposição de Drivers — peso de cada variável no forecast.
+
+    Usa coeficientes padronizados (|coef| * std) para comparação justa
+    entre features de escalas diferentes.
     """
     if not id_instalacao:
         return []
@@ -131,10 +148,11 @@ async def query_decomposicao_drivers(
         if df.empty or len(df) < 24:
             return [{"error": "Dados insuficientes"}]
 
-        engine.fit(df, target="tonelagem")
+        exog_priority = builder.exogenous_features or None
+        engine.fit(df, target="tonelagem", exog_priority=exog_priority)
         drivers = engine.decompose_drivers()
 
-        # Agrupa por bloco
+        # Agrupa por bloco usando categorização do FeatureBuilder
         blocos = {
             "Histórico": [],
             "Macroeconomia": [],
@@ -170,12 +188,14 @@ async def query_decomposicao_drivers(
 
         return [{
             "id_instalacao": id_instalacao,
+            "blocos_status": builder.blocks_status,
             "drivers": drivers,
             "blocos": sorted(bloco_importancias, key=lambda x: -x["importancia_pct"]),
             "composicao": {
                 "nota_metodologica": (
-                    "Importância calculada pelo coeficiente absoluto × desvio-padrão "
-                    "de cada variável no modelo SARIMAX. Percentuais somam 100%."
+                    "Importância calculada pelo coeficiente padronizado: "
+                    "|coef| x desvio-padrão da variável no período de treino. "
+                    "Percentuais somam 100%."
                 ),
             },
         }]
@@ -209,8 +229,13 @@ async def query_backtesting(
         if df.empty or len(df) < 36:
             return [{"error": "Dados insuficientes para backtest (mínimo 36 meses)"}]
 
-        result = engine.backtest(df, target="tonelagem", test_months=12)
+        exog_priority = builder.exogenous_features or None
+        result = engine.backtest(
+            df, target="tonelagem", test_months=12,
+            exog_priority=exog_priority,
+        )
         result["id_instalacao"] = id_instalacao
+        result["blocos_status"] = builder.blocks_status
 
         return [result]
     except Exception as e:
@@ -268,7 +293,7 @@ async def query_forecast_fob_comercio(
         df["fob_usd"] = pd.to_numeric(df["fob_usd"], errors="coerce")
 
         engine = SarimaxEngine()
-        engine.fit(df, target="fob_usd", exog_cols=[])  # Sem exógenas (falta build de features)
+        engine.fit(df, target="fob_usd", exog_cols=[])  # Sem exógenas
         forecast = engine.forecast(steps=12)
 
         return [{

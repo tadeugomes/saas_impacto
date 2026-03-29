@@ -19,39 +19,54 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Premissas por cenário para variáveis-chave
+# Premissas por cenário para variáveis-chave.
+# Cada valor é o choque aplicado como multiplicador: valor_projetado = base × (1 + choque).
+# Exceção: variáveis "aditivas" (ONI, ton_yoy) usam choque absoluto somado ao base.
 SCENARIO_ASSUMPTIONS = {
     "base": {
-        "cambio": 0.0,           # Sem variação
+        "cambio": 0.0,
         "ibc_br": 0.0,
         "selic": 0.0,
         "ipca": 0.0,
-        "precipitacao": 0.0,     # Normal
-        "oni": 0.0,              # Neutro
+        "navios": 0.0,
+        "tempo_espera": 0.0,
+        "tempo_atracacao": 0.0,
+        "precipitacao": 0.0,
+        "oni": 0.0,
         "safra": 0.0,
-        "descricao": "Cenário base: variáveis macro e climáticas nos níveis atuais",
+        "descricao": "Cenário base: variáveis nos níveis atuais",
     },
     "otimista": {
         "cambio": 0.10,          # BRL 10% mais fraco → exportação sobe
-        "ibc_br": 0.02,          # Atividade +2%
+        "ibc_br": 0.05,          # PIB +5%
         "selic": -0.15,          # Selic cai 15% relativo
         "ipca": -0.05,           # Inflação menor
-        "precipitacao": 0.10,    # Chuva acima da média (bom para safra)
-        "oni": -0.5,             # La Niña moderada (bom para Sul/Sudeste)
+        "navios": 0.10,          # +10% navios atendidos (expansão de capacidade)
+        "tempo_espera": -0.20,   # -20% tempo de espera (eficiência operacional)
+        "tempo_atracacao": -0.10, # -10% tempo de operação
+        "precipitacao": 0.10,    # Chuva acima da média
+        "oni": -0.5,             # La Niña moderada (ADITIVO, não multiplicador)
         "safra": 0.12,           # Safra recorde (+12%)
-        "descricao": "Cenário otimista: câmbio favorável, safra recorde, La Niña moderada",
+        "descricao": "Cenário otimista: expansão portuária, câmbio favorável, safra recorde",
     },
     "pessimista": {
         "cambio": -0.10,         # BRL 10% mais forte → exportação cai
-        "ibc_br": -0.02,         # Recessão leve
-        "selic": 0.15,           # Selic sobe
-        "ipca": 0.05,            # Inflação maior
+        "ibc_br": -0.05,         # Recessão
+        "selic": 0.20,           # Selic sobe 20% relativo
+        "ipca": 0.08,            # Inflação maior
+        "navios": -0.08,         # -8% navios (demanda menor)
+        "tempo_espera": 0.30,    # +30% tempo de espera (congestionamento)
+        "tempo_atracacao": 0.15, # +15% tempo de operação (ineficiência)
         "precipitacao": -0.30,   # Seca severa
-        "oni": 1.5,              # El Niño forte
+        "oni": 1.5,              # El Niño forte (ADITIVO)
         "safra": -0.15,          # Quebra de safra (-15%)
-        "descricao": "Cenário pessimista: BRL forte, El Niño forte, quebra de safra",
+        "descricao": "Cenário pessimista: recessão, congestionamento portuário, quebra de safra",
     },
 }
+
+# Features com choque aditivo (não multiplicativo).
+# ONI é um índice absoluto (-2 a +2), ton_yoy é taxa percentual.
+_ADDITIVE_FEATURES = {"oni"}
 
 
 class ScenarioEngine:
@@ -105,12 +120,19 @@ class ScenarioEngine:
 
                 # Mean-reversion: choque decai 20% ao ano para horizontes longos
                 # Ano 1: 100% do choque, Ano 2: 80%, Ano 3: 64%, Ano 4: 51%, Ano 5: 41%
+                is_additive = self._is_additive_feature(col)
                 values = []
                 for i in range(steps):
                     year_fraction = i / 12
                     decay = 0.8 ** year_fraction  # 20% decay por ano
                     effective_shock = shock * decay
-                    projected = base_val * (1 + effective_shock)
+
+                    if is_additive:
+                        # Choque absoluto somado ao valor base (ex: ONI)
+                        projected = base_val + effective_shock
+                    else:
+                        # Choque multiplicativo (ex: câmbio, navios)
+                        projected = base_val * (1 + effective_shock)
 
                     # Sazonalidade para precipitação
                     if "precip" in col:
@@ -146,28 +168,43 @@ class ScenarioEngine:
             previsoes_anuais = forecast.get("previsoes_anuais", [])
             previsoes_mensais = forecast.get("previsoes_mensais", [])
 
-            # Total no horizonte
+            # Separa anos completos (12 meses) de anos parciais
+            anos_completos = [
+                p for p in previsoes_anuais
+                if p.get("meses_previstos", 12) == 12
+            ]
+            anos_parciais = [
+                p for p in previsoes_anuais
+                if p.get("meses_previstos", 12) < 12
+            ]
+
+            # Total no horizonte (apenas anos completos para métricas)
             total_horizonte = sum(
                 p.get("tonelagem_anual", 0) for p in previsoes_anuais
             )
 
-            # Tonelagem no último ano projetado vs. referência
-            if previsoes_anuais:
-                ultimo_ano = previsoes_anuais[-1]
-                ton_ultimo = ultimo_ano.get("tonelagem_anual", 0)
+            # CAGR calculado sobre o último ano COMPLETO vs. referência
+            if anos_completos:
+                ultimo_completo = anos_completos[-1]
+                ton_ultimo = ultimo_completo.get("tonelagem_anual", 0)
+                n_anos = len(anos_completos)
                 variacao_final = round((ton_ultimo / yearly_ref - 1) * 100, 1) if yearly_ref > 0 else None
                 cagr = None
-                n_anos = len(previsoes_anuais)
                 if yearly_ref > 0 and ton_ultimo > 0 and n_anos > 0:
                     cagr = round(((ton_ultimo / yearly_ref) ** (1 / n_anos) - 1) * 100, 1)
             else:
                 variacao_final = None
                 cagr = None
 
+            # Marca anos parciais no output
+            for p in anos_parciais:
+                p["parcial"] = True
+
             scenarios_out.append({
                 "cenario": name,
                 "descricao": assumptions.get("descricao", ""),
-                "horizonte_anos": len(previsoes_anuais),
+                "horizonte_anos": len(anos_completos),
+                "horizonte_anos_total": len(previsoes_anuais),
                 "tonelagem_ano_referencia": round(yearly_ref, 0),
                 "ano_referencia": last_year,
                 "previsoes_anuais": previsoes_anuais,
@@ -203,12 +240,27 @@ class ScenarioEngine:
             return assumptions.get("selic", 0)
         elif "ipca" in col_lower:
             return assumptions.get("ipca", 0)
+        elif "navios" in col_lower:
+            return assumptions.get("navios", 0)
+        elif "tempo_espera" in col_lower:
+            return assumptions.get("tempo_espera", 0)
+        elif "tempo_atracacao" in col_lower:
+            return assumptions.get("tempo_atracacao", 0)
         elif "precip" in col_lower:
             return assumptions.get("precipitacao", 0)
         elif "oni" in col_lower:
             return assumptions.get("oni", 0)
         elif "safra" in col_lower:
             return assumptions.get("safra", 0)
-        elif "ton_lag" in col_lower or "ton_ma" in col_lower:
-            return 0  # Lags mantidos
+        elif "ton_lag" in col_lower or "ton_ma" in col_lower or "ton_yoy" in col_lower:
+            return 0  # Derivadas do target: sem choque
         return 0
+
+    @staticmethod
+    def _is_additive_feature(col: str) -> bool:
+        """Verifica se a feature usa choque aditivo (não multiplicativo)."""
+        col_lower = col.lower()
+        for pattern in _ADDITIVE_FEATURES:
+            if pattern in col_lower:
+                return True
+        return False

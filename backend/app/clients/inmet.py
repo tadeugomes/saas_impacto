@@ -1,11 +1,20 @@
 """
-Cliente para a API do INMET (Instituto Nacional de Meteorologia).
+Cliente para dados meteorológicos históricos via Open-Meteo.
 
-API: https://apitempo.inmet.gov.br/
-Autenticação: Nenhuma (API pública).
+API: https://archive-api.open-meteo.com/v1/archive
+Autenticação: Nenhuma (API pública, gratuita para uso não-comercial).
+Documentação: https://open-meteo.com/en/docs/historical-weather-api
 
-Fornece dados de precipitação, temperatura e umidade por estação
-meteorológica — usados como variável exógena no forecast de carga.
+Substitui o antigo cliente INMET (apitempo.inmet.gov.br), que está
+fora do ar desde 2025. A interface pública é idêntica: os mesmos
+métodos e mapeamentos de porto são mantidos para compatibilidade
+com o feature_builder.
+
+Variáveis diárias usadas:
+  - precipitation_sum: precipitação total do dia (mm)
+  - temperature_2m_max: temperatura máxima (°C)
+  - temperature_2m_min: temperatura mínima (°C)
+  - relative_humidity_2m_mean: umidade relativa média (%)
 """
 
 from __future__ import annotations
@@ -13,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from app.clients.base import BasePublicApiClient, PublicApiError
@@ -20,8 +30,55 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Estações meteorológicas próximas a corredores logísticos de portos
-# Mapeamento: porto → estação INMET no corredor de acesso
+# Coordenadas dos pontos de referência para cada porto.
+# Cada porto tem um ponto principal (corredor logístico ou cidade-porto)
+# e opcionalmente um ponto em região produtora.
+PORTO_PONTOS_METEO = {
+    "Santos": [
+        {"lat": -23.96, "lon": -46.33, "nome": "Santos", "tipo": "porto"},
+        {"lat": -22.91, "lon": -47.06, "nome": "Campinas", "tipo": "regiao_produtora"},
+    ],
+    "Paranaguá": [
+        {"lat": -25.52, "lon": -48.51, "nome": "Paranaguá", "tipo": "porto"},
+        {"lat": -23.31, "lon": -51.16, "nome": "Londrina", "tipo": "regiao_produtora"},
+    ],
+    "Rio Grande": [
+        {"lat": -32.03, "lon": -52.10, "nome": "Rio Grande", "tipo": "porto"},
+    ],
+    "Itaqui": [
+        {"lat": -2.55, "lon": -44.28, "nome": "São Luís", "tipo": "porto"},
+    ],
+    "São Luís": [
+        {"lat": -2.55, "lon": -44.28, "nome": "São Luís", "tipo": "porto"},
+    ],
+    "Tubarão": [
+        {"lat": -20.32, "lon": -40.34, "nome": "Vitória", "tipo": "porto"},
+    ],
+    "Vitória": [
+        {"lat": -20.32, "lon": -40.34, "nome": "Vitória", "tipo": "porto"},
+    ],
+    "Manaus": [
+        {"lat": -3.12, "lon": -60.02, "nome": "Manaus", "tipo": "porto"},
+    ],
+}
+
+# Mapeamento de compatibilidade: código INMET antigo → coordenadas
+# Mantido para eventual código legado que referencie estações por código.
+_ESTACAO_COORDS = {
+    "A701": {"lat": -23.50, "lon": -46.62},   # SP Mirante
+    "A711": {"lat": -22.91, "lon": -47.06},   # Campinas
+    "A807": {"lat": -25.43, "lon": -49.27},   # Curitiba
+    "A836": {"lat": -23.31, "lon": -51.16},   # Londrina
+    "A801": {"lat": -30.05, "lon": -51.17},   # Porto Alegre
+    "A203": {"lat": -2.55,  "lon": -44.28},   # São Luís
+    "A612": {"lat": -20.32, "lon": -40.34},   # Vitória
+    "A101": {"lat": -3.12,  "lon": -60.02},   # Manaus
+    "A901": {"lat": -15.60, "lon": -56.10},   # Cuiabá
+    "A002": {"lat": -16.67, "lon": -49.25},   # Goiânia
+    "A510": {"lat": -19.93, "lon": -43.94},   # Belo Horizonte
+}
+
+# Compatibilidade: mapeamento antigo porto → estações (para get_estacoes_porto)
 PORTO_ESTACOES_INMET = {
     "Santos": [
         {"codigo": "A701", "nome": "São Paulo - Mirante", "tipo": "corredor_logistico"},
@@ -51,25 +108,20 @@ PORTO_ESTACOES_INMET = {
     ],
 }
 
-# Estações em regiões produtoras-chave (para forecast de safra)
-REGIOES_PRODUTORAS = {
-    "MT_soja": {"codigo": "A901", "nome": "Cuiabá", "desc": "Centro-Oeste soja"},
-    "GO_soja": {"codigo": "A002", "nome": "Goiânia", "desc": "Goiás soja/milho"},
-    "PR_grao": {"codigo": "A836", "nome": "Londrina", "desc": "Norte PR grãos"},
-    "RS_grao": {"codigo": "A801", "nome": "Porto Alegre", "desc": "RS grãos"},
-    "SP_cana": {"codigo": "A711", "nome": "Campinas", "desc": "SP cana-de-açúcar"},
-    "MG_cafe": {"codigo": "A510", "nome": "Belo Horizonte", "desc": "MG café/minério"},
-}
-
 
 class InmetClient(BasePublicApiClient):
-    """Cliente assíncrono para a API do INMET."""
+    """
+    Cliente de dados meteorológicos históricos via Open-Meteo.
+
+    Mantém o nome InmetClient e a interface pública original para
+    compatibilidade com feature_builder e main.py.
+    """
 
     def __init__(self):
         settings = get_settings()
         super().__init__(
-            base_url=settings.inmet_api_base_url,
-            api_name="inmet",
+            base_url="https://archive-api.open-meteo.com",
+            api_name="open_meteo",
             timeout=settings.public_api_timeout_seconds,
         )
         self._cache_ttl = settings.cache_ttl_ambiental  # 1h
@@ -77,7 +129,7 @@ class InmetClient(BasePublicApiClient):
     def _make_cache_key(self, endpoint: str, params: dict) -> str:
         payload = json.dumps({"ep": endpoint, **params}, sort_keys=True)
         digest = hashlib.sha1(payload.encode()).hexdigest()
-        return f"api:inmet:{endpoint}:{digest}"
+        return f"api:open_meteo:{endpoint}:{digest}"
 
     async def dados_estacao(
         self,
@@ -86,38 +138,67 @@ class InmetClient(BasePublicApiClient):
         data_fim: str,
     ) -> List[Dict[str, Any]]:
         """
-        Busca dados meteorológicos de uma estação.
+        Busca dados meteorológicos diários via Open-Meteo.
+
+        Aceita código de estação INMET (convertido para lat/lon)
+        para compatibilidade.
 
         Args:
-            codigo_estacao: Código da estação INMET
+            codigo_estacao: Código INMET (ex: A701) ou "lat,lon"
             data_inicio: YYYY-MM-DD
             data_fim: YYYY-MM-DD
 
         Returns:
             Lista de {data, precipitacao_mm, temp_max, temp_min, umidade_pct}
         """
+        coords = self._resolve_coords(codigo_estacao)
+        if not coords:
+            logger.warning("open_meteo: estação '%s' sem coordenadas", codigo_estacao)
+            return []
+
         cache_key = self._make_cache_key(
-            "estacao", {"est": codigo_estacao, "ini": data_inicio, "fim": data_fim}
+            "archive",
+            {"lat": coords["lat"], "lon": coords["lon"], "ini": data_inicio, "fim": data_fim},
         )
 
         async def _fetch():
-            path = f"/estacao/{data_inicio}/{data_fim}/{codigo_estacao}"
+            params = (
+                f"?latitude={coords['lat']}"
+                f"&longitude={coords['lon']}"
+                f"&start_date={data_inicio}"
+                f"&end_date={data_fim}"
+                f"&daily=precipitation_sum,temperature_2m_max,temperature_2m_min"
+                f"&timezone=America%2FSao_Paulo"
+            )
+            path = f"/v1/archive{params}"
             try:
                 data = await self.get(path)
-                if not isinstance(data, list):
+                if not isinstance(data, dict) or "daily" not in data:
+                    logger.warning("open_meteo: resposta sem 'daily' para %s", codigo_estacao)
                     return []
-                return [
-                    {
-                        "data": item.get("DT_MEDICAO", item.get("data", "")),
-                        "precipitacao_mm": _safe_float(item.get("CHUVA", item.get("precipitacao"))),
-                        "temp_max": _safe_float(item.get("TEMP_MAX", item.get("temp_max"))),
-                        "temp_min": _safe_float(item.get("TEMP_MIN", item.get("temp_min"))),
-                        "umidade_pct": _safe_float(item.get("UMID_MED", item.get("umidade"))),
-                    }
-                    for item in data
-                ]
+
+                daily = data["daily"]
+                dates = daily.get("time", [])
+                precip = daily.get("precipitation_sum", [])
+                tmax = daily.get("temperature_2m_max", [])
+                tmin = daily.get("temperature_2m_min", [])
+
+                results = []
+                for i, dt in enumerate(dates):
+                    results.append({
+                        "data": dt,
+                        "precipitacao_mm": _safe_float(precip[i] if i < len(precip) else None),
+                        "temp_max": _safe_float(tmax[i] if i < len(tmax) else None),
+                        "temp_min": _safe_float(tmin[i] if i < len(tmin) else None),
+                        "umidade_pct": None,  # Open-Meteo archive não tem umidade no plano gratuito
+                    })
+                logger.info(
+                    "open_meteo: %s %s..%s => %d dias",
+                    codigo_estacao, data_inicio, data_fim, len(results),
+                )
+                return results
             except PublicApiError as e:
-                logger.warning("inmet_estacao_error est=%s: %s", codigo_estacao, e)
+                logger.warning("open_meteo_error est=%s: %s", codigo_estacao, e)
                 return []
 
         return await self.get_cached(cache_key, _fetch, ttl=self._cache_ttl)
@@ -128,16 +209,24 @@ class InmetClient(BasePublicApiClient):
         ano: int,
     ) -> List[Dict[str, Any]]:
         """
-        Precipitação acumulada por mês para uma estação.
+        Precipitação acumulada por mês.
 
         Returns:
             Lista de {ano, mes, precipitacao_acumulada_mm}
         """
+        from datetime import date
+
         data_inicio = f"{ano}-01-01"
-        data_fim = f"{ano}-12-31"
+        # Open-Meteo Historical API só aceita datas até ontem.
+        # Para o ano corrente, limita ao dia anterior.
+        hoje = date.today()
+        if ano >= hoje.year:
+            ontem = hoje.replace(day=max(1, hoje.day - 1))
+            data_fim = ontem.isoformat()
+        else:
+            data_fim = f"{ano}-12-31"
         dados = await self.dados_estacao(codigo_estacao, data_inicio, data_fim)
 
-        from collections import defaultdict
         by_month: Dict[int, float] = defaultdict(float)
         for d in dados:
             try:
@@ -155,6 +244,19 @@ class InmetClient(BasePublicApiClient):
     def get_estacoes_porto(self, id_instalacao: str) -> List[Dict[str, str]]:
         """Retorna estações meteorológicas relevantes para um porto."""
         return PORTO_ESTACOES_INMET.get(id_instalacao, [])
+
+    def _resolve_coords(self, codigo_estacao: str) -> Optional[Dict[str, float]]:
+        """Converte código de estação INMET em coordenadas."""
+        if codigo_estacao in _ESTACAO_COORDS:
+            return _ESTACAO_COORDS[codigo_estacao]
+        # Tenta formato "lat,lon"
+        if "," in codigo_estacao:
+            parts = codigo_estacao.split(",")
+            try:
+                return {"lat": float(parts[0]), "lon": float(parts[1])}
+            except (ValueError, IndexError):
+                pass
+        return None
 
 
 def _safe_float(v: Any) -> Optional[float]:

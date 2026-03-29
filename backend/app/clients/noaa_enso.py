@@ -66,12 +66,26 @@ class NoaaEnsoClient(BasePublicApiClient):
                 client = await self._get_client()
                 resp = await client.get("/oni.ascii.txt")
                 resp.raise_for_status()
-                return self._parse_oni_text(resp.text)
+                text = resp.text
+                logger.info("noaa_oni_fetch: %d bytes recebidos, primeiros 200 chars: %s", len(text), repr(text[:200]))
+                result = self._parse_oni_text(text)
+                if not result:
+                    # Não cachear resultado vazio para permitir retry
+                    logger.warning("noaa_oni: parser retornou 0 registros, não será cacheado")
+                    return None
+                return result
             except Exception as e:
                 logger.warning("noaa_oni_error: %s", e)
-                return []
+                return None
 
-        return await self.get_cached(cache_key, _fetch, ttl=self._cache_ttl)
+        cached = await self._cache.get(cache_key)
+        if cached is not None and not (isinstance(cached, list) and len(cached) == 0):
+            return cached
+        data = await _fetch()
+        if data:
+            await self._cache.set(cache_key, data, ttl=self._cache_ttl)
+            return data
+        return []
 
     async def get_oni_atual(self) -> Dict[str, Any]:
         """Retorna o ONI mais recente."""
@@ -97,27 +111,58 @@ class NoaaEnsoClient(BasePublicApiClient):
         """
         Parseia o arquivo oni.ascii.txt da NOAA.
 
-        Formato:
-          YEAR   DJF   JFM   FMA   MAM   AMJ   MJJ   JJA   JAS   ASO   SON   OND   NDJ
+        O arquivo tem duas possibilidades de formato:
+
+        Formato A (uma linha por trimestre):
+          SEAS  YR   TOTAL   ANOM
+          DJF   1950  24.72  -1.53
+          JFM   1950  25.17  -1.34
+
+        Formato B (uma linha por ano):
+          YEAR   DJF   JFM   ...   NDJ
           1950   -1.5  -1.3  ...
+
+        O parser tenta detectar automaticamente.
         """
         result = []
         lines = text.strip().split("\n")
 
+        if not lines:
+            return []
+
+        # Detecta formato: se a primeira coluna de dados é um trimestre
+        # (DJF, JFM, etc.), é formato A. Se é um ano numérico, é formato B.
+        first_data_line = None
         for line in lines:
             parts = line.split()
-            if len(parts) < 13:
+            if not parts:
                 continue
+            if parts[0] in TRIMESTRE_MAP or parts[0] in ("SEAS", "Season"):
+                first_data_line = "A"
+                break
             try:
-                ano = int(parts[0])
+                int(parts[0])
+                if len(parts) >= 13:
+                    first_data_line = "B"
+                else:
+                    first_data_line = "A"
+                break
             except ValueError:
                 continue
 
-            for i, trimestre in enumerate(
-                ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]
-            ):
+        if first_data_line == "A":
+            # Formato A: SEAS YR TOTAL ANOM (ou SEAS YR ANOM)
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                trimestre = parts[0].upper()
+                if trimestre not in TRIMESTRE_MAP:
+                    continue
                 try:
-                    oni = float(parts[i + 1])
+                    ano = int(parts[1])
+                    # ANOM pode ser a última coluna (índice -1)
+                    oni = float(parts[-1])
                     mes = TRIMESTRE_MAP[trimestre]
                     result.append({
                         "ano": ano,
@@ -128,7 +173,33 @@ class NoaaEnsoClient(BasePublicApiClient):
                     })
                 except (ValueError, IndexError):
                     continue
+        else:
+            # Formato B: YEAR + 12 valores
+            trimestres = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ",
+                          "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 13:
+                    continue
+                try:
+                    ano = int(parts[0])
+                except ValueError:
+                    continue
+                for i, trimestre in enumerate(trimestres):
+                    try:
+                        oni = float(parts[i + 1])
+                        mes = TRIMESTRE_MAP[trimestre]
+                        result.append({
+                            "ano": ano,
+                            "mes": mes,
+                            "trimestre": trimestre,
+                            "oni": oni,
+                            "fase_enso": _classify_enso(oni),
+                        })
+                    except (ValueError, IndexError):
+                        continue
 
+        logger.info("noaa_oni_parsed: %d registros", len(result))
         return result
 
 

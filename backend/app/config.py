@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     docs_access_token: Optional[str] = None
 
     # APIs Públicas Externas (BACEN, IBGE, Marés, ANA, INPE, Transparência)
-    bacen_api_base_url: str = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
+    bacen_api_base_url: str = "https://api.bcb.gov.br/dados/serie"
     ibge_api_base_url: str = "https://servicodados.ibge.gov.br/api/v3"
     mares_api_base_url: str = "https://www.marinha.mil.br/chm/dados-de-mare"
     ana_api_base_url: str = "https://telemetriaws1.ana.gov.br/ServiceANA.asmx"
@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     datajud_api_base_url: str = "https://datajud-wiki.cnj.jus.br/api-publica"
     datajud_api_key: Optional[str] = None
     conab_api_base_url: str = "https://www.conab.gov.br/info-agro/safras/serie-historica-das-safras"
-    inmet_api_base_url: str = "https://apitempo.inmet.gov.br"
+    inmet_api_base_url: str = "https://archive-api.open-meteo.com"  # migrado de INMET para Open-Meteo
     noaa_oni_base_url: str = "https://www.cpc.ncep.noaa.gov/data/indices"
     public_api_timeout_seconds: float = 30.0
     public_api_max_retries: int = 3

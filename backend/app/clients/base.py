@@ -79,10 +79,16 @@ class BasePublicApiClient:
         """Verifica cache -> executa fetcher se miss -> salva no cache."""
         cached = await self._cache.get(cache_key)
         if cached is not None:
-            return cached
+            # Não retornar listas vazias cacheadas (resultado de erro anterior)
+            if isinstance(cached, list) and len(cached) == 0:
+                pass  # Re-fetchar
+            else:
+                return cached
         data = await fetcher()
-        await self._cache.set(cache_key, data, ttl=ttl)
-        return data
+        # Só cachear resultados não-vazios
+        if data is not None and data != []:
+            await self._cache.set(cache_key, data, ttl=ttl)
+        return data if data is not None else []
 
     async def _request(
         self,
