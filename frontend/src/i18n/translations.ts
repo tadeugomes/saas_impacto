@@ -127,6 +127,7 @@ export type TranslationKey =
   | 'module11.horizonDesc'
   | 'module11.forecast.title'
   | 'module11.scenarios.title'
+  | 'module11.scenarios.chart'
   | 'module11.drivers.title'
   | 'module11.drivers.description'
   | 'module11.validation.title'
@@ -247,6 +248,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'module11.horizonDesc': '60 meses com faixa de confiança de 80% e 95%',
     'module11.forecast.title': 'Projeção de Tonelagem — 5 Anos',
     'module11.scenarios.title': 'Cenários — 5 Anos',
+    'module11.scenarios.chart': 'Comparativo de Cenários',
     'module11.drivers.title': 'Fatores que Influenciam a Previsão',
     'module11.drivers.description': 'Peso relativo de cada fator na projeção. Os fatores são agrupados em 5 categorias: Histórico, Macroeconomia, Operação, Safra e Clima.',
     'module11.validation.title': 'Validação do Modelo — Precisão por Período',
@@ -386,6 +388,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'module11.horizonDesc': '60 months with 80% and 95% confidence intervals',
     'module11.forecast.title': 'Tonnage Projection — 5 Years',
     'module11.scenarios.title': 'Scenarios — 5 Years',
+    'module11.scenarios.chart': 'Scenario Comparison',
     'module11.drivers.title': 'Factors Influencing the Forecast',
     'module11.drivers.description': 'Relative weight of each factor in the projection. Factors are grouped into 5 categories: Historical, Macroeconomics, Operations, Crops, and Climate.',
     'module11.validation.title': 'Model Validation — Accuracy by Period',

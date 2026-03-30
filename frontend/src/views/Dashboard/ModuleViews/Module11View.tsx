@@ -7,6 +7,8 @@ import { useFilterStore } from '../../../store/filterStore';
 import { PORTO_OPTIONS } from '../../../components/filters/InstallationSelector';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
+import { ChartCard } from '../../../components/charts/ChartCard';
+import { LineChart } from '../../../components/charts/LineChart';
 import type { IndicatorResponse } from '../../../types/api';
 import {
   TrendingUp, BarChart3, PieChart, Target,
@@ -295,6 +297,45 @@ export function Module11View() {
           )}
         </div>
       )}
+
+      {/* Scenario Comparison Chart */}
+      {cenarios.length > 1 && (() => {
+        const SCENARIO_COLORS: Record<string, string> = {
+          base: '#3b82f6',
+          otimista: '#10b981',
+          pessimista: '#ef4444',
+        };
+        const baseScenario = (cenarios as unknown as Record<string, unknown>[]).find(
+          (c) => (c.cenario as string) === 'base',
+        );
+        type AnoData = Record<string, number> & { parcial?: boolean };
+        const baseAnuais = ((baseScenario?.previsoes_anuais as AnoData[]) || []).filter(a => !a.parcial);
+        const chartLabels = baseAnuais.map(a => String(a.ano));
+
+        const chartDatasets = (cenarios as unknown as Record<string, unknown>[]).map((c) => {
+          const nome = c.cenario as string;
+          const anuais = ((c.previsoes_anuais as AnoData[]) || []).filter(a => !a.parcial);
+          return {
+            label: nome.charAt(0).toUpperCase() + nome.slice(1),
+            data: anuais.map(a => a.tonelagem_anual),
+            borderColor: SCENARIO_COLORS[nome] || '#6b7280',
+            backgroundColor: (SCENARIO_COLORS[nome] || '#6b7280') + '20',
+            fill: nome === 'base',
+            tension: 0.3,
+          };
+        });
+
+        return chartLabels.length > 0 ? (
+          <ChartCard title={t('module11.scenarios.chart')} description={instalacaoLabel}>
+            <LineChart
+              labels={chartLabels}
+              datasets={chartDatasets}
+              yAxisLabel="Tonelagem (ton)"
+              yAxisBeginAtZero={false}
+            />
+          </ChartCard>
+        ) : null;
+      })()}
 
       {/* Driver Decomposition by Block */}
       {blocos.length > 0 && (
