@@ -164,7 +164,7 @@ export function Module11View() {
           {mape !== undefined && mape > 15 && (
             <div className="mt-2 bg-red-100 border border-red-200 rounded-lg px-3 py-2">
               <p className="text-xs font-semibold text-red-700">Taxa de Erro Elevada</p>
-              <p className="text-xs text-red-600 mt-0.5">Acionar equipe técnica para mais detalhes sobre a precisão deste porto.</p>
+              <p className="text-xs text-red-600 mt-0.5">Acionar equipe técnica para mais detalhes.</p>
             </div>
           )}
         </div>
