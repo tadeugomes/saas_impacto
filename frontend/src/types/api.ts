@@ -47,11 +47,17 @@ export interface PolicyMunicipioItem {
   peso?: number;
 }
 
+export interface PolicyInstallationItem {
+  id_instalacao: string;
+  peso?: number;
+}
+
 export interface TenantPoliciesResponse {
   tenant_id: string;
   allowed_installations: string[];
   allowed_municipios: string[];
   municipio_influencia?: Record<string, PolicyMunicipioItem[]>;
+  municipio_to_installations?: Record<string, PolicyInstallationItem[]>;
   area_influencia?: Record<string, PolicyMunicipioItem[]>;
   max_bytes_per_query?: number | null;
 }

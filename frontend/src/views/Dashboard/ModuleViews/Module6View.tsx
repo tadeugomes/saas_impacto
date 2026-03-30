@@ -293,6 +293,7 @@ function extractWarningsSummary(response: ModuleIndicatorResponse): string[] {
 }
 
 function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -300,7 +301,7 @@ function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolea
       onClick={onToggle}
     >
       <h3 className="font-semibold text-gray-900">{title}</h3>
-      <span className="text-sm text-indigo-600">{isOpen ? 'Ocultar' : 'Mostrar'}</span>
+      <span className="text-sm text-indigo-600">{isOpen ? t('common.hide') : t('common.show')}</span>
     </button>
   );
 }
@@ -495,12 +496,12 @@ export function Module6View() {
           const groupOpen = openGroups[group as IndicatorGroup];
           const groupTitle =
             group === 'tributacao'
-              ? 'Imposição e Capacidade Fiscal'
+              ? t('module6.group.taxation')
               : group === 'percapita'
-                ? 'Indicadores por habitante'
+                ? t('module6.group.perCapita')
                 : group === 'desempenho'
-                  ? 'Eficiência e Retorno do Porto'
-                  : 'Relação e Sensibilidade (Associação)';
+                  ? t('module6.group.performance')
+                  : t('module6.group.causal');
 
           return (
             <section key={group} className="card space-y-4">

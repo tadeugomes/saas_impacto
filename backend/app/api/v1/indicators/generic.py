@@ -164,12 +164,16 @@ async def get_tenant_policies(
     policy_service: TenantPolicyService = Depends(get_tenant_policy_service),
 ):
     policy = await policy_service.get_policy(db, tenant_id)
+    municipio_influencia = policy.get("municipio_influencia", {})
     return JSONResponse(
         content={
             "tenant_id": str(tenant_id),
             "allowed_installations": policy.get("allowed_installations", []),
             "allowed_municipios": policy.get("allowed_municipios", []),
-            "municipio_influencia": policy.get("municipio_influencia", {}),
+            "municipio_influencia": municipio_influencia,
+            "municipio_to_installations": TenantPolicyService.reverse_influence_map(
+                municipio_influencia
+            ),
             "area_influencia": policy.get("area_influencia", {}),
             "max_bytes_per_query": policy.get("max_bytes_per_query"),
         }

@@ -172,7 +172,7 @@ export function Module9View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-gray-500" />
-            Composição do Índice de Risco Ambiental
+            {t('module9.composition.title')}
           </h2>
 
           {/* Formula */}

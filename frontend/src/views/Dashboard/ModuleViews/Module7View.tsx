@@ -178,7 +178,7 @@ export function Module7View() {
                 />
               ) : (
                 <div className="h-64 flex items-center justify-center text-gray-400">
-                  Dados não disponíveis
+                  {t('common.noDataAvailable')}
                 </div>
               )}
             </ChartCard>
@@ -190,8 +190,7 @@ export function Module7View() {
       <div className="mt-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('module7.compositeSection')}</h2>
         <p className="text-gray-500 mb-6 text-sm">
-          Indicadores integrados que combinam dados operacionais, econômicos, fiscais e ambientais.
-          Cada índice inclui transparência total sobre os componentes utilizados.
+          {t('module7.composite.description')}
         </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -224,7 +223,7 @@ export function Module7View() {
                     classif === 'baixo' ? 'bg-red-50 text-red-700' :
                     'bg-gray-50 text-gray-500'
                   }`}>
-                    {classif === 'sem_dados' ? 'Sem dados' : classif.charAt(0).toUpperCase() + classif.slice(1)}
+                    {classif === 'sem_dados' ? t('common.noData') : classif.charAt(0).toUpperCase() + classif.slice(1)}
                   </span>
                   {disponiveis !== undefined && total !== undefined && (
                     <span className="text-xs text-gray-400">{disponiveis}/{total} componentes</span>

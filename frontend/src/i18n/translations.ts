@@ -48,8 +48,31 @@ export type TranslationKey =
   // Common
   | 'common.errorLoading'
   | 'common.noData'
+  | 'common.noDataAvailable'
+  | 'common.noDataForFilter'
   | 'common.filters'
   | 'common.clearFilters'
+  | 'common.all'
+  | 'common.searchSeries'
+  | 'common.indicator'
+  | 'common.year'
+  | 'common.source'
+  | 'common.period'
+  | 'common.value'
+  | 'common.weight'
+  | 'common.scale'
+  | 'common.composition'
+  | 'common.methodNote'
+  | 'common.hide'
+  | 'common.show'
+  | 'common.indicators'
+  | 'common.current'
+  | 'common.previous'
+  | 'common.active'
+  | 'common.exportModule'
+  | 'common.exportIndicator'
+  | 'common.generating'
+  | 'common.selectInstallation'
   // Module titles & subtitles
   | 'module1.title'
   | 'module1.subtitle'
@@ -72,6 +95,44 @@ export type TranslationKey =
   | 'module11.subtitle'
   | 'module11.selectPort'
   | 'module11.selectPortHint'
+  // Module 1 — tabs & sections
+  | 'module1.tab.descriptive'
+  | 'module1.tab.trend'
+  | 'module1.tab.score'
+  | 'module1.trend.selectHint'
+  | 'module1.trend.noData'
+  | 'module1.score.selectHint'
+  | 'module1.score.noData'
+  | 'module1.score.decomposition'
+  // Module 6 — groups
+  | 'module6.group.taxation'
+  | 'module6.group.perCapita'
+  | 'module6.group.performance'
+  | 'module6.group.causal'
+  // Module 7 — composite
+  | 'module7.composite.description'
+  // Module 9
+  | 'module9.composition.title'
+  // Module 10
+  | 'module10.risk.title'
+  | 'module10.governance.title'
+  | 'module10.sentiment.title'
+  | 'module10.composition.title'
+  // Module 11 — sections
+  | 'module11.accuracy'
+  | 'module11.validationPeriod'
+  | 'module11.variables'
+  | 'module11.categories'
+  | 'module11.horizon'
+  | 'module11.horizonDesc'
+  | 'module11.forecast.title'
+  | 'module11.scenarios.title'
+  | 'module11.drivers.title'
+  | 'module11.drivers.description'
+  | 'module11.validation.title'
+  | 'module11.confidence.note'
+  | 'module11.executive.title'
+  | 'module11.executive.note'
   | 'dashboard.title'
   | 'dashboard.totalIndicators'
   | 'dashboard.internationalStandard'
@@ -129,8 +190,69 @@ const messages: Record<Locale, MessageCatalog> = {
     // Common
     'common.errorLoading': 'Erro ao carregar dados',
     'common.noData': 'Sem dados disponíveis',
+    'common.noDataAvailable': 'Dados não disponíveis',
+    'common.noDataForFilter': 'Dados não disponíveis para o filtro atual.',
     'common.filters': 'Filtros:',
     'common.clearFilters': 'Limpar filtros',
+    'common.all': 'Todos',
+    'common.searchSeries': 'Buscar na série',
+    'common.indicator': 'Indicador',
+    'common.year': 'Ano',
+    'common.source': 'Fonte:',
+    'common.period': 'Período:',
+    'common.value': 'Valor:',
+    'common.weight': 'Peso:',
+    'common.scale': 'Escala',
+    'common.composition': 'Composição:',
+    'common.methodNote': 'Nota metodológica:',
+    'common.hide': 'Ocultar',
+    'common.show': 'Mostrar',
+    'common.indicators': 'Indicadores',
+    'common.current': 'Atual',
+    'common.previous': 'Anterior',
+    'common.active': 'Ativo',
+    'common.exportModule': 'Exportar Módulo',
+    'common.exportIndicator': 'Exportar Indicador',
+    'common.generating': 'Gerando...',
+    'common.selectInstallation': 'Selecione uma instalação no filtro acima.',
+    // Module 1
+    'module1.tab.descriptive': 'Indicadores Descritivos',
+    'module1.tab.trend': 'Tendência Operacional',
+    'module1.tab.score': 'Score de Eficiência',
+    'module1.trend.selectHint': 'Selecione uma instalação no filtro acima para ver a análise de tendência.',
+    'module1.trend.noData': 'Sem dados de tendência para esta instalação/período.',
+    'module1.score.selectHint': 'Selecione uma instalação no filtro acima para ver o score de eficiência.',
+    'module1.score.noData': 'Sem dados de eficiência para esta instalação/período.',
+    'module1.score.decomposition': 'Decomposição por componente',
+    // Module 6
+    'module6.group.taxation': 'Imposição e Capacidade Fiscal',
+    'module6.group.perCapita': 'Indicadores por habitante',
+    'module6.group.performance': 'Eficiência e Retorno do Porto',
+    'module6.group.causal': 'Relação e Sensibilidade (Associação)',
+    // Module 7
+    'module7.composite.description': 'Indicadores integrados que combinam dados operacionais, econômicos, fiscais e ambientais. Cada índice inclui transparência total sobre os componentes utilizados.',
+    // Module 9
+    'module9.composition.title': 'Composição do Índice de Risco Ambiental',
+    // Module 10
+    'module10.risk.title': 'Risco Regulatório',
+    'module10.governance.title': 'Governança Portuária',
+    'module10.sentiment.title': 'Análise de Menções em Diário Oficial',
+    'module10.composition.title': 'Composição do Índice de Risco Regulatório',
+    // Module 11
+    'module11.accuracy': 'Precisão do Modelo',
+    'module11.validationPeriod': 'Validação nos últimos 12 meses',
+    'module11.variables': 'Variáveis Consideradas',
+    'module11.categories': '5 categorias de dados',
+    'module11.horizon': 'Horizonte',
+    'module11.horizonDesc': '60 meses com faixa de confiança de 80% e 95%',
+    'module11.forecast.title': 'Projeção de Tonelagem — 5 Anos',
+    'module11.scenarios.title': 'Cenários — 5 Anos',
+    'module11.drivers.title': 'Fatores que Influenciam a Previsão',
+    'module11.drivers.description': 'Peso relativo de cada fator na projeção. Os fatores são agrupados em 5 categorias: Histórico, Macroeconomia, Operação, Safra e Clima.',
+    'module11.validation.title': 'Validação do Modelo — Precisão por Período',
+    'module11.confidence.note': 'Confiança: Alta (Ano 1, fatores observados), Média (Anos 2-3, cenário macroeconômico projetado), Baixa (Anos 4-5, tendência de longo prazo — faixa ampla, usar com cautela).',
+    'module11.executive.title': 'Resumo Executivo',
+    'module11.executive.note': 'Análise gerada automaticamente com base no histórico operacional do porto selecionado. Escrita para gestores e investidores.',
     // Module titles
     'module1.title': 'Módulo 1 - Operações de Navios',
     'module1.subtitle': 'Indicadores operacionais padronizados e análises para investidores',
@@ -207,8 +329,69 @@ const messages: Record<Locale, MessageCatalog> = {
     // Common
     'common.errorLoading': 'Error loading data',
     'common.noData': 'No data available',
+    'common.noDataAvailable': 'Data not available',
+    'common.noDataForFilter': 'No data available for the current filter.',
     'common.filters': 'Filters:',
     'common.clearFilters': 'Clear filters',
+    'common.all': 'All',
+    'common.searchSeries': 'Search series',
+    'common.indicator': 'Indicator',
+    'common.year': 'Year',
+    'common.source': 'Source:',
+    'common.period': 'Period:',
+    'common.value': 'Value:',
+    'common.weight': 'Weight:',
+    'common.scale': 'Scale',
+    'common.composition': 'Composition:',
+    'common.methodNote': 'Methodology note:',
+    'common.hide': 'Hide',
+    'common.show': 'Show',
+    'common.indicators': 'Indicators',
+    'common.current': 'Current',
+    'common.previous': 'Previous',
+    'common.active': 'Active',
+    'common.exportModule': 'Export Module',
+    'common.exportIndicator': 'Export Indicator',
+    'common.generating': 'Generating...',
+    'common.selectInstallation': 'Select a facility in the filter above.',
+    // Module 1
+    'module1.tab.descriptive': 'Descriptive Indicators',
+    'module1.tab.trend': 'Operational Trend',
+    'module1.tab.score': 'Efficiency Score',
+    'module1.trend.selectHint': 'Select a facility in the filter above to view the trend analysis.',
+    'module1.trend.noData': 'No trend data for this facility/period.',
+    'module1.score.selectHint': 'Select a facility in the filter above to view the efficiency score.',
+    'module1.score.noData': 'No efficiency data for this facility/period.',
+    'module1.score.decomposition': 'Component breakdown',
+    // Module 6
+    'module6.group.taxation': 'Tax Capacity',
+    'module6.group.perCapita': 'Per capita indicators',
+    'module6.group.performance': 'Port Efficiency & Return',
+    'module6.group.causal': 'Correlation & Sensitivity',
+    // Module 7
+    'module7.composite.description': 'Integrated indicators combining operational, economic, fiscal, and environmental data. Each index includes full transparency on the components used.',
+    // Module 9
+    'module9.composition.title': 'Environmental Risk Index Composition',
+    // Module 10
+    'module10.risk.title': 'Regulatory Risk',
+    'module10.governance.title': 'Port Governance',
+    'module10.sentiment.title': 'Official Gazette Mentions Analysis',
+    'module10.composition.title': 'Regulatory Risk Index Composition',
+    // Module 11
+    'module11.accuracy': 'Model Accuracy',
+    'module11.validationPeriod': 'Validated on last 12 months',
+    'module11.variables': 'Variables Considered',
+    'module11.categories': '5 data categories',
+    'module11.horizon': 'Forecast Horizon',
+    'module11.horizonDesc': '60 months with 80% and 95% confidence intervals',
+    'module11.forecast.title': 'Tonnage Projection — 5 Years',
+    'module11.scenarios.title': 'Scenarios — 5 Years',
+    'module11.drivers.title': 'Factors Influencing the Forecast',
+    'module11.drivers.description': 'Relative weight of each factor in the projection. Factors are grouped into 5 categories: Historical, Macroeconomics, Operations, Crops, and Climate.',
+    'module11.validation.title': 'Model Validation — Accuracy by Period',
+    'module11.confidence.note': 'Confidence: High (Year 1, observed factors), Medium (Years 2-3, projected macro scenario), Low (Years 4-5, long-term trend — wide range, use with caution).',
+    'module11.executive.title': 'Executive Summary',
+    'module11.executive.note': 'Analysis generated automatically based on the selected port\'s operational history. Written for managers and investors.',
     // Module titles
     'module1.title': 'Module 1 - Ship Operations',
     'module1.subtitle': 'Standardized operational indicators and investor analytics',

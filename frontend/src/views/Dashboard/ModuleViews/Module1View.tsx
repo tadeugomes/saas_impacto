@@ -245,7 +245,7 @@ export function Module1View() {
             }`}
             onClick={() => setActiveTab('indicadores')}
           >
-            Indicadores Descritivos
+            {t('module1.tab.descriptive')}
           </button>
           <button
             className={`py-2 px-1 border-b-2 text-sm font-medium ${
@@ -255,7 +255,7 @@ export function Module1View() {
             }`}
             onClick={() => setActiveTab('tendencia')}
           >
-            Tendência Operacional
+            {t('module1.tab.trend')}
           </button>
           <button
             className={`py-2 px-1 border-b-2 text-sm font-medium ${
@@ -265,7 +265,7 @@ export function Module1View() {
             }`}
             onClick={() => setActiveTab('score')}
           >
-            Score de Eficiência
+            {t('module1.tab.score')}
           </button>
         </nav>
       </div>
@@ -277,7 +277,7 @@ export function Module1View() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div>
-              <label className="text-xs text-gray-500">Buscar na série</label>
+              <label className="text-xs text-gray-500">{t('common.searchSeries')}</label>
               <input
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1"
                 placeholder="Filtrar nome no ranking"
@@ -286,13 +286,13 @@ export function Module1View() {
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Indicador</label>
+              <label className="text-xs text-gray-500">{t('common.indicator')}</label>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-1"
                 value={selectedIndicator}
                 onChange={(event) => setSelectedIndicator(event.target.value)}
               >
-                <option value="all">Todos</option>
+                <option value="all">{t('common.all')}</option>
                 {INDICATORS_INFO.map((indicator) => (
                   <option key={indicator.code} value={indicator.code}>
                     {indicator.name}
@@ -327,13 +327,13 @@ export function Module1View() {
         <div className="mt-2">
           {!selectedInstallation ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
-              Selecione uma instalação no filtro acima para ver a análise de tendência.
+              {t('module1.trend.selectHint')}
             </div>
           ) : analyticsLoading ? (
             <LoadingSpinner />
           ) : !tendencia ? (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
-              Sem dados de tendência para esta instalação/período.
+              {t('module1.trend.noData')}
             </div>
           ) : (
             <>
@@ -398,13 +398,13 @@ export function Module1View() {
         <div className="mt-2">
           {!selectedInstallation ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
-              Selecione uma instalação no filtro acima para ver o score de eficiência.
+              {t('module1.score.selectHint')}
             </div>
           ) : analyticsLoading ? (
             <LoadingSpinner />
           ) : !score ? (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
-              Sem dados de eficiência para esta instalação/período.
+              {t('module1.score.noData')}
             </div>
           ) : (
             <>
@@ -433,7 +433,7 @@ export function Module1View() {
               </div>
 
               {/* Decomposição por componente */}
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Decomposição por componente</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('module1.score.decomposition')}</h3>
               <div className="space-y-3">
                 {score.componentes.map((comp) => (
                   <div key={comp.indicador_codigo} className="bg-white border border-gray-200 rounded-lg p-3">

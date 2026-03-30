@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FileText, Download } from 'lucide-react';
 import { reportsService } from '../../api/reports';
 import { useFilterStore } from '../../store/filterStore';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ExportButtonProps {
   moduleCode: string;
@@ -24,12 +25,14 @@ export function ExportButton({
   compareAnalysisIds,
   municipioId,
   deltaTonelagemPct,
-  label = indicatorCode ? 'Exportar Indicador' : 'Exportar Módulo',
+  label,
   variant = 'secondary',
   className = '',
   disabled = false,
   includeFormats = ['xlsx'],
 }: ExportButtonProps) {
+  const { t } = useI18n();
+  const resolvedLabel = label ?? (indicatorCode ? t('common.exportIndicator') : t('common.exportModule'));
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [isExporting, setIsExporting] = useState(false);
   const [format, setFormat] = useState<'docx' | 'pdf' | 'xlsx'>(includeFormats[0] || 'xlsx');
@@ -97,12 +100,12 @@ export function ExportButton({
         {isExporting ? (
           <>
             <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            Gerando...
+            {t('common.generating')}
           </>
         ) : (
           <>
             {variant === 'primary' ? <FileText className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-            {label}
+            {resolvedLabel}
           </>
         )}
       </button>

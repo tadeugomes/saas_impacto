@@ -152,6 +152,26 @@ class TenantPolicyService:
         return policy
 
     @classmethod
+    def reverse_influence_map(
+        cls, municipio_influencia: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Inverte {port: [{id_municipio, peso}]} → {id_municipio: [{id_instalacao, peso}]}."""
+        reversed_map: dict[str, list[dict[str, Any]]] = {}
+        for port, municipios in municipio_influencia.items():
+            if not isinstance(municipios, list):
+                continue
+            for entry in municipios:
+                id_municipio = entry.get("id_municipio", "")
+                if not id_municipio:
+                    continue
+                reversed_map.setdefault(id_municipio, [])
+                reversed_map[id_municipio].append({
+                    "id_instalacao": port,
+                    "peso": entry.get("peso", 1.0),
+                })
+        return reversed_map
+
+    @classmethod
     def serialize_policy(cls, policy: dict[str, Any]) -> str:
         """Serializa politica para persistencia em `tenants.instalacoes_permitidas`."""
         normalized = cls._default_policy()

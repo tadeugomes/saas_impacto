@@ -1025,7 +1025,7 @@ function renderWarnings(
 
 export function Module5View() {
   const { t } = useI18n();
-  const { selectedYear, selectedInstallation } = useFilterStore();
+  const { selectedYear, selectedMunicipio } = useFilterStore();
 
   const [indicators, setIndicators] = useState<ModuleIndicatorStore>({});
   const [indicatorsLoading, setIndicatorsLoading] = useState(true);
@@ -1043,8 +1043,11 @@ export function Module5View() {
   const [analysisUseMart, setAnalysisUseMart] = useState(true);
   const [municipioLabelIndex, setMunicipioLabelIndex] = useState<MunicipioLabelMap>({});
   const [policyMunicipioIds, setPolicyMunicipioIds] = useState<string[]>([]);
-  const [policyAreaInfluence, setPolicyAreaInfluence] = useState<
+  const [_policyAreaInfluence, setPolicyAreaInfluence] = useState<
     Record<string, PolicyMunicipioItem[]>
+  >({});
+  const [_policyMunicipioToInstallations, setPolicyMunicipioToInstallations] = useState<
+    Record<string, Array<{id_instalacao: string; peso?: number}>>
   >({});
   const [policyError, setPolicyError] = useState<string | null>(null);
 
@@ -1094,14 +1097,10 @@ export function Module5View() {
     [municipioLabelIndex, municipioLabelsFromIndicators],
   );
 
-  const selectedInstallationMunicipioIds = useMemo(() => {
-    const candidates = selectedInstallation ? policyAreaInfluence[selectedInstallation] : [];
-    if (!Array.isArray(candidates)) {
-      return [];
-    }
-
-    return toMunicipioIdList(candidates.map((entry) => entry.id_municipio));
-  }, [policyAreaInfluence, selectedInstallation]);
+  const selectedMunicipioMunicipioIds = useMemo(() => {
+    if (!selectedMunicipio) return [];
+    return [selectedMunicipio];
+  }, [selectedMunicipio]);
 
   const municipioCatalogIds = useMemo(() => {
     const ids = new Set<string>(Object.keys(municipioLabels));
@@ -1111,11 +1110,11 @@ export function Module5View() {
         ids.add(id);
       }
     }
-    for (const municipalityId of selectedInstallationMunicipioIds) {
+    for (const municipalityId of selectedMunicipioMunicipioIds) {
       ids.add(municipalityId);
     }
     return toMunicipioIdList(Array.from(ids));
-  }, [municipioLabels, policyMunicipioIds, selectedInstallationMunicipioIds]);
+  }, [municipioLabels, policyMunicipioIds, selectedMunicipioMunicipioIds]);
 
   const fetchMetadata = useCallback(async () => {
     try {
@@ -1171,6 +1170,7 @@ export function Module5View() {
         setMunicipioLabelIndex((current) => ({ ...fallbackLabels, ...current }));
       }
       setPolicyAreaInfluence(policies.municipio_influencia || policies.area_influencia || {});
+      setPolicyMunicipioToInstallations(policies.municipio_to_installations || {});
       setPolicyError(null);
     } catch (error: unknown) {
       const errorResponse = error as ApiErrorLike;
@@ -1207,8 +1207,8 @@ export function Module5View() {
       // use the first treated municipality to filter BLOCO C indicators
       const treatedMunicipios = toSafeArray(analysisTreated);
       const filterParams: Record<string, unknown> = { ano: selectedYear };
-      if (selectedInstallation) {
-        filterParams.id_instalacao = selectedInstallation;
+      if (selectedMunicipio) {
+        filterParams.id_municipio = selectedMunicipio;
       } else if (treatedMunicipios.length > 0) {
         filterParams.id_municipio = treatedMunicipios[0];
       }
@@ -1234,7 +1234,7 @@ export function Module5View() {
     } finally {
       setIndicatorsLoading(false);
     }
-  }, [implementationStatus, selectedYear, selectedInstallation, analysisTreated]);
+  }, [implementationStatus, selectedYear, selectedMunicipio, analysisTreated]);
 
   const resolveMunicipioLabels = useCallback(async (rawIds: string[]) => {
     const ids = Array.from(
@@ -1482,8 +1482,8 @@ export function Module5View() {
   const causalSummaryRows = useMemo(() => buildCausalSummary(analysisToDisplay), [analysisToDisplay]);
   const eventStudyPayloads = useMemo(() => buildEventStudyPayloads(analysisToDisplay), [analysisToDisplay]);
   const causalNarratives = useMemo(
-    () => buildCausalInterpretations(analysisToDisplay, municipioLabels, selectedInstallation),
-    [analysisToDisplay, municipioLabels, selectedInstallation],
+    () => buildCausalInterpretations(analysisToDisplay, municipioLabels, selectedMunicipio),
+    [analysisToDisplay, municipioLabels, selectedMunicipio],
   );
 
   const handleDownloadCsv = () => {
@@ -1593,7 +1593,7 @@ export function Module5View() {
         />
       </div>
 
-      <FilterBar />
+      <FilterBar selectorMode="municipio" />
 
       {/* ══ Visão Executiva — Impacto Econômico ════════════════════════════ */}
       {!indicatorsLoading && Object.keys(indicators).length > 0 && (
@@ -1601,7 +1601,7 @@ export function Module5View() {
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Visão Executiva — Impacto Econômico Portuário</h2>
           <p className="text-sm text-gray-500 mb-4">
             Leitura orientada a investidores e tomadores de decisão · Dados {selectedYear}
-            {!selectedInstallation && ' · Visão Nacional (selecione um porto para detalhar)'}
+            {!selectedMunicipio && ' · Visão Nacional (selecione um porto para detalhar)'}
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1609,7 +1609,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.01'] || createEmptyIndicatorResponse('IND-5.01'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const totalPib = data.reduce((sum, d) => sum + (parseToNumber(d.pib_municipal) || 0), 0);
               const topRow = data.slice().sort((a, b) => (parseToNumber(b.pib_municipal) || 0) - (parseToNumber(a.pib_municipal) || 0))[0];
               const pibValue = isNacional ? totalPib : (parseToNumber(data[0]?.pib_municipal) || 0);
@@ -1638,7 +1638,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.08'] || createEmptyIndicatorResponse('IND-5.08'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const concEmprego = isNacional
                 ? data.reduce((sum, d) => sum + (parseToNumber(d.concentracao_emprego_pct) || 0), 0) / data.length
                 : (parseToNumber(data[0]?.concentracao_emprego_pct) || 0);
@@ -1664,7 +1664,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.10'] || createEmptyIndicatorResponse('IND-5.10'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const crescPib = isNacional
                 ? data.reduce((sum, d) => sum + (parseToNumber(d.crescimento_pib_percentual) || 0), 0) / data.length
                 : (parseToNumber(data[0]?.crescimento_pib_percentual) || 0);
@@ -1692,7 +1692,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.07'] || createEmptyIndicatorResponse('IND-5.07'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const intComercial = isNacional
                 ? data.reduce((sum, d) => sum + (parseToNumber(d.intensidade_comercial) || 0), 0) / data.length
                 : (parseToNumber(data[0]?.intensidade_comercial) || 0);
@@ -1718,7 +1718,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.11'] || createEmptyIndicatorResponse('IND-5.11'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const crescTon = isNacional
                 ? data.reduce((sum, d) => sum + (parseToNumber(d.crescimento_tonelagem_pct) || 0), 0) / data.length
                 : (parseToNumber(data[0]?.crescimento_tonelagem_pct) || 0);
@@ -1746,7 +1746,7 @@ export function Module5View() {
             {(() => {
               const data = toIndicatorRows(indicators['IND-5.14'] || createEmptyIndicatorResponse('IND-5.14'));
               if (data.length === 0) return null;
-              const isNacional = !selectedInstallation && data.length > 1;
+              const isNacional = !selectedMunicipio && data.length > 1;
               const corr = isNacional
                 ? data.reduce((sum, d) => sum + (parseToNumber(d.correlacao_tonelagem_pib) || 0), 0) / data.length
                 : (parseToNumber(data[0]?.correlacao_tonelagem_pib) || 0);
@@ -2530,14 +2530,14 @@ export function Module5View() {
         <div className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              {selectedInstallation
+              {selectedMunicipio
                 ? 'Perfil Econômico do Município'
                 : selectedTreatedMunicipios.length > 0
                   ? `Perfil Econômico — ${resolveMunicipioLabel(selectedTreatedMunicipios[0], municipioLabels)}`
                   : 'Perfil Econômico — Visão Nacional'}
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              {selectedInstallation
+              {selectedMunicipio
                 ? 'Indicadores descritivos para contextualizar o resultado da análise — não mostram causalidade por si só.'
                 : selectedTreatedMunicipios.length > 0
                   ? 'Indicadores filtrados pelo município tratado da análise causal — contexto econômico local.'

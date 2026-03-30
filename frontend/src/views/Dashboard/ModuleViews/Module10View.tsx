@@ -166,7 +166,7 @@ export function Module10View() {
                 <Shield className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Risco Regulatório</p>
+                <p className="text-sm font-medium text-gray-600">{t('module10.risk.title')}</p>
                 <p className="text-xs text-gray-400">IND-10.07 (0-1, menor = melhor)</p>
               </div>
             </div>
@@ -187,7 +187,7 @@ export function Module10View() {
                 <Award className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">Governança Portuária</p>
+                <p className="text-sm font-medium text-gray-600">{t('module10.governance.title')}</p>
                 <p className="text-xs text-gray-400">IND-10.08 (0-100, maior = melhor)</p>
               </div>
             </div>
@@ -231,7 +231,7 @@ export function Module10View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
             <Newspaper className="w-5 h-5 text-gray-500" />
-            Análise de Menções em Diário Oficial
+            {t('module10.sentiment.title')}
           </h2>
           <p className="text-sm text-gray-500 mb-4">
             Avaliação geral: <span className="font-medium">{mencoesData?.score_sentimento !== undefined ? String(mencoesData.score_sentimento) : '—'}</span>
@@ -274,7 +274,7 @@ export function Module10View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-gray-500" />
-            Composição do Índice de Risco Regulatório
+            {t('module10.composition.title')}
           </h2>
 
           <div className="bg-gray-50 rounded-lg p-3 mb-4">

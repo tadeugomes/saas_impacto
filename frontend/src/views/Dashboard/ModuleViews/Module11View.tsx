@@ -147,32 +147,32 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <Target className="w-5 h-5 text-blue-500" />
-            <p className="text-sm font-medium text-gray-600">Precisão do Modelo</p>
+            <p className="text-sm font-medium text-gray-600">{t('module11.accuracy')}</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">
             {mape !== undefined ? `${mape}%` : '—'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Validação nos últimos 12 meses</p>
+          <p className="text-xs text-gray-500 mt-1">{t('module11.validationPeriod')}</p>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <BarChart3 className="w-5 h-5 text-emerald-500" />
-            <p className="text-sm font-medium text-gray-600">Variáveis Consideradas</p>
+            <p className="text-sm font-medium text-gray-600">{t('module11.variables')}</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">
             {(forecastData?.modelo as RawRow)?.n_features !== undefined ? String((forecastData?.modelo as RawRow).n_features) : '—'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">5 categorias de dados</p>
+          <p className="text-xs text-gray-500 mt-1">{t('module11.categories')}</p>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-amber-500" />
-            <p className="text-sm font-medium text-gray-600">Horizonte</p>
+            <p className="text-sm font-medium text-gray-600">{t('module11.horizon')}</p>
           </div>
           <p className="text-3xl font-bold text-gray-900">5 anos</p>
-          <p className="text-xs text-gray-500 mt-1">60 meses com faixa de confiança de 80% e 95%</p>
+          <p className="text-xs text-gray-500 mt-1">{t('module11.horizonDesc')}</p>
         </div>
       </div>
 
@@ -181,7 +181,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-gray-500" />
-            Projeção de Tonelagem — 5 Anos
+            {t('module11.forecast.title')}
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -222,8 +222,7 @@ export function Module11View() {
             </table>
           </div>
           <p className="text-xs text-gray-400 mt-3">
-            Confiança: Alta (Ano 1, fatores observados), Média (Anos 2-3, cenário macroeconômico projetado),
-            Baixa (Anos 4-5, tendência de longo prazo — faixa ampla, usar com cautela).
+            {t('module11.confidence.note')}
           </p>
         </div>
       )}
@@ -231,7 +230,7 @@ export function Module11View() {
       {/* Scenarios (5 years) */}
       {cenarios.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Cenários — 5 Anos</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('module11.scenarios.title')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {(cenarios as unknown as Record<string, unknown>[]).map((c: Record<string, unknown>, i: number) => {
               const variacao = c.variacao_acumulada_pct as number | null;
@@ -302,7 +301,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <PieChart className="w-5 h-5 text-gray-500" />
-            Fatores que Influenciam a Previsão
+            {t('module11.drivers.title')}
           </h2>
           <div className="space-y-3">
             {blocos.map((b, i) => (
@@ -329,8 +328,7 @@ export function Module11View() {
           <div className="mt-3 bg-blue-50 rounded-lg p-3 flex items-start gap-2">
             <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-700">
-              Peso relativo de cada fator na projeção.
-              Os fatores são agrupados em 5 categorias: Histórico, Macroeconomia, Operação, Safra e Clima.
+              {t('module11.drivers.description')}
             </p>
           </div>
         </div>
@@ -341,7 +339,7 @@ export function Module11View() {
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Target className="w-5 h-5 text-gray-500" />
-            Validação do Modelo — Precisão por Período
+            {t('module11.validation.title')}
           </h2>
 
           {/* Summary table */}
@@ -406,7 +404,7 @@ export function Module11View() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Resumo Executivo</p>
+              <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">{t('module11.executive.title')}</p>
               <p className="text-base font-semibold text-blue-900 mt-0.5">
                 Porto de {instalacaoLabel}
               </p>
@@ -415,8 +413,7 @@ export function Module11View() {
           </div>
           <p className="text-sm text-blue-900 leading-relaxed">{resumoExecutivo}</p>
           <p className="text-xs text-blue-500 mt-3">
-            Análise gerada automaticamente com base no histórico operacional do porto selecionado.
-            Escrita para gestores e investidores.
+            {t('module11.executive.note')}
           </p>
         </div>
       )}
