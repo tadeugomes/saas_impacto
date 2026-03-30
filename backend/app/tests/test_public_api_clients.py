@@ -179,7 +179,7 @@ class TestBacenClient:
         data = [{"data": "02/01/2025", "valor": "0.52"}, {"data": "03/01/2025", "valor": "0.48"}]
 
         def handler(req):
-            assert "/433/dados" in str(req.url)
+            assert "sgs.433/dados" in str(req.url)
             return _json_response(data)
 
         client = _mock(BacenClient(), handler)
@@ -194,21 +194,21 @@ class TestBacenClient:
 
         def handler(req):
             url = str(req.url)
-            if "/432/" in url:
-                return _json_response([{"data": "01/01/2025", "valor": "13.25"}])
-            if "/433/" in url:
+            if "sgs.4189/" in url:
+                return _json_response([{"data": "01/01/2025", "valor": "1.04"}])
+            if "sgs.433/" in url:
                 return _json_response(
                     [{"data": f"01/{m:02d}/2024", "valor": "0.50"} for m in range(1, 13)]
                 )
-            if "/3698/" in url:
+            if "sgs.3698/" in url:
                 return _json_response([{"data": "01/01/2025", "valor": "5.05"}])
-            if "/24364/" in url:
+            if "sgs.24364/" in url:
                 return _json_response([{"data": "01/01/2025", "valor": "150.3"}])
             return _json_response([])
 
         client = _mock(BacenClient(), handler)
         result = await client.indicadores_atuais()
-        assert result["selic_meta_aa"] == 13.25
+        assert result["selic_meta_aa"] == 13.22
         assert result["cambio_ptax_venda"] == 5.05
         assert result["ipca_acumulado_12m"] > 0
         await client.close()

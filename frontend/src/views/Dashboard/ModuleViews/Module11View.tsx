@@ -137,7 +137,7 @@ export function Module11View() {
             {t('module11.subtitle')}
           </p>
         </div>
-        <ExportButton moduleCode="11" includeFormats={['xlsx']} />
+        <ExportButton moduleCode="11" />
       </div>
 
       <FilterBar showYear={false} />

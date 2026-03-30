@@ -28,11 +28,11 @@ export function ExportButton({
   variant = 'secondary',
   className = '',
   disabled = false,
-  includeFormats = ['docx', 'pdf', 'xlsx'],
+  includeFormats = ['xlsx'],
 }: ExportButtonProps) {
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [isExporting, setIsExporting] = useState(false);
-  const [format, setFormat] = useState<'docx' | 'pdf' | 'xlsx'>('docx');
+  const [format, setFormat] = useState<'docx' | 'pdf' | 'xlsx'>(includeFormats[0] || 'xlsx');
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -71,21 +71,23 @@ export function ExportButton({
 
   return (
     <div className="inline-flex items-stretch gap-2">
-      <select
-        value={format}
-        onChange={(event) =>
-          setFormat(event.target.value as 'docx' | 'pdf' | 'xlsx')
-        }
-        disabled={disabled || isExporting}
-        className="rounded-lg border border-gray-300 bg-white px-2 text-sm"
-        aria-label="Formato de exportação"
-      >
-        {includeFormats.map((option) => (
-          <option key={option} value={option}>
-            {option.toUpperCase()}
-          </option>
-        ))}
-      </select>
+      {includeFormats.length > 1 && (
+        <select
+          value={format}
+          onChange={(event) =>
+            setFormat(event.target.value as 'docx' | 'pdf' | 'xlsx')
+          }
+          disabled={disabled || isExporting}
+          className="rounded-lg border border-gray-300 bg-white px-2 text-sm"
+          aria-label="Formato de exportação"
+        >
+          {includeFormats.map((option) => (
+            <option key={option} value={option}>
+              {option.toUpperCase()}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         onClick={handleExport}
         disabled={disabled || isExporting}
