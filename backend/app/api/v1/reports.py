@@ -113,6 +113,12 @@ async def export_module_report(
                 rows=[item for rows in data.values() for item in rows],
                 output_name=f"{module_code}_{ano or 'todos'}.pdf",
             )
+        elif module_code == "IND-11":
+            report_bytes, filename = XLSXGenerator().build_module_11(
+                dataset=data,
+                output_name=f"previsao_{porto_nome}_{ano or 'todos'}.xlsx",
+                id_instalacao=porto_nome,
+            )
         else:
             report_bytes, filename = XLSXGenerator().build_module(
                 module_code=module_code,

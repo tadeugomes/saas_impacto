@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
+import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { PORTO_OPTIONS } from '../../../components/filters/InstallationSelector';
 import { indicatorsService } from '../../../api/indicators';
@@ -129,14 +130,17 @@ export function Module11View() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t('module11.title')}</h1>
-        <p className="text-gray-600 mt-1">
-          {t('module11.subtitle')}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module11.title')}</h1>
+          <p className="text-gray-600 mt-1">
+            {t('module11.subtitle')}
+          </p>
+        </div>
+        <ExportButton moduleCode="11" includeFormats={['xlsx']} />
       </div>
 
-      <FilterBar />
+      <FilterBar showYear={false} />
 
       {/* Model Info + Backtest */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

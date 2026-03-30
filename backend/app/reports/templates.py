@@ -223,6 +223,32 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             "Metodologia de composição disponível na documentação técnica.",
         ],
     },
+    "IND-11": {
+        "name": "Previsão de Movimentação de Cargas",
+        "description": "Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima",
+        "indicators": [
+            {"code": "IND-11.01", "name": "Projeção de Tonelagem", "unit": "Toneladas", "description": "Previsão de movimentação para 60 meses com intervalos de confiança"},
+            {"code": "IND-11.02", "name": "Cenários", "unit": "Toneladas", "description": "Projeções base, otimista e pessimista"},
+            {"code": "IND-11.03", "name": "Fatores de Influência", "unit": "%", "description": "Peso relativo de cada categoria de dados na projeção"},
+            {"code": "IND-11.04", "name": "Validação do Modelo", "unit": "%", "description": "Precisão medida por validação nos últimos 12 meses"},
+            {"code": "IND-11.05", "name": "Projeção de Comércio Exterior", "unit": "US$", "description": "Previsão de valor FOB para 12 meses"},
+        ],
+        "table_headers": ["Indicador", "Descrição", "Unidade", "Valor"],
+        "highlights": [
+            {"indicator": "IND-11.01", "role": "headline", "label": "Projeção de tonelagem (5 anos)"},
+            {"indicator": "IND-11.04", "role": "context", "label": "Precisão do modelo"},
+            {"indicator": "IND-11.02", "role": "context", "label": "Cenários de projeção"},
+        ],
+        "methodological_notes": [
+            "Modelo de séries temporais com variáveis exógenas (horizonte de 60 meses).",
+            "Dados utilizados agrupados em 5 categorias: Histórico, Macroeconomia, Operação, Safra e Clima.",
+            "Fontes de dados: ANTAQ, BACEN (câmbio, Selic, IBC-Br, IPCA), CONAB (safra), INMET (precipitação), NOAA (El Niño), ANA (nível de rio).",
+            "Precisão avaliada por erro percentual médio em janela deslizante de 12 meses (walk-forward).",
+            "Intervalos de confiança de 80% e 95% calculados a partir da distribuição dos resíduos do modelo.",
+            "Cenários otimista e pessimista: desvios convergem 20% ao ano para a tendência base.",
+            "Limitação: projeções de longo prazo (anos 4-5) têm incerteza significativamente maior; mudanças estruturais (novas infraestruturas, regulações) não são captadas pelo modelo.",
+        ],
+    },
 }
 
 
