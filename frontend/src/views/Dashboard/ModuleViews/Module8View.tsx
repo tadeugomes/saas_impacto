@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
+import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
@@ -120,6 +121,7 @@ export function Module8View() {
             {t('module8.subtitle')}
           </p>
         </div>
+        <ExportButton moduleCode="8" />
       </div>
 
       <FilterBar />

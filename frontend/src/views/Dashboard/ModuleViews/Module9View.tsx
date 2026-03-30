@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
+import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
@@ -123,11 +124,14 @@ export function Module9View() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t('module9.title')}</h1>
-        <p className="text-gray-600 mt-1">
-          {t('module9.subtitle')}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{t('module9.title')}</h1>
+          <p className="text-gray-600 mt-1">
+            {t('module9.subtitle')}
+          </p>
+        </div>
+        <ExportButton moduleCode="9" />
       </div>
 
       <FilterBar />

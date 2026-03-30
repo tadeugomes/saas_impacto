@@ -57,7 +57,14 @@ class XLSXGenerator:
         dataset: dict[str, list[dict[str, Any]]],
         output_name: str,
     ) -> tuple[BytesIO, str]:
+        from app.reports.templates import MODULE_TEMPLATES
+
         wb = Workbook()
+        bold = Font(bold=True)
+        title_font = Font(bold=True, size=14)
+        section_font = Font(bold=True, size=12)
+
+        # Aba Resumo + Dados
         summary = wb.active
         summary.title = "Resumo"
         summary.append(["Código", "Registros"])
@@ -69,6 +76,8 @@ class XLSXGenerator:
         for code, rows in dataset.items():
             ws = wb.create_sheet(title=code[:31])
             ws.append(["Município", "Ano", "Valor"])
+            for cell in ws[1]:
+                cell.font = bold
             for row in rows:
                 ws.append(
                     [
@@ -79,6 +88,11 @@ class XLSXGenerator:
                 )
             self._auto_size(ws)
 
+        # Aba Ficha Técnica (se template existir)
+        template = MODULE_TEMPLATES.get(module_code)
+        if template:
+            self._add_ficha_tecnica(wb, template, title_font, section_font, bold)
+
         if "Sheet" in wb.sheetnames:
             wb.remove(wb["Sheet"])
 
@@ -86,6 +100,75 @@ class XLSXGenerator:
         wb.save(buffer)
         buffer.seek(0)
         return buffer, output_name
+
+    def _add_ficha_tecnica(
+        self,
+        wb: Workbook,
+        template: dict[str, Any],
+        title_font: Font,
+        section_font: Font,
+        bold: Font,
+    ) -> None:
+        """Adiciona aba 'Ficha Técnica' com base no template do módulo."""
+        ft = wb.create_sheet(title="Ficha Técnica")
+
+        ft.append([f"FICHA TÉCNICA — {template.get('name', '')}"])
+        ft["A1"].font = title_font
+        ft.append([template.get("description", "")])
+        ft.append([f"Exportado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"])
+        ft.append([])
+
+        # Indicadores
+        indicators = template.get("indicators", [])
+        if indicators:
+            ft.append(["INDICADORES"])
+            ft[f"A{ft.max_row}"].font = section_font
+            ft.append(["Código", "Nome", "Unidade", "Descrição"])
+            for cell in ft[ft.max_row]:
+                cell.font = bold
+            for ind in indicators:
+                ft.append([
+                    ind.get("code", ""),
+                    ind.get("name", ""),
+                    ind.get("unit", ""),
+                    ind.get("description", ""),
+                ])
+            ft.append([])
+
+        # Destaques
+        highlights = template.get("highlights", [])
+        if highlights:
+            ft.append(["DESTAQUES PARA INVESTIDOR"])
+            ft[f"A{ft.max_row}"].font = section_font
+            for h in highlights:
+                role_label = {
+                    "headline": "Principal",
+                    "context": "Contexto",
+                    "trend": "Tendência",
+                    "esg": "ESG",
+                    "alert": "Alerta",
+                }.get(h.get("role", ""), h.get("role", ""))
+                ft.append([role_label, h.get("label", ""), h.get("indicator", "")])
+            ft.append([])
+
+        # Notas metodológicas
+        notes = template.get("methodological_notes", [])
+        if notes:
+            ft.append(["NOTAS METODOLÓGICAS"])
+            ft[f"A{ft.max_row}"].font = section_font
+            for note in notes:
+                ft.append([f"• {note}"])
+            ft.append([])
+
+        ft.append(["NOTA"])
+        ft[f"A{ft.max_row}"].font = bold
+        ft.append([
+            "Este relatório é gerado automaticamente pelo sistema SaaS Impacto Portuário. "
+            "Os métodos, parâmetros e fontes de dados são detalhados nas notas metodológicas acima. "
+            "Para informações adicionais, consulte a documentação técnica do sistema."
+        ])
+
+        self._auto_size(ft)
 
     def build_module_11(
         self,
