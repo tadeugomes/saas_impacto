@@ -18,6 +18,7 @@ import {
 import { indicatorsService } from '../../../api/indicators';
 import { getIndicatorFormat } from '../../../utils/chartFormats';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 import type { IndicatorResponse } from '../../../types/api';
 
 type IndicatorRow = Record<string, unknown>;
@@ -308,6 +309,7 @@ function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolea
 
 export function Module6View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedYear, selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -323,6 +325,17 @@ export function Module6View() {
   const toggleGroup = useCallback((group: IndicatorGroup) => {
     setOpenGroups((current) => ({ ...current, [group]: !current[group] }));
   }, []);
+
+  const localizedIndicatorsByGroup = useMemo(() => {
+    const result = {} as Record<IndicatorGroup, IndicatorInfo[]>;
+    for (const [group, items] of Object.entries(INDICATORS_BY_GROUP)) {
+      result[group as IndicatorGroup] = items.map(ind => {
+        const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+        return { ...ind, name, desc };
+      });
+    }
+    return result;
+  }, [tInd]);
 
   const resolveMunicipioLabels = useCallback(
     async (rawIds: string[]) => {
@@ -492,7 +505,7 @@ export function Module6View() {
       {error && <ErrorAlert message={error} className="mb-6" />}
 
       <div className="space-y-6">
-        {Object.entries(INDICATORS_BY_GROUP).map(([group, indicatorsOfGroup]) => {
+        {Object.entries(localizedIndicatorsByGroup).map(([group, indicatorsOfGroup]) => {
           const groupOpen = openGroups[group as IndicatorGroup];
           const groupTitle =
             group === 'tributacao'

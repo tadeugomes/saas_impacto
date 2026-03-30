@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
@@ -6,6 +6,7 @@ import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, Users, Building } from 'lucide-react';
@@ -52,10 +53,19 @@ const MACRO_ICONS: Record<string, typeof TrendingUp> = {
 
 export function Module8View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const localizedIndicators = useMemo(
+    () => INDICATORS_INFO.map(ind => {
+      const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+      return { ...ind, name, desc };
+    }),
+    [tInd],
+  );
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -128,7 +138,7 @@ export function Module8View() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {INDICATORS_INFO.slice(0, 4).map((ind) => {
+        {localizedIndicators.slice(0, 4).map((ind) => {
           const Icon = MACRO_ICONS[ind.code] || TrendingUp;
           return (
             <div key={ind.code} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -155,7 +165,7 @@ export function Module8View() {
 
       {/* Detailed Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {INDICATORS_INFO.map((ind) => (
+        {localizedIndicators.map((ind) => (
           <IndicatorDashboardCard
             key={ind.code}
             title={ind.name}

@@ -8,6 +8,7 @@ import { indicatorsService } from '../../../api/indicators';
 import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorDashboardCard';
 import type { IndicatorResponse } from '../../../types/api';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 
 interface IndicatorConfig {
   code: string;
@@ -43,6 +44,7 @@ const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorR
 
 export function Module2View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -85,12 +87,20 @@ export function Module2View() {
     fetchIndicators();
   }, [selectedYear, selectedInstallation]);
 
+  const localizedIndicators = useMemo(
+    () => INDICATORS_INFO.map(ind => {
+      const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+      return { ...ind, name, desc };
+    }),
+    [tInd],
+  );
+
   const visibleIndicators = useMemo(() => {
     if (selectedIndicator === 'all') {
-      return INDICATORS_INFO;
+      return localizedIndicators;
     }
-    return INDICATORS_INFO.filter((item) => item.code === selectedIndicator);
-  }, [selectedIndicator]);
+    return localizedIndicators.filter((item) => item.code === selectedIndicator);
+  }, [selectedIndicator, localizedIndicators]);
 
   if (isLoading) {
     return (
@@ -131,7 +141,7 @@ export function Module2View() {
             onChange={(event) => setSelectedIndicator(event.target.value)}
           >
             <option value="all">Todos</option>
-            {INDICATORS_INFO.map((indicator) => (
+            {localizedIndicators.map((indicator) => (
               <option key={indicator.code} value={indicator.code}>
                 {indicator.name}
               </option>

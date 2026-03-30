@@ -9,6 +9,7 @@ import { IndicatorDashboardCard } from '../../../components/dashboard/IndicatorD
 import type { IndicatorResponse } from '../../../types/api';
 import { apiClient } from '../../../api/client';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 
 interface IndicatorConfig {
   code: string;
@@ -117,12 +118,21 @@ function scoreBarColor(score: number): string {
 
 export function Module1View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableSearch, setTableSearch] = useState('');
   const [selectedIndicator, setSelectedIndicator] = useState('all');
+
+  const localizedIndicators = useMemo(
+    () => INDICATORS_INFO.map(ind => {
+      const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+      return { ...ind, name, desc };
+    }),
+    [tInd],
+  );
 
   // Analíticos
   const [tendencia, setTendencia] = useState<TendenciaResponse | null>(null);
@@ -208,10 +218,10 @@ export function Module1View() {
 
   const visibleIndicators = useMemo(() => {
     if (selectedIndicator === 'all') {
-      return INDICATORS_INFO;
+      return localizedIndicators;
     }
-    return INDICATORS_INFO.filter((item) => item.code === selectedIndicator);
-  }, [selectedIndicator]);
+    return localizedIndicators.filter((item) => item.code === selectedIndicator);
+  }, [selectedIndicator, localizedIndicators]);
 
   if (isLoading) {
     return (
@@ -293,7 +303,7 @@ export function Module1View() {
                 onChange={(event) => setSelectedIndicator(event.target.value)}
               >
                 <option value="all">{t('common.all')}</option>
-                {INDICATORS_INFO.map((indicator) => (
+                {localizedIndicators.map((indicator) => (
                   <option key={indicator.code} value={indicator.code}>
                     {indicator.name}
                   </option>

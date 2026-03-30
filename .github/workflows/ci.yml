@@ -108,5 +108,13 @@ jobs:
       - name: Frontend tests
         run: npm run test
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests (Playwright)
+        run: VITE_DISABLE_AUTH=true npm run test:e2e
+        env:
+          CI: true
+
       - name: Frontend build
         run: npm run build

@@ -130,8 +130,8 @@ class Settings(BaseSettings):
     audit_log_retention_days: int = 90
 
     # Observabilidade / exposição
-    otel_enabled: bool = False
-    otel_exporter: str = "console"
+    otel_enabled: bool = True
+    otel_exporter: str = "otlp"
     metrics_enabled: bool = True
     docs_access_token: Optional[str] = None
 

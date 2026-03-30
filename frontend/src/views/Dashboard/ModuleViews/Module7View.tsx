@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
@@ -8,6 +8,7 @@ import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 import type { IndicatorResponse } from '../../../types/api';
 import { TrendingUp, Shield, Building } from 'lucide-react';
 
@@ -65,11 +66,28 @@ function getLabelFromData(item: IndicatorRow): string {
 
 export function Module7View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedYear, selectedInstallation } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [compositeIndicators, setCompositeIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const localizedIndicators = useMemo(
+    () => INDICATORS_INFO.map(ind => {
+      const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+      return { ...ind, name, desc };
+    }),
+    [tInd],
+  );
+
+  const localizedCompositeIndices = useMemo(
+    () => COMPOSITE_INDICES.map(ind => {
+      const { name } = tInd(ind.code, ind.name, '');
+      return { ...ind, name };
+    }),
+    [tInd],
+  );
 
   useEffect(() => {
     const fetchIndicators = async () => {
@@ -150,7 +168,7 @@ export function Module7View() {
       {error && <ErrorAlert message={error} className="mb-6" />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {INDICATORS_INFO.map((ind) => {
+        {localizedIndicators.map((ind) => {
           const indData = indicators[ind.code];
           const hasData = indData?.data && indData.data.length > 0;
 
@@ -194,7 +212,7 @@ export function Module7View() {
         </p>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          {COMPOSITE_INDICES.map((ind) => {
+          {localizedCompositeIndices.map((ind) => {
             const Icon = ind.icon;
             const data = compositeIndicators[ind.code]?.data?.[0] as IndicatorRow | undefined;
             const valor = data?.[ind.valueField];
@@ -235,7 +253,7 @@ export function Module7View() {
         </div>
 
         {/* Composicao detail panels */}
-        {COMPOSITE_INDICES.map((ind) => {
+        {localizedCompositeIndices.map((ind) => {
           const data = compositeIndicators[ind.code]?.data?.[0] as IndicatorRow | undefined;
           const composicao = data?.composicao as Composicao | undefined;
           if (!composicao) return null;

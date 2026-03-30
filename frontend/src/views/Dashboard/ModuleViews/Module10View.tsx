@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
@@ -6,6 +6,7 @@ import { ExportButton } from '../../../components/common/ExportButton';
 import { useFilterStore } from '../../../store/filterStore';
 import { indicatorsService } from '../../../api/indicators';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIndicatorLabel } from '../../../i18n/indicatorTranslations';
 import type { IndicatorResponse } from '../../../types/api';
 import {
   FileCheck, AlertTriangle, Scale, Newspaper, Gavel, CheckCircle,
@@ -95,10 +96,19 @@ function getRiskColor(cls: string): string {
 
 export function Module10View() {
   const { t } = useI18n();
+  const tInd = useIndicatorLabel();
   const { selectedInstallation, selectedYear } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const localizedIndicators = useMemo(
+    () => INDICATORS_INFO.map(ind => {
+      const { name, desc } = tInd(ind.code, ind.name, ind.desc);
+      return { ...ind, name, desc };
+    }),
+    [tInd],
+  );
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -202,7 +212,7 @@ export function Module10View() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {INDICATORS_INFO.map((ind): React.ReactNode => {
+        {localizedIndicators.map((ind): React.ReactNode => {
           const Icon: typeof FileCheck = INDICATOR_ICONS[ind.code] || FileCheck;
           const data = indicators[ind.code]?.data?.[0] as RawRow | undefined;
           const rawValor = data?.[ind.valueField];
