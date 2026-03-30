@@ -255,3 +255,40 @@ class TestBuildModule11:
         gen = XLSXGenerator()
         _, name = gen.build_module_11({}, "previsao_Santos_2023.xlsx", "Santos")
         assert "Santos" in name
+
+    def test_has_scenario_chart(self, forecast_dataset):
+        gen = XLSXGenerator()
+        buf, _ = gen.build_module_11(forecast_dataset, "test.xlsx", "Santos")
+        wb = _load_wb(buf)
+        ws = wb["Resultados"]
+
+        # Should have "COMPARATIVO DE CENÁRIOS" section
+        all_text = " ".join(str(cell.value) for row in ws.iter_rows() for cell in row if cell.value)
+        assert "COMPARATIVO DE CENÁRIOS" in all_text
+
+        # Should have a chart embedded
+        assert len(ws._charts) >= 1
+
+    def test_backtest_label_is_taxa_de_erro(self, forecast_dataset):
+        gen = XLSXGenerator()
+        buf, _ = gen.build_module_11(forecast_dataset, "test.xlsx", "Santos")
+        wb = _load_wb(buf)
+        ws = wb["Resultados"]
+
+        all_text = " ".join(str(cell.value) for row in ws.iter_rows() for cell in row if cell.value)
+        assert "TAXA DE ERRO" in all_text
+
+    def test_numbers_have_decimal_format(self, forecast_dataset):
+        gen = XLSXGenerator()
+        buf, _ = gen.build_module_11(forecast_dataset, "test.xlsx", "Santos")
+        wb = _load_wb(buf)
+        ws = wb["Resultados"]
+
+        # Find a cell with tonelagem value and check it has number format
+        found_formatted = False
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (int, float)) and cell.value > 1000 and cell.number_format != "General":
+                    found_formatted = True
+                    break
+        assert found_formatted, "Should have at least one formatted numeric cell"

@@ -7,18 +7,30 @@ from io import BytesIO
 from typing import Any, Iterable
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.chart import LineChart as OPLineChart, Reference
+from openpyxl.styles import Font, numbers
 from openpyxl.utils import get_column_letter
 
 
 class XLSXGenerator:
     """Cria arquivos XLSX com abas de resultados."""
 
+    NUMBER_FMT = '#,##0.00'
+    INTEGER_FMT = '#,##0'
+    PERCENT_FMT = '0.00"%"'
+
     @staticmethod
     def _normalize_cell(value: Any) -> Any:
         if value is None or value == "":
             return ""
         return value
+
+    @staticmethod
+    def _fmt_number(ws, row: int, col: int, fmt: str) -> None:
+        """Aplica formato numérico a uma célula."""
+        cell = ws.cell(row=row, column=col)
+        if isinstance(cell.value, (int, float)):
+            cell.number_format = fmt
 
     def build_single_indicator(
         self,
@@ -216,12 +228,20 @@ class XLSXGenerator:
                     p.get("ic_95_superior", ""),
                     conf,
                 ])
+                row = ws.max_row
+                for col in [2, 3, 4, 5]:
+                    self._fmt_number(ws, row, col, self.NUMBER_FMT)
             ws.append([])
 
         # Cenários (IND-11.02)
         scenario_data = dataset.get("IND-11.02", [{}])
         scenario = scenario_data[0] if scenario_data else {}
         cenarios = scenario.get("cenarios", [])
+
+        # Cenários — tabela + gráfico
+        chart_data_start_row = None
+        chart_data_end_row = None
+        scenario_names = []
 
         if cenarios:
             ws.append(["CENÁRIOS — 5 ANOS"])
@@ -243,6 +263,67 @@ class XLSXGenerator:
                         var_acum if j == 0 else "",
                         cagr if j == 0 else "",
                     ])
+                    row = ws.max_row
+                    self._fmt_number(ws, row, 3, self.NUMBER_FMT)
+                    self._fmt_number(ws, row, 4, self.NUMBER_FMT)
+                    self._fmt_number(ws, row, 5, self.NUMBER_FMT)
+            ws.append([])
+
+            # Preparar dados para gráfico: tabela auxiliar Ano | Base | Otimista | Pessimista
+            ws.append(["COMPARATIVO DE CENÁRIOS"])
+            ws[f"A{ws.max_row}"].font = section_font
+            scenario_order = ["base", "otimista", "pessimista"]
+            scenario_map = {c.get("cenario", ""): c for c in cenarios}
+            # Anos do cenário base (ou primeiro disponível)
+            ref_scenario = scenario_map.get("base") or cenarios[0]
+            ref_anuais = [a for a in ref_scenario.get("previsoes_anuais", []) if not a.get("parcial")]
+            chart_headers = ["Ano"] + [n.capitalize() for n in scenario_order if n in scenario_map]
+            scenario_names = [n for n in scenario_order if n in scenario_map]
+            ws.append(chart_headers)
+            for cell in ws[ws.max_row]:
+                cell.font = bold
+            chart_data_start_row = ws.max_row + 1
+
+            for ref_a in ref_anuais:
+                ano = ref_a.get("ano", "")
+                row_data = [ano]
+                for sname in scenario_names:
+                    sc = scenario_map.get(sname, {})
+                    sc_anuais = sc.get("previsoes_anuais", [])
+                    match = next((a for a in sc_anuais if a.get("ano") == ano and not a.get("parcial")), None)
+                    row_data.append(match.get("tonelagem_anual", "") if match else "")
+                ws.append(row_data)
+                row = ws.max_row
+                for col in range(2, 2 + len(scenario_names)):
+                    self._fmt_number(ws, row, col, self.NUMBER_FMT)
+
+            chart_data_end_row = ws.max_row
+
+            # Gráfico de linhas
+            if chart_data_start_row and chart_data_end_row and chart_data_end_row > chart_data_start_row:
+                chart = OPLineChart()
+                chart.title = f"Comparativo de Cenários — {id_instalacao}"
+                chart.y_axis.title = "Tonelagem (ton)"
+                chart.x_axis.title = "Ano"
+                chart.style = 10
+                chart.width = 22
+                chart.height = 12
+
+                cats = Reference(ws, min_col=1, min_row=chart_data_start_row, max_row=chart_data_end_row)
+                colors = {"base": "3B82F6", "otimista": "10B981", "pessimista": "EF4444"}
+                for idx, sname in enumerate(scenario_names):
+                    data = Reference(ws, min_col=2 + idx, min_row=chart_data_start_row - 1, max_row=chart_data_end_row)
+                    chart.add_data(data, titles_from_data=True)
+                    series = chart.series[idx]
+                    series.graphicalProperties.line.solidFill = colors.get(sname, "6B7280")
+                chart.set_categories(cats)
+
+                ws.append([])
+                ws.add_chart(chart, f"A{ws.max_row + 1}")
+                # Pular linhas para o gráfico não sobrepor
+                for _ in range(16):
+                    ws.append([])
+
             ws.append([])
 
         # Drivers (IND-11.03)
@@ -263,6 +344,7 @@ class XLSXGenerator:
                     b.get("importancia_pct", ""),
                     b.get("n_features", ""),
                 ])
+                self._fmt_number(ws, ws.max_row, 2, self.NUMBER_FMT)
             ws.append([])
 
         # Backtesting (IND-11.04)
@@ -271,9 +353,9 @@ class XLSXGenerator:
         horizontes = backtest.get("horizontes", {})
 
         if horizontes:
-            ws.append(["VALIDAÇÃO DO MODELO — PRECISÃO POR PERÍODO"])
+            ws.append(["VALIDAÇÃO DO MODELO — TAXA DE ERRO POR PERÍODO"])
             ws[f"A{ws.max_row}"].font = section_font
-            headers = ["Período", "Erro (%)", "Erro Médio (ton)", "Desvio (ton)", "Avaliação"]
+            headers = ["Período", "Taxa de Erro (%)", "Erro Médio (ton)", "Desvio (ton)", "Avaliação"]
             ws.append(headers)
             for cell in ws[ws.max_row]:
                 cell.font = bold
@@ -288,6 +370,10 @@ class XLSXGenerator:
                     h.get("rmse", ""),
                     label,
                 ])
+                row = ws.max_row
+                self._fmt_number(ws, row, 2, self.NUMBER_FMT)
+                self._fmt_number(ws, row, 3, self.NUMBER_FMT)
+                self._fmt_number(ws, row, 4, self.NUMBER_FMT)
             ws.append([])
 
         # Interpretação (se disponível)

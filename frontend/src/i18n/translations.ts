@@ -240,8 +240,8 @@ const messages: Record<Locale, MessageCatalog> = {
     'module10.sentiment.title': 'Análise de Menções em Diário Oficial',
     'module10.composition.title': 'Composição do Índice de Risco Regulatório',
     // Module 11
-    'module11.accuracy': 'Precisão do Modelo',
-    'module11.validationPeriod': 'Validação nos últimos 12 meses',
+    'module11.accuracy': 'Taxa de Erro do Modelo',
+    'module11.validationPeriod': 'Quanto menor, melhor · Validação 12 meses',
     'module11.variables': 'Variáveis Consideradas',
     'module11.categories': '5 categorias de dados',
     'module11.horizon': 'Horizonte',
@@ -380,8 +380,8 @@ const messages: Record<Locale, MessageCatalog> = {
     'module10.sentiment.title': 'Official Gazette Mentions Analysis',
     'module10.composition.title': 'Regulatory Risk Index Composition',
     // Module 11
-    'module11.accuracy': 'Model Accuracy',
-    'module11.validationPeriod': 'Validated on last 12 months',
+    'module11.accuracy': 'Model Error Rate',
+    'module11.validationPeriod': 'Lower is better · 12-month validation',
     'module11.variables': 'Variables Considered',
     'module11.categories': '5 data categories',
     'module11.horizon': 'Forecast Horizon',
