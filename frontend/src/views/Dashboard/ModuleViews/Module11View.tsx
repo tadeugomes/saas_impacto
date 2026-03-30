@@ -146,15 +146,27 @@ export function Module11View() {
 
       {/* Model Info + Backtest */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div className={`rounded-xl border p-5 shadow-sm ${
+          mape !== undefined && mape > 15
+            ? 'bg-red-50 border-red-300'
+            : 'bg-white border-gray-200'
+        }`}>
           <div className="flex items-center gap-2 mb-2">
-            <Target className="w-5 h-5 text-blue-500" />
+            <Target className={`w-5 h-5 ${mape !== undefined && mape > 15 ? 'text-red-500' : 'text-blue-500'}`} />
             <p className="text-sm font-medium text-gray-600">{t('module11.accuracy')}</p>
           </div>
-          <p className="text-3xl font-bold text-gray-900">
+          <p className={`text-3xl font-bold ${
+            mape !== undefined && mape > 15 ? 'text-red-600' : 'text-gray-900'
+          }`}>
             {mape !== undefined ? `${mape}%` : '—'}
           </p>
           <p className="text-xs text-gray-500 mt-1">{t('module11.validationPeriod')}</p>
+          {mape !== undefined && mape > 15 && (
+            <div className="mt-2 bg-red-100 border border-red-200 rounded-lg px-3 py-2">
+              <p className="text-xs font-semibold text-red-700">Taxa de Erro Elevada</p>
+              <p className="text-xs text-red-600 mt-0.5">Acionar equipe técnica para mais detalhes sobre a precisão deste porto.</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
