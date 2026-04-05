@@ -135,24 +135,35 @@ export function SimulationInputForm({
         <span className="text-xs text-gray-500">Comparado ao cenário base</span>
       </div>
 
-      {/* Elasticity (investment mode) */}
+      {/* Elasticity + limitation note (investment mode) */}
       {shockMode === 'investment' && (
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-gray-600">
-            Elasticidade (resposta da movimentação ao investimento):
-          </label>
-          <input
-            type="number"
-            min={0.01}
-            step={0.01}
-            value={investmentElasticity}
-            onChange={(e) => onElasticityChange(parseNumeric(e.target.value))}
-            className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-          />
-          <span className="text-xs text-gray-500">
-            Ex.: 0,8 = 10% investimento gera ~8% movimentação
-          </span>
-        </div>
+        <>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <p className="font-semibold">Base de dados de investimentos indisponível</p>
+            <p className="mt-1">
+              O modo investimento requer dados históricos de investimentos portuários por município
+              (SEP/MT, PAC), ainda não integrados ao sistema. Use a elasticidade abaixo como
+              aproximação manual. Os resultados têm incerteza substancialmente maior do que no
+              modo movimentação.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs text-gray-600">
+              Elasticidade (resposta da movimentação ao investimento):
+            </label>
+            <input
+              type="number"
+              min={0.01}
+              step={0.01}
+              value={investmentElasticity}
+              onChange={(e) => onElasticityChange(parseNumeric(e.target.value))}
+              className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+            <span className="text-xs text-gray-500">
+              Ex.: 0,8 = 10% investimento gera ~8% movimentação
+            </span>
+          </div>
+        </>
       )}
     </div>
   );

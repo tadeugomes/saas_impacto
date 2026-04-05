@@ -678,22 +678,22 @@ class TestRouter:
 
         assert resp.status_code == 404
 
-    def test_get_analysis_report_returns_docx(self):
+    def test_get_analysis_report_returns_xlsx(self):
         from app.schemas.impacto_economico import EconomicImpactAnalysisDetailResponse
-        from app.reports import ReportService
+        from app.reports import XLSXGenerator
 
         detail = EconomicImpactAnalysisDetailResponse(**self._mock_detail(status="success"))
         svc = MagicMock()
         svc.get_detail = AsyncMock(return_value=detail)
 
-        with patch.object(ReportService, "generate_impact_analysis_report") as mock_generate:
-            mock_generate.return_value = (BytesIO(b"report-payload"), "analise.docx")
+        with patch.object(XLSXGenerator, "build_impact_analysis") as mock_generate:
+            mock_generate.return_value = (BytesIO(b"xlsx-payload"), f"relatorio_impacto_{ANALYSIS_ID}.xlsx")
             client = self._make_client(svc)
             resp = client.get(f"{self.PREFIX}/analises/{ANALYSIS_ID}/report")
 
         assert resp.status_code == 200
-        assert "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in resp.headers["content-type"]
-        assert "attachment; filename=\"analise.docx\"" in resp.headers["content-disposition"]
+        assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in resp.headers["content-type"]
+        assert f"relatorio_impacto_{ANALYSIS_ID}.xlsx" in resp.headers["content-disposition"]
 
     def test_router_openapi_has_analises_paths(self):
         """Verifica que o OpenAPI expõe os paths com o prefixo correto."""

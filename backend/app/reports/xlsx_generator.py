@@ -462,6 +462,211 @@ class XLSXGenerator:
         buffer.seek(0)
         return buffer, output_name
 
+    def build_impact_analysis(
+        self,
+        detail: Any,
+        output_name: str,
+    ) -> tuple[BytesIO, str]:
+        """Gera Excel consolidado de uma análise causal de impacto econômico.
+
+        Abas: Resumo Executivo | Coeficientes | Diagnósticos | Ficha Técnica
+        """
+        from datetime import datetime
+
+        wb = Workbook()
+        bold = Font(bold=True)
+        title_font = Font(bold=True, size=14)
+        section_font = Font(bold=True, size=12)
+
+        method = getattr(detail, "method", "N/A") or "N/A"
+        analysis_id = str(getattr(detail, "id", ""))
+        created_at = getattr(detail, "created_at", None)
+        duration = getattr(detail, "duration_seconds", None)
+        result_summary = getattr(detail, "result_summary", None) or {}
+        result_full = getattr(detail, "result_full", None) or {}
+        request_params = getattr(detail, "request_params", None) or {}
+
+        METHOD_LABELS = {
+            "did": "Difference-in-Differences (DiD)",
+            "iv": "Variáveis Instrumentais (IV)",
+            "panel_iv": "Panel IV com efeitos fixos",
+            "event_study": "Event Study (TWFE)",
+            "compare": "Comparação de métodos",
+            "scm": "Synthetic Control Method (SCM)",
+            "augmented_scm": "Augmented SCM (Ben-Michael 2021)",
+        }
+        method_label = METHOD_LABELS.get(method, method)
+
+        # ── Aba 1: Resumo Executivo ────────────────────────────────────────────
+        ws = wb.active
+        ws.title = "Resumo Executivo"
+
+        ws.append([f"Relatório de Impacto Econômico Portuário"])
+        ws["A1"].font = title_font
+        ws.append([f"Exportado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"])
+        ws.append([])
+
+        ws.append(["IDENTIFICAÇÃO DA ANÁLISE"])
+        ws[f"A{ws.max_row}"].font = section_font
+        ws.append(["ID da Análise", analysis_id])
+        ws[f"A{ws.max_row}"].font = bold
+        ws.append(["Método", method_label])
+        ws[f"A{ws.max_row}"].font = bold
+        if created_at:
+            ws.append(["Data de execução", str(created_at)[:19]])
+            ws[f"A{ws.max_row}"].font = bold
+        if duration is not None:
+            ws.append(["Duração (s)", duration])
+            ws[f"A{ws.max_row}"].font = bold
+        ws.append([])
+
+        # Parâmetros da análise
+        if request_params:
+            ws.append(["PARÂMETROS DA ANÁLISE"])
+            ws[f"A{ws.max_row}"].font = section_font
+            for key, value in request_params.items():
+                ws.append([str(key), str(value) if value is not None else "—"])
+                ws[f"A{ws.max_row}"].font = bold
+            ws.append([])
+
+        # Resultado principal do resumo
+        if result_summary:
+            ws.append(["RESULTADO PRINCIPAL"])
+            ws[f"A{ws.max_row}"].font = section_font
+            outcome_label = result_summary.get("outcome", "N/A")
+            coef = result_summary.get("coef")
+            std_err = result_summary.get("std_err")
+            p_value = result_summary.get("p_value")
+            n_obs = result_summary.get("n_obs")
+            ci_lower = result_summary.get("ci_lower")
+            ci_upper = result_summary.get("ci_upper")
+
+            rows_summary = [
+                ("Indicador (outcome)", outcome_label),
+                ("Coeficiente (ATT)", coef),
+                ("Erro padrão", std_err),
+                ("P-valor", p_value),
+                ("IC 95% inferior", ci_lower),
+                ("IC 95% superior", ci_upper),
+                ("Observações (N)", n_obs),
+            ]
+            for label, value in rows_summary:
+                ws.append([label, value if value is not None else "—"])
+                ws[f"A{ws.max_row}"].font = bold
+                if isinstance(value, float):
+                    self._fmt_number(ws, ws.max_row, 2, self.NUMBER_FMT)
+
+            significance = "Significativo (p < 5%)" if (
+                isinstance(p_value, float) and p_value < 0.05
+            ) else "Não significativo"
+            ws.append(["Significância estatística", significance])
+            ws[f"A{ws.max_row}"].font = bold
+            ws.append([])
+
+            # Avisos
+            warnings = result_summary.get("warnings", [])
+            if isinstance(warnings, list) and warnings:
+                ws.append(["AVISOS"])
+                ws[f"A{ws.max_row}"].font = section_font
+                for w in warnings:
+                    ws.append([f"• {w}"])
+
+        self._auto_size(ws)
+
+        # ── Aba 2: Coeficientes por Outcome ───────────────────────────────────
+        if isinstance(result_full, dict) and result_full:
+            ws2 = wb.create_sheet(title="Coeficientes")
+            ws2.append(["Indicador", "Coeficiente", "Erro Padrão", "P-valor", "IC Inf.", "IC Sup.", "N obs", "Significativo"])
+            for cell in ws2[1]:
+                cell.font = bold
+
+            skip_keys = {"comparison", "metadata", "main_result", "diagnostics"}
+            for outcome_key, outcome_val in result_full.items():
+                if outcome_key in skip_keys or not isinstance(outcome_val, dict):
+                    continue
+                main = outcome_val.get("main_result", outcome_val)
+                if not isinstance(main, dict):
+                    continue
+                coef = main.get("coef", main.get("att"))
+                se = main.get("std_err")
+                pv = main.get("p_value", main.get("pvalue"))
+                cil = main.get("ci_lower")
+                ciu = main.get("ci_upper")
+                nobs = main.get("n_obs")
+                sig = "Sim" if isinstance(pv, float) and pv < 0.05 else "Não"
+                ws2.append([outcome_key, coef, se, pv, cil, ciu, nobs, sig])
+                row = ws2.max_row
+                for col in [2, 3, 4, 5, 6]:
+                    self._fmt_number(ws2, row, col, self.NUMBER_FMT)
+            self._auto_size(ws2)
+
+        # ── Aba 3: Diagnósticos ────────────────────────────────────────────────
+        if isinstance(result_full, dict) and result_full.get("diagnostics"):
+            ws3 = wb.create_sheet(title="Diagnósticos")
+            ws3.append(["DIAGNÓSTICOS DO MODELO"])
+            ws3["A1"].font = title_font
+            ws3.append([])
+            diag = result_full["diagnostics"]
+            if isinstance(diag, dict):
+                ws3.append(["Diagnóstico", "Valor"])
+                for cell in ws3[ws3.max_row]:
+                    cell.font = bold
+                for dk, dv in diag.items():
+                    ws3.append([str(dk), str(dv) if dv is not None else "—"])
+            self._auto_size(ws3)
+
+        # ── Aba 4: Ficha Técnica ───────────────────────────────────────────────
+        ft = wb.create_sheet(title="Ficha Técnica")
+        ft.append(["FICHA TÉCNICA — ANÁLISE CAUSAL DE IMPACTO ECONÔMICO PORTUÁRIO"])
+        ft["A1"].font = title_font
+        ft.append([f"Exportado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"])
+        ft.append([])
+
+        ficha = [
+            ("SOBRE A METODOLOGIA", ""),
+            ("Base conceitual", "Inferência causal com dados de painel (municípios × anos)"),
+            ("Isolamento do efeito", "Efeitos fixos de município e tempo removem heterogeneidade não-observada"),
+            ("Interpretação do coeficiente", "Efeito médio do tratamento nos tratados (ATT) em unidades log ou nível"),
+            ("", ""),
+            ("MÉTODOS DISPONÍVEIS", ""),
+            ("DiD", "Two-Way Fixed Effects — comparação antes-depois entre tratados e controles"),
+            ("IV", "2SLS — instrumentalização da movimentação para isolar efeito causal"),
+            ("Panel IV", "IV com within-transformation + efeitos de tempo"),
+            ("Event Study", "TWFE por período relativo ao tratamento (validação de tendências paralelas)"),
+            ("Compare", "Execução simultânea de DiD + IV com avaliação de consistência"),
+            ("SCM", "Controle Sintético — constrói contrafactual ponderando doadores"),
+            ("ASCM", "Augmented SCM (Ben-Michael 2021) — SCM + ajuste Ridge para melhor pré-fit"),
+            ("", ""),
+            ("FONTES DE DADOS", ""),
+            ("Movimentação", "ANTAQ — Sistema de Desempenho Portuário"),
+            ("Emprego e renda", "RAIS (MTE) — Relação Anual de Informações Sociais"),
+            ("PIB municipal", "IBGE — Contas Nacionais Municipais"),
+            ("Comércio exterior", "MDIC — Sistema Aliceweb"),
+            ("", ""),
+            ("LIMITAÇÕES", ""),
+            ("Causalidade", "Resultados assumem validade das hipóteses de identificação do método escolhido"),
+            ("Extrapolação", "Estimativas válidas para o recorte temporal e geográfico analisado"),
+            ("Dados", "Qualidade depende da cobertura das bases ANTAQ/RAIS/IBGE"),
+            ("", ""),
+            ("NOTA LEGAL", "Este relatório é gerado automaticamente pelo sistema SaaS Impacto Portuário. "
+             "Os resultados representam estimativas econométricas e não constituem garantia de causalidade absoluta."),
+        ]
+        for item in ficha:
+            ft.append(list(item))
+            if item[0] and not item[1]:
+                ft[f"A{ft.max_row}"].font = section_font
+            elif item[0]:
+                ft[f"A{ft.max_row}"].font = bold
+        self._auto_size(ft)
+
+        if "Sheet" in wb.sheetnames:
+            wb.remove(wb["Sheet"])
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer, output_name
+
     @staticmethod
     def _auto_size(ws) -> None:
         for col_idx in range(1, ws.max_column + 1):

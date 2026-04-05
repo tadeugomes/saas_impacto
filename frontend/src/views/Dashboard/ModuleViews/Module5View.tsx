@@ -1058,7 +1058,7 @@ export function Module5View() {
   const [_analysesLoading, setAnalysesLoading] = useState(false);
   const [_analysesError, setAnalysesError] = useState<string | null>(null);
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
-  const [reportFormat, setReportFormat] = useState<'docx' | 'pdf' | 'xlsx'>('docx');
+  const [reportFormat, setReportFormat] = useState<'pdf' | 'xlsx'>('xlsx');
   const [isMatchingControls, setIsMatchingControls] = useState(false);
 
   const {
@@ -1502,7 +1502,7 @@ export function Module5View() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleDownloadReport = async (format: 'docx' | 'pdf' | 'xlsx' = reportFormat) => {
+  const handleDownloadReport = async (format: 'pdf' | 'xlsx' = reportFormat) => {
     if (!analysisToDisplay) {
       return;
     }
@@ -2501,12 +2501,11 @@ export function Module5View() {
                       </button>
                       <select
                         value={reportFormat}
-                        onChange={(e) => setReportFormat(e.target.value as 'docx' | 'pdf' | 'xlsx')}
+                        onChange={(e) => setReportFormat(e.target.value as 'pdf' | 'xlsx')}
                         className="h-8 rounded-lg border border-gray-300 text-xs text-gray-700 pl-2 pr-6 bg-white"
                       >
-                        <option value="docx">DOCX</option>
+                        <option value="xlsx">Excel (XLSX)</option>
                         <option value="pdf">PDF</option>
-                        <option value="xlsx">XLSX</option>
                       </select>
                       <button
                         onClick={() => { void handleDownloadReport(); }}

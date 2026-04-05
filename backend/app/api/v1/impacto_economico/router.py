@@ -57,7 +57,6 @@ from app.services.impacto_economico.analysis_service import (
     AnalysisService,
 )
 from app.services.audit_service import AuditService, get_audit_service
-from app.reports import ReportService
 from app.reports import PDFGenerator, XLSXGenerator
 from app.tasks.impacto_economico import run_economic_impact_analysis
 
@@ -703,9 +702,13 @@ async def simulate_impact(
 
 @router.get(
     "/analises/{analysis_id}/report",
-    summary="Gerar Relatório DOCX da Análise",
+    summary="Gerar Relatório da Análise (Excel/PDF)",
     description="""
-Gera e retorna um relatório DOCX consolidado para uma análise causal.
+Gera e retorna um relatório consolidado para uma análise causal.
+
+Formatos disponíveis:
+- `xlsx` (padrão): Excel com abas Resumo Executivo, Coeficientes, Diagnósticos, Ficha Técnica
+- `pdf`: PDF com tabela de resultados principais
 
 O relatório inclui:
 - Metadados da análise (método, status, período, escopo)
@@ -713,7 +716,7 @@ O relatório inclui:
 - Diagnósticos principais (parallel trends, first-stage, comparação metodológica)
 """,
     responses={
-        200: {"description": "Relatório DOCX gerado com sucesso."},
+        200: {"description": "Relatório gerado com sucesso."},
         404: {"description": "Análise não encontrada ou pertence a outro tenant."},
         409: {"description": "Relatório disponível apenas para análises com status=success."},
         500: {"description": "Falha ao gerar o relatório."},
@@ -723,9 +726,9 @@ async def get_analysis_report(
     analysis_id: uuid.UUID,
     service: AnalysisService = Depends(_get_analysis_service),
     _: User = Depends(require_module_permission(5, "read")),
-    format: Literal["docx", "pdf", "xlsx"] = Query(default="docx"),
+    format: Literal["xlsx", "pdf"] = Query(default="xlsx"),
 ) -> StreamingResponse:
-    """Gera e retorna o relatório DOCX de uma análise causal."""
+    """Gera e retorna o relatório Excel ou PDF de uma análise causal."""
     try:
         detail = await service.get_detail(analysis_id)
     except AnalysisNotFoundError as exc:
@@ -749,11 +752,7 @@ async def get_analysis_report(
         )
 
     try:
-        if format == "docx":
-            report_service = ReportService()
-            report_bytes, filename = report_service.generate_impact_analysis_report(detail)
-            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        elif format == "pdf":
+        if format == "pdf":
             impact_data: list[dict[str, Any]] = _normalize_impact_rows(detail)
             report_bytes, filename = PDFGenerator().build(
                 title=f"Relatório de Impacto Econômico - {analysis_id}",
@@ -763,10 +762,8 @@ async def get_analysis_report(
             )
             media_type = "application/pdf"
         elif format == "xlsx":
-            impact_data: list[dict[str, Any]] = _normalize_impact_rows(detail)
-            report_bytes, filename = XLSXGenerator().build_single_indicator(
-                code=f"impacto_economico_{detail.method}",
-                rows=impact_data,
+            report_bytes, filename = XLSXGenerator().build_impact_analysis(
+                detail=detail,
                 output_name=f"relatorio_impacto_{analysis_id}.xlsx",
             )
             media_type = (
