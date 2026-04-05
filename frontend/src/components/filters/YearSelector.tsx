@@ -2,7 +2,7 @@ import { useFilterStore } from '../../store/filterStore';
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
-const YEARS = Array.from({ length: 26 }, (_, i) => 2024 - i); // 1999-2024
+const YEARS = Array.from({ length: 28 }, (_, i) => 2026 - i); // 1999-2026
 
 export function YearSelector() {
   const { selectedYear, setYear } = useFilterStore();

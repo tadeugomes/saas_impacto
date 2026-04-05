@@ -24,3 +24,12 @@ frontend/.env
 
 # Playwright
 .playwright-cli/
+
+# Claude Code
+.claude/
+
+# Test results
+frontend/test-results/
+
+# Artefatos temporários
+resultado_forecast.txt
