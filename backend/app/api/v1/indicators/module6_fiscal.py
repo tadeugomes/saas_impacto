@@ -50,8 +50,14 @@ def _cached(key: str):
 
 
 def _get_panel():
-    """Carrega painel sem BigQuery (fixture estático apenas)."""
-    return build_panel_df(bq_client=None)
+    """Carrega painel com BigQuery quando disponível, caso contrário usa fixture."""
+    try:
+        from app.db.bigquery.client import get_bigquery_client
+        bq = get_bigquery_client()
+        return build_panel_df(bq_client=bq)
+    except Exception as exc:
+        logger.warning("module6_fiscal: BigQuery indisponível, usando fixture: %s", exc)
+        return build_panel_df(bq_client=None)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -64,6 +70,8 @@ class ElasticidadeResult(BaseModel):
     p_value: float
     n_obs: int
     n_portos: int
+    especificacao: Optional[str] = "pooled_ols"
+    fe_result: Optional[dict] = None
 
 
 class ScatterPoint(BaseModel):

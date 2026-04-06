@@ -301,6 +301,8 @@ export interface ElasticidadeResult {
   p_value: number;
   n_obs: number;
   n_portos: number;
+  especificacao?: string;
+  fe_result?: Record<string, number> | null;
 }
 
 export interface ScatterPoint {
