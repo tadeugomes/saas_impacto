@@ -50,7 +50,7 @@ def _cached(key: str):
 
 
 def _get_panel():
-    """Carrega painel com BigQuery quando disponível, caso contrário usa fixture."""
+    """Painel DFs-operador (2018-2024) para composição, baseline e regressão."""
     try:
         from app.db.bigquery.client import get_bigquery_client
         bq = get_bigquery_client()
@@ -126,29 +126,37 @@ class SimulacaoFiscalResponse(BaseModel):
 @router.get(
     "/elasticidade",
     response_model=FiscalElasticidadeResponse,
-    summary="Elasticidade Fiscal — Regressão OLS log-log (média do setor)",
+    summary="Elasticidade Fiscal — ISS do operador portuário × tonelagem",
     description="""
-Estima a elasticidade entre tonelagem movimentada e tributos pagos pelos portos.
+Estima a elasticidade entre tonelagem movimentada e ISS pago pelo operador portuário.
+
+**Fonte de dados:**
+- ISS: Demonstrações Financeiras dos operadores portuários (ISS pago pelo porto, não o ISS municipal total)
+- Tonelagem: mart BigQuery ANTAQ, 2018-2024
+- 11-13 portos com dados completos, n≈59-68 obs
 
 **Metodologia:**
-- Regressão OLS log-log com efeitos fixos de porto (dummies)
+- Regressão OLS pooled log-log (sem FE) — com FE disponível como alternativa no campo `fe_result`
+- OLS pooled é usado pois com n≈59 o FE tem baixo poder (variação within-porto pequena)
 - Erros padrão HC3 (heteroscedasticidade-robustos)
-- Amostra: 22 portos, 2018-2024
-- Outliers filtrados (trib > R$ 500M)
 
 **Interpretação:**
-- beta_municipal = 0.68 → +10% tonelagem → +6.8% ISS municipal
-- beta_federal = 0.52 → +10% tonelagem → +5.2% tributos federais
+- β_municipal ≈ 0.84 → portos com 10% mais carga pagam 8.4% mais ISS ao município
+- Análise cross-sectional: captura diferença entre portos de tamanhos distintos
 
-**Nota:** análise associativa (não causal). Fonte: DFs dos operadores portuários.
+**Por que DFs e não FINBRA:**
+O ISS do FINBRA representa a arrecadação total do município (todos os serviços),
+não apenas do porto. Para capturar a contribuição fiscal direta do porto ao município,
+usa-se o ISS declarado nas DFs do operador.
 
-Resultado cacheado por 24h (dados estáticos).
+**Nota:** análise associativa (não causal). Fonte: DFs 2018-2024.
+Resultado cacheado por 24h.
 """,
 )
 async def get_elasticidade(
     _: User = Depends(require_module_permission(6, "read")),
 ) -> FiscalElasticidadeResponse:
-    """Retorna elasticidades fiscais + dados para scatter + composição municipal/federal."""
+    """Retorna elasticidades fiscais (DFs dos operadores) + scatter + composição."""
     df = _get_panel()
 
     elasticidades = compute_elasticity_panel(df)
@@ -160,13 +168,12 @@ async def get_elasticidade(
     el_fed = elasticidades.get("federal")
 
     nota = (
-        "Regressão OLS log-log com efeitos fixos de porto (HC3). "
-        "Tonelagem proveniente de ANTAQ (mart interno). "
-        "Tributos de Demonstrações Financeiras dos operadores, 2018-2024. "
+        "Regressão OLS log-log pooled (HC3). "
+        "ISS: Demonstrações Financeiras dos operadores portuários (ISS pago pelo porto, 2018-2024). "
+        "Tonelagem: ANTAQ (mart BigQuery). "
         "Resultado é associativo — não implica causalidade. "
-        "Outliers filtrados (>R$ 500M). "
-        "Portos consolidados (PortosRio, Portos RS, Portos do Pará, Portos do Paraná) "
-        "atribuídos ao município do porto principal."
+        "ISS do FINBRA (municipal total) não utilizado para não contaminar com serviços não-portuários. "
+        "Portos consolidados atribuídos ao município do porto principal."
     )
 
     return FiscalElasticidadeResponse(

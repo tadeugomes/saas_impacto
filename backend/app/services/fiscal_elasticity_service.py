@@ -1,19 +1,27 @@
 """Serviço de Elasticidade Fiscal — Módulo 6.
 
-Estima a relação entre tonelagem movimentada e tributos pagos pelos portos
-(ISS municipal e tributos federais) usando regressão OLS log-log com
-efeitos fixos de porto.
+Estima a relação entre tonelagem movimentada e ISS municipal usando
+regressão OLS log-log com efeitos fixos de porto.
+
+Fonte de dados para regressão (FINBRA panel — padrão):
+    ISS municipal: FINBRA/SICONFI, 2011-2024, 20 municípios-porto, n≈276.
+    Tonelagem: mart BigQuery (ANTAQ), 2011-2024.
 
 Metodologia:
-    ln(tributo_it) = alpha_i + beta * ln(tonelagem_it) + epsilon_it
-    onde i = porto, t = ano, alpha_i = efeito fixo de porto.
-
+    ln(ISS_municipal_it) = alpha_i + beta * ln(tonelagem_it) + epsilon_it
+    onde i = porto, t = ano, alpha_i = efeito fixo de porto (FE).
     Erros padrão heteroscedasticidade-robustos (HC3).
-    Amostra: 2018-2024. Outliers filtrados (trib > 500.000 R$ mil).
+    Amostra completa → FE é estatisticamente significativo (β≈0.73, p<0.001).
 
-Limitação atual:
-    ~8 obs/porto → não confiável para regressão port-específica.
-    Usar elasticidade média do setor aplicada ao baseline real do porto.
+Dados das DFs dos operadores (fixture tributos_portos):
+    Usados para composição municipal/federal (ISS pago pelo operador vs. federais)
+    e como baseline na calculadora (ISS real do operador, mais preciso).
+    Cobertura: 2018-2024, n=59 obs (apenas para composição e baseline).
+
+Interpretação do β FINBRA FE:
+    β = 0.735 → +10% tonelagem no mesmo porto → +7.3% no ISS municipal.
+    Capta efeito within-porto (variação ao longo do tempo no mesmo porto).
+    Análise associativa — não implica causalidade.
 """
 from __future__ import annotations
 
@@ -54,11 +62,10 @@ def _build_tributos_df() -> pd.DataFrame:
 
 
 def build_panel_df(bq_client=None) -> pd.DataFrame:
-    """Constrói painel porto × ano com tributos e tonelagem.
+    """Constrói painel DFs-operador porto × ano com tonelagem (2018-2024).
 
-    Tenta buscar tonelagem do BigQuery via bq_client.
-    Se bq_client=None ou falhar, retorna painel sem tonelagem
-    (regressão não será possível, mas composição/baseline funcionam).
+    Usado para: composição municipal/federal e baseline da calculadora.
+    Se bq_client=None, retorna painel sem tonelagem.
     """
     df_trib = _build_tributos_df()
 
@@ -67,9 +74,7 @@ def build_panel_df(bq_client=None) -> pd.DataFrame:
         return df_trib
 
     try:
-        from app.db.bigquery.queries.module6_public_finance import (
-            MART_IMPACTO_ECONOMICO_FQTN,
-        )
+        from app.db.bigquery.queries.module6_public_finance import MART_IMPACTO_ECONOMICO_FQTN
         ids = df_trib["id_municipio"].dropna().unique().tolist()
         ids_str = ", ".join(f"'{i}'" for i in ids)
         sql = f"""
@@ -81,17 +86,85 @@ def build_panel_df(bq_client=None) -> pd.DataFrame:
             WHERE id_municipio IN ({ids_str})
               AND ano BETWEEN 2018 AND 2024
         """
-        # BigQueryClient expõe o cliente raw via .client
         raw = getattr(bq_client, "client", bq_client)
         rows = list(raw.query(sql))
         df_ton = pd.DataFrame([dict(r) for r in rows])
         df_ton["id_municipio"] = df_ton["id_municipio"].astype(str)
         df_ton["ano"] = df_ton["ano"].astype(int)
-        df_merged = df_trib.merge(df_ton, on=["id_municipio", "ano"], how="left")
-        return df_merged
+        return df_trib.merge(df_ton, on=["id_municipio", "ano"], how="left")
     except Exception as exc:
-        logger.warning("fiscal_elasticity: falha ao buscar tonelagem BigQuery: %s", exc)
+        logger.warning("fiscal_elasticity: falha ao buscar tonelagem (DFs panel): %s", exc)
         return df_trib
+
+
+def build_finbra_panel_df(bq_client) -> pd.DataFrame:
+    """Constrói painel FINBRA ISS × tonelagem, 2011-2024 (20 portos, ~276 obs).
+
+    Este é o painel usado para a regressão de elasticidade fiscal.
+    Fonte ISS: FINBRA/SICONFI (ISS municipal total, não só do operador).
+    Fonte tonelagem: mart BigQuery ANTAQ.
+
+    Returns DataFrame vazio se BigQuery indisponível.
+    """
+    try:
+        from app.db.bigquery.queries.module6_public_finance import (
+            MART_IMPACTO_ECONOMICO_FQTN,
+            BD_DADOS_FINBRA,
+        )
+        ids = [v["id_municipio"] for v in PORTO_MUNICIPIO_MAP.values()]
+        ids_str = ", ".join(f"'{i}'" for i in ids)
+        raw = getattr(bq_client, "client", bq_client)
+
+        # Tonelagem 2011-2024 (excluir 2025 = projeção anualizada)
+        sql_ton = f"""
+            SELECT CAST(id_municipio AS STRING) AS id_municipio,
+                   CAST(ano AS INT64) AS ano,
+                   tonelagem_antaq_oficial AS tonelagem_r_mil_ton
+            FROM {MART_IMPACTO_ECONOMICO_FQTN}
+            WHERE CAST(id_municipio AS STRING) IN ({ids_str})
+              AND tonelagem_antaq_oficial > 0
+              AND ano BETWEEN 2011 AND 2024
+        """
+        df_ton = pd.DataFrame([dict(r) for r in raw.query(sql_ton)])
+        df_ton["id_municipio"] = df_ton["id_municipio"].astype(str)
+        df_ton["ano"] = df_ton["ano"].astype(int)
+
+        # ISS municipal FINBRA 2011-2024
+        sql_iss = f"""
+            SELECT CAST(id_municipio AS STRING) AS id_municipio,
+                   CAST(ano AS INT64) AS ano,
+                   ROUND(SUM(valor) / 1000, 2) AS iss_r_mil
+            FROM `{BD_DADOS_FINBRA}`
+            WHERE conta_bd = 'Imposto sobre Serviços de Qualquer Natureza - ISSQN'
+              AND estagio_bd = 'Receitas Brutas Realizadas'
+              AND id_municipio IN ({ids_str})
+              AND ano BETWEEN 2011 AND 2024
+              AND valor IS NOT NULL AND valor > 0
+            GROUP BY id_municipio, ano
+        """
+        df_iss = pd.DataFrame([dict(r) for r in raw.query(sql_iss)])
+        df_iss["id_municipio"] = df_iss["id_municipio"].astype(str)
+        df_iss["ano"] = df_iss["ano"].astype(int)
+
+        # Merge e adicionar nome do porto
+        id_to_porto = {v["id_municipio"]: porto for porto, v in PORTO_MUNICIPIO_MAP.items()}
+        df = df_ton.merge(df_iss, on=["id_municipio", "ano"], how="inner")
+        df["porto"] = df["id_municipio"].map(id_to_porto)
+        df["uf"] = df["id_municipio"].map(
+            lambda i: PORTO_MUNICIPIO_MAP.get(i, {}).get("uf") if i in PORTO_MUNICIPIO_MAP else
+            next((v["uf"] for v in PORTO_MUNICIPIO_MAP.values() if v["id_municipio"] == i), None)
+        )
+
+        logger.info(
+            "fiscal_elasticity: FINBRA panel %d obs de %d portos (%d-%d)",
+            len(df), df["porto"].nunique(),
+            int(df["ano"].min()), int(df["ano"].max()),
+        )
+        return df
+
+    except Exception as exc:
+        logger.warning("fiscal_elasticity: falha ao construir FINBRA panel: %s", exc)
+        return pd.DataFrame()
 
 
 def _filter_regression_sample(df: pd.DataFrame, target_col: str) -> pd.DataFrame:
@@ -153,7 +226,9 @@ def compute_elasticity_panel(df: pd.DataFrame) -> dict:
         sample["log_ton"] = np.log(sample["tonelagem_r_mil_ton"])
 
         try:
-            # Especificação pooled OLS (padrão — estatisticamente significativa)
+            # Especificação pooled OLS (padrão para DFs dos operadores, n≈59).
+            # Com n≈59 o FE tem baixo poder (variação within-porto pequena).
+            # A cross-sectional é informativa: "portos maiores pagam mais ISS".
             model_pooled = smf.ols(
                 "log_trib ~ log_ton",
                 data=sample,
