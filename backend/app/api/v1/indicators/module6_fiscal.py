@@ -282,7 +282,12 @@ async def get_participacao_iss(
     _: User = Depends(require_module_permission(6, "read")),
 ) -> ParticipacaoISSResponse:
     """Retorna participação do porto no ISS municipal por porto com série histórica."""
-    bq = _get_bq()
+    try:
+        from app.db.bigquery.client import get_bigquery_client
+        bq = get_bigquery_client()
+    except Exception:
+        bq = None
+
     if bq is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
