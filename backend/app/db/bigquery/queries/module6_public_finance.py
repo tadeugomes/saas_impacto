@@ -55,23 +55,30 @@ def _as_mart_filters(
     ano_inicio: Optional[int] = None,
     ano_fim: Optional[int] = None,
 ) -> str:
-    """Monta filtros padrão para o mart de impacto (tonelagem)."""
-    clauses = ["m.tonelagem_antaq_oficial IS NOT NULL"]
+    """Monta filtros padrão para o mart de impacto (tonelagem).
+    Usa colunas sem alias — compatível com CTEs e queries diretas.
+    """
+    clauses = ["tonelagem_antaq_oficial IS NOT NULL"]
     if id_municipio:
-        clauses.append(f"m.id_municipio = '{id_municipio}'")
+        clauses.append(f"id_municipio = '{id_municipio}'")
     if ano:
-        clauses.append(f"m.ano = {ano}")
+        clauses.append(f"ano = {ano}")
     elif ano_inicio and ano_fim:
-        clauses.append(f"m.ano BETWEEN {ano_inicio} AND {ano_fim}")
+        clauses.append(f"ano BETWEEN {ano_inicio} AND {ano_fim}")
     return "\n        AND ".join(clauses) if clauses else ""
 
 
 def _safe_order_by_id_ou_ano(
     id_municipio: Optional[str],
     valor_alias: str = "valor",
-    tempo_alias: str = "m.ano",
+    tempo_alias: str = "ano",  # Sem alias de tabela — compatível com CTE e queries diretas
 ) -> str:
     return f"{tempo_alias} DESC" if id_municipio else f"{valor_alias} DESC"
+
+
+def _strip_alias(where_sql: str) -> str:
+    """Remove prefixos de alias (r., m.) de filtros para uso dentro de CTEs sem alias."""
+    return where_sql.replace("r.", "").replace("m.", "")
 
 
 def _safe_where(sql_where: str) -> str:
@@ -195,11 +202,12 @@ def query_receita_per_capita(
     """
     IND-6.04: Receita per Capita Municipal.
     """
-    where_sql = _as_int_filters(id_municipio, ano, ano_inicio, ano_fim)
+    # CTE sem alias — filtros sem prefixo r./m.
+    where_sql = _strip_alias(_as_int_filters(id_municipio, ano, ano_inicio, ano_fim))
     return f"""
     WITH receitas AS (
         SELECT
-            id_municipio,
+            CAST(id_municipio AS STRING) AS id_municipio,
             CAST(ano AS INT64) AS ano,
             ROUND(SUM(valor), 2) AS receita_total
         FROM `{BD_DADOS_FINBRA}`
@@ -216,10 +224,9 @@ def query_receita_per_capita(
         r.ano,
         ROUND(r.receita_total / NULLIF(pop.populacao, 0), 2) AS receita_per_capita
     FROM receitas r
-    INNER JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` d
-        ON r.id_municipio = d.id_municipio
     INNER JOIN `basedosdados.br_ibge_populacao.municipio` pop
-        ON r.id_municipio = pop.id_municipio AND r.ano = pop.ano
+        ON CAST(r.id_municipio AS STRING) = CAST(pop.id_municipio AS STRING)
+        AND r.ano = pop.ano
     LEFT JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir
         ON r.id_municipio = dir.id_municipio
     WHERE pop.populacao IS NOT NULL
@@ -277,7 +284,8 @@ def _query_finbra_tributos_agregados(
     """
     CTE auxiliar comum para receita fiscal (ICMS + ISS).
     """
-    where_sql = _as_int_filters(id_municipio, ano, ano_inicio, ano_fim)
+    # CTE sem alias de tabela — usar filtros sem prefixo r./m.
+    where_sql = _strip_alias(_as_int_filters(id_municipio, ano, ano_inicio, ano_fim))
     return f"""
     WITH receitas_tributarias AS (
         SELECT
@@ -426,7 +434,7 @@ def query_iss_por_tonelada(
     Usa ISSQN (Imposto Sobre Serviços de Qualquer Natureza) pois a atividade
     portuária é tributada como serviço — o ICMS tem incidência mínima em portos.
     """
-    receita_where = _as_int_filters(id_municipio, ano, ano_inicio, ano_fim)
+    receita_where = _strip_alias(_as_int_filters(id_municipio, ano, ano_inicio, ano_fim))
     tonelagem_where = _as_mart_filters(id_municipio, ano, ano_inicio, ano_fim)
     order_by = _safe_order_by_id_ou_ano(id_municipio, "iss_por_tonelada")
     return f"""
