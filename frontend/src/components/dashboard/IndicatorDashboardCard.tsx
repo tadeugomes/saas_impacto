@@ -3,8 +3,8 @@ import { ChartCard } from '../charts/ChartCard';
 import { BarChart } from '../charts/BarChart';
 import { PieChart } from '../charts/PieChart';
 import { formatByType } from '../../utils/numberFormat';
-
 import { getIndicatorFormat } from '../../utils/chartFormats';
+import { MODULE_ACCENT, moduleFromIndicatorCode } from '../../styles/chartTheme';
 
 type ChartType = 'bar' | 'pie' | 'metric';
 
@@ -84,9 +84,7 @@ export function IndicatorDashboardCard({
     for (const item of source) {
       const rawValue = valueAccessor ? valueAccessor(item) : item?.[valueField];
       const value = parseNumber(rawValue);
-      if (value === null) {
-        continue;
-      }
+      if (value === null) continue;
 
       const rawLabel = labelAccessor
         ? labelAccessor(item)
@@ -94,9 +92,10 @@ export function IndicatorDashboardCard({
           ? item?.[labelField]
           : item?.id_municipio || item?.nome_municipio || item?.id_instalacao;
 
-      const label = rawLabel === undefined || rawLabel === null || rawLabel === ''
-        ? fallbackLabel
-        : String(rawLabel);
+      const label =
+        rawLabel === undefined || rawLabel === null || rawLabel === ''
+          ? fallbackLabel
+          : String(rawLabel);
       resolvedRows.push({ label, value });
     }
 
@@ -112,16 +111,14 @@ export function IndicatorDashboardCard({
   const topTableRows = rows.slice(0, tableRows);
 
   const chartValueFormat = getIndicatorFormat(indicatorCode);
+  const moduleNum = moduleFromIndicatorCode(indicatorCode);
+  const accentColor = MODULE_ACCENT[moduleNum] ?? MODULE_ACCENT[1];
 
-  // Se há dados, warnings são informativos (mostrados como extraInfo).
-  // Se não há dados, warnings explicam o motivo (mostrados como erro bloqueante).
   const hasData = topChartRows.length > 0;
   const warningText = warnings && warnings.length > 0 ? warnings.join(' | ') : null;
 
   const resolvedError: string | null = error
-    ?? (!hasData
-      ? (warningText ?? 'Sem dados para o filtro selecionado.')
-      : null);
+    ?? (!hasData ? (warningText ?? 'Sem dados para o filtro selecionado.') : null);
 
   const extraInfoText: string | undefined = hasData && warningText ? warningText : undefined;
 
@@ -133,16 +130,23 @@ export function IndicatorDashboardCard({
       isLoading={isLoading}
       error={resolvedError ?? undefined}
       extraInfo={extraInfoText}
+      accentColor={accentColor}
     >
       {chartType === 'metric' ? (
         <div className="h-64 flex items-center justify-center">
           {topChartRows.length > 0 ? (
             <div className="text-center">
-              <p className="text-4xl font-bold text-primary">{formatDisplayValue(topChartRows[0].value, indicatorCode)}</p>
-              <p className="text-gray-500 mt-2">Maior valor observado</p>
+              <p
+                className="text-5xl font-extrabold"
+                style={{ color: accentColor }}
+              >
+                {formatDisplayValue(topChartRows[0].value, indicatorCode)}
+              </p>
+              <p className="text-sm text-gray-500 mt-2 font-medium">{topChartRows[0].label}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Maior valor observado</p>
             </div>
           ) : (
-            <div className="text-gray-400">Sem dados disponíveis</div>
+            <div className="text-gray-400 text-sm">Sem dados disponíveis</div>
           )}
         </div>
       ) : chartType === 'pie' ? (
@@ -158,6 +162,7 @@ export function IndicatorDashboardCard({
             {
               label: unit ?? title,
               data: topChartRows.map((row) => row.value),
+              backgroundColor: accentColor,
             },
           ]}
           yAxisLabel={unit || title}
@@ -166,30 +171,52 @@ export function IndicatorDashboardCard({
         />
       )}
 
-      {topChartRows.length > 0 && topTableRows.length > 0 ? (
+      {topChartRows.length > 0 && topTableRows.length > 0 && (
         <div className="mt-4">
-          <p className="text-xs font-semibold text-gray-600 mb-1">Top {topTableRows.length} em ranking</p>
-          <div className="overflow-auto">
+          <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+            Top {topTableRows.length}
+          </p>
+          <div className="overflow-auto rounded-lg border border-gray-100">
             <table className="w-full text-xs text-left">
-              <thead className="text-gray-500 border-b border-gray-100">
-                <tr>
-                  <th className="py-2 pr-3 font-medium">Label</th>
-                  <th className="py-2 pr-3 font-medium text-right">Valor</th>
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="py-2 px-3 font-semibold text-gray-500">#</th>
+                  <th className="py-2 px-3 font-semibold text-gray-500">Nome</th>
+                  <th className="py-2 px-3 font-semibold text-gray-500 text-right">Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {topTableRows.map((row) => (
-                  <tr key={`${indicatorCode}-${row.label}`} className="border-b border-gray-50 last:border-b-0">
-                    <td className="py-2 pr-3">{row.label}</td>
-                    <td className="py-2 pr-3 text-right font-mono">{formatDisplayValue(row.value, indicatorCode)}</td>
+                {topTableRows.map((row, idx) => (
+                  <tr
+                    key={`${indicatorCode}-${row.label}`}
+                    className={`border-b border-gray-50 last:border-b-0 ${
+                      idx === 0 ? 'bg-blue-50/60' : idx % 2 === 0 ? 'bg-gray-50/40' : 'bg-white'
+                    }`}
+                  >
+                    <td className="py-2 px-3">
+                      {idx === 0 ? (
+                        <span
+                          className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white"
+                          style={{ backgroundColor: accentColor }}
+                        >
+                          1
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">{idx + 1}</span>
+                      )}
+                    </td>
+                    <td className={`py-2 px-3 ${idx === 0 ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
+                      {row.label}
+                    </td>
+                    <td className={`py-2 px-3 text-right font-mono ${idx === 0 ? 'font-bold' : 'text-gray-600'}`}>
+                      {formatDisplayValue(row.value, indicatorCode)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
-      ) : (
-        <p className="mt-4 text-xs text-gray-400">Sem dados para renderizar ranking.</p>
       )}
     </ChartCard>
   );

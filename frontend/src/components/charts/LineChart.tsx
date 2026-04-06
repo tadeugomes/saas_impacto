@@ -9,9 +9,11 @@ import {
   Tooltip,
   Legend,
   Filler,
+  type ScriptableContext,
 } from 'chart.js';
 import { useMemo } from 'react';
 import { createTooltipCallback, createTickCallback, type ChartValueFormat } from '../../utils/chartFormats';
+import { CHART_COLORS, CHART_FONT, GRID_COLOR, hexToRgba } from '../../styles/chartTheme';
 
 ChartJS.register(
   CategoryScale,
@@ -37,16 +39,6 @@ interface LineChartProps {
   yAxisFormat?: ChartValueFormat;
 }
 
-const COLORS = {
-  module1: '#3b82f6',
-  module2: '#10b981',
-  module3: '#f59e0b',
-  module4: '#8b5cf6',
-  module5: '#ec4899',
-  module6: '#14b8a6',
-  module7: '#6366f1',
-};
-
 export function LineChart({
   labels,
   datasets,
@@ -61,15 +53,31 @@ export function LineChart({
     plugins: {
       legend: {
         position: 'top' as const,
+        labels: {
+          font: { size: 11, family: CHART_FONT },
+          color: '#64748b',
+          usePointStyle: true,
+          pointStyleWidth: 8,
+          padding: 16,
+        },
       },
       title: {
         display: !!title,
         text: title,
-        font: { size: 14, weight: 'bold' as const },
+        font: { size: 13, weight: 'bold' as const, family: CHART_FONT },
+        color: '#0f172a',
+        padding: { bottom: 14 },
       },
       tooltip: {
         mode: 'index' as const,
         intersect: false,
+        backgroundColor: '#0f172a',
+        titleFont: { size: 12, weight: 'bold' as const, family: CHART_FONT },
+        bodyFont: { size: 11, family: CHART_FONT },
+        padding: 12,
+        cornerRadius: 8,
+        displayColors: true,
+        boxPadding: 4,
         callbacks: {
           label: createTooltipCallback(yAxisFormat || 'number'),
         },
@@ -77,24 +85,31 @@ export function LineChart({
     },
     scales: {
       x: {
-        grid: {
-          display: false,
+        grid: { display: false },
+        border: { display: false },
+        ticks: {
+          font: { size: 11, family: CHART_FONT },
+          color: '#64748b',
         },
       },
       y: {
         beginAtZero: yAxisBeginAtZero,
-        ticks: yAxisFormat
-          ? {
-              callback: createTickCallback({ format: yAxisFormat }),
-            }
-          : undefined,
-        title: {
-          display: !!yAxisLabel,
-          text: yAxisLabel,
+        grid: { color: GRID_COLOR },
+        border: { display: false },
+        ticks: {
+          font: { size: 11, family: CHART_FONT },
+          color: '#64748b',
+          padding: 8,
+          ...(yAxisFormat ? { callback: createTickCallback({ format: yAxisFormat }) } : {}),
         },
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        },
+        ...(yAxisLabel ? {
+          title: {
+            display: true,
+            text: yAxisLabel,
+            font: { size: 11, family: CHART_FONT },
+            color: '#94a3b8',
+          },
+        } : {}),
       },
     },
     interaction: {
@@ -102,18 +117,38 @@ export function LineChart({
       axis: 'x' as const,
       intersect: false,
     },
+    animation: {
+      duration: 600,
+      easing: 'easeOutCubic' as const,
+    },
   }), [title, yAxisLabel, yAxisBeginAtZero, yAxisFormat]);
 
   const chartData = useMemo(() => ({
     labels,
-    datasets: datasets.map((ds, i) => ({
-      ...ds,
-      borderColor: ds.borderColor || Object.values(COLORS)[i % 7],
-      backgroundColor: ds.backgroundColor || `${Object.values(COLORS)[i % 7]}20`,
-      tension: 0.3,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-    })),
+    datasets: datasets.map((ds, i) => {
+      const lineColor = (ds.borderColor as string | undefined) || CHART_COLORS[i % CHART_COLORS.length];
+      return {
+        ...ds,
+        borderColor: lineColor,
+        borderWidth: 2.5,
+        tension: 0.35,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointBackgroundColor: lineColor,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        fill: true,
+        backgroundColor: (ctx: ScriptableContext<'line'>) => {
+          const chart = ctx.chart;
+          const { ctx: canvasCtx, chartArea } = chart;
+          if (!chartArea) return hexToRgba(lineColor, 0.1);
+          const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          gradient.addColorStop(0, hexToRgba(lineColor, 0.22));
+          gradient.addColorStop(1, hexToRgba(lineColor, 0.02));
+          return gradient;
+        },
+      };
+    }),
   }), [labels, datasets]);
 
   return (
