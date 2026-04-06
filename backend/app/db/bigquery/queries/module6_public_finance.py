@@ -468,9 +468,6 @@ def query_iss_por_tonelada(
     """
 
 
-# Alias para compatibilidade retroativa
-query_icms_por_tonelada = query_iss_por_tonelada
-
 
 def query_correlacao_tonelagem_receita_fiscal(
     id_municipio: Optional[str] = None,
