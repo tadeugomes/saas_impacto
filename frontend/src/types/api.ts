@@ -290,3 +290,57 @@ export interface ImpactSimulationResponse {
   assumptions: string[];
   executive_summary: string[];
 }
+
+// ── Módulo 6: Contribuição Fiscal Direta ─────────────────────────────────────
+
+export interface ElasticidadeResult {
+  beta: number;
+  ci_lower: number;
+  ci_upper: number;
+  r2: number;
+  p_value: number;
+  n_obs: number;
+  n_portos: number;
+}
+
+export interface ScatterPoint {
+  porto: string;
+  uf: string;
+  ano: number;
+  tonelagem_m_ton: number;
+  iss_r_mi: number;
+  trib_federais_r_mi?: number | null;
+}
+
+export interface CompositionItem {
+  porto: string;
+  uf: string;
+  municipal_r_mi: number;
+  federal_r_mi: number;
+  total_r_mi: number;
+  pct_municipal: number;
+  pct_federal: number;
+}
+
+export interface FiscalElasticidadeResponse {
+  elasticidade_municipal: ElasticidadeResult | null;
+  elasticidade_federal: ElasticidadeResult | null;
+  scatter_points: ScatterPoint[];
+  composition: CompositionItem[];
+  portos_disponiveis: string[];
+  nota_metodologica: string;
+}
+
+export interface SimulacaoFiscalResponse {
+  porto: string;
+  ano_referencia: number | null;
+  shock_pct: number;
+  baseline_municipal_r_mi: number | null;
+  baseline_federal_r_mi: number | null;
+  delta_municipal_r_mi: number | null;
+  delta_federal_r_mi: number | null;
+  delta_municipal_ci: [number, number] | null;
+  delta_federal_ci: [number, number] | null;
+  elasticidade_usada: string;
+  nota: string;
+}

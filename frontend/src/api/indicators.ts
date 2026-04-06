@@ -9,6 +9,8 @@ import type {
   MunicipioLookupResponse,
   TenantPoliciesResponse,
   InstallationMunicipioResolution,
+  FiscalElasticidadeResponse,
+  SimulacaoFiscalResponse,
 } from '../types/api';
 
 export const indicatorsService = {
@@ -104,5 +106,24 @@ export const indicatorsService = {
 
   async getIndiceParalisacao(params?: FilterParams) {
     return this.queryIndicator({ codigo_indicador: 'IND-1.12', params });
+  },
+
+  // Módulo 6 — Contribuição Fiscal Direta
+  async getFiscalElasticidade(): Promise<FiscalElasticidadeResponse> {
+    const response = await apiClient.get<FiscalElasticidadeResponse>(
+      '/api/v1/indicators/module6/fiscal/elasticidade',
+    );
+    return response.data;
+  },
+
+  async simulateFiscalImpact(
+    porto: string | null,
+    shockPct: number,
+  ): Promise<SimulacaoFiscalResponse> {
+    const response = await apiClient.post<SimulacaoFiscalResponse>(
+      '/api/v1/indicators/module6/fiscal/simulacao',
+      { porto, shock_pct: shockPct },
+    );
+    return response.data;
   },
 };

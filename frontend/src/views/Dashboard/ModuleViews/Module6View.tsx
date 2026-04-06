@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { ContribuicaoFiscalSection } from '../../../components/fiscalElasticity/ContribuicaoFiscalSection';
 
 import { FilterBar } from '../../../components/filters/FilterBar';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
@@ -503,6 +504,25 @@ export function Module6View() {
       <FilterBar selectorMode="municipio" />
 
       {error && <ErrorAlert message={error} className="mb-6" />}
+
+      {/* ── Contribuição Fiscal Direta ────────────────────────────────────── */}
+      <div className="mt-6 mb-6">
+        <section className="card space-y-4">
+          <details open>
+            <summary className="w-full flex items-center justify-between text-left cursor-pointer">
+              <h2 className="text-base font-semibold text-gray-800">
+                Contribuição Fiscal Direta dos Portos
+              </h2>
+              <span className="text-xs text-gray-400 ml-2">
+                ISS + tributos federais por operadores — DFs 2018-2024
+              </span>
+            </summary>
+            <div className="mt-4">
+              <ContribuicaoFiscalSection />
+            </div>
+          </details>
+        </section>
+      </div>
 
       <div className="space-y-6">
         {Object.entries(localizedIndicatorsByGroup).map(([group, indicatorsOfGroup]) => {
