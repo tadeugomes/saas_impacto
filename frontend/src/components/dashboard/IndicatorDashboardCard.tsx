@@ -34,6 +34,7 @@ interface IndicatorDashboardCardProps {
   topN?: number;
   tableRows?: number;
   error?: string | null;
+  tooltipAfterLabel?: false | ((context: import('chart.js').TooltipItem<'bar'>) => string);
 }
 
 function parseNumber(value: unknown): number | null {
@@ -76,6 +77,7 @@ export function IndicatorDashboardCard({
   tableRows = 5,
   error,
   warnings,
+  tooltipAfterLabel,
 }: IndicatorDashboardCardProps) {
   const rows = useMemo<IndicatorRow[]>(() => {
     const source: RawIndicatorRecord[] = data?.data ?? [];
@@ -168,6 +170,7 @@ export function IndicatorDashboardCard({
           yAxisLabel={unit || title}
           valueFormat={chartValueFormat}
           horizontal
+          tooltipAfterLabel={tooltipAfterLabel}
         />
       )}
 

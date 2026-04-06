@@ -18,6 +18,7 @@ interface IndicatorConfig {
   chartType: 'bar' | 'pie' | 'metric';
   valueField: string;
   labelField?: string;
+  tooltipContext?: string;
 }
 
 const INDICATORS_INFO: IndicatorConfig[] = [
@@ -29,6 +30,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'c_cais_bruta',
     labelField: 'perfil_carga',
+    tooltipContext: 'da capacidade do maior berço',
   },
   {
     code: 'IND-12.02',
@@ -38,6 +40,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'bor_obs_pct',
     labelField: 'perfil_carga',
+    tooltipContext: 'do berço mais ocupado',
   },
   {
     code: 'IND-12.03',
@@ -47,6 +50,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'bur_obs_pct',
     labelField: 'perfil_carga',
+    tooltipContext: 'do berço mais utilizado',
   },
   {
     code: 'IND-12.04',
@@ -56,6 +60,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'mean_lm',
     labelField: 'perfil_carga',
+    tooltipContext: 'do maior volume médio',
   },
   {
     code: 'IND-12.05',
@@ -65,6 +70,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'mean_ta_h',
     labelField: 'perfil_carga',
+    tooltipContext: 'do maior tempo de permanência',
   },
   {
     code: 'IND-12.06',
@@ -83,6 +89,7 @@ const INDICATORS_INFO: IndicatorConfig[] = [
     chartType: 'bar',
     valueField: 'folga_operacional',
     labelField: 'perfil_carga',
+    tooltipContext: 'da maior folga disponível',
   },
 ];
 
@@ -140,6 +147,19 @@ const createEmptyIndicatorResponse = (codigoIndicador: string): ModuleIndicatorR
   unctad: false,
   data: [],
 });
+
+const buildTooltipAfterLabel = (contextLabel: string) => {
+  return (context: import('chart.js').TooltipItem<'bar'>) => {
+    const allData = (context.dataset.data as (number | null)[])
+      .map(Number)
+      .filter((v): v is number => Number.isFinite(v));
+    if (allData.length === 0) return '';
+    const max = Math.max(...allData);
+    if (max === 0) return '';
+    const pct = Math.round((Number(context.raw) / max) * 100);
+    return `${pct}% ${contextLabel}`;
+  };
+};
 
 const formatNumber = (value: number | null | undefined): string => {
   if (value === null || value === undefined) return '-';
@@ -396,6 +416,7 @@ export function Module12View() {
             valueField={ind.valueField}
             labelField={ind.labelField}
             indicatorCode={ind.code}
+            tooltipAfterLabel={ind.tooltipContext ? buildTooltipAfterLabel(ind.tooltipContext) : undefined}
           />
         ))}
       </div>

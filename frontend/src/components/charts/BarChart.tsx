@@ -45,6 +45,7 @@ interface BarChartProps {
     color?: string;
   };
   maxValue?: number;
+  tooltipAfterLabel?: false | ((context: import('chart.js').TooltipItem<'bar'>) => string);
 }
 
 export function BarChart({
@@ -57,6 +58,7 @@ export function BarChart({
   height = 'h-64',
   referenceLine,
   maxValue,
+  tooltipAfterLabel,
 }: BarChartProps) {
   const chartRef = useRef<ChartJS<'bar'>>(null);
 
@@ -235,18 +237,20 @@ export function BarChart({
           boxPadding: 4,
           callbacks: {
             ...(valueFormat ? { label: createTooltipCallback(valueFormat) } : {}),
-            afterLabel: (context) => {
-              const allData = (context.dataset.data as (number | null)[])
-                .map(Number)
-                .filter((v): v is number => Number.isFinite(v));
-              if (allData.length === 0) return '';
-              const max = Math.max(...allData);
-              if (max === 0) return '';
-              const pct = Math.round((Number(context.raw) / max) * 100);
-              const sorted = allData.slice().sort((a, b) => b - a);
-              const rank = sorted.indexOf(Number(context.raw)) + 1;
-              return `Rank #${rank} · ${pct}% do máximo`;
-            },
+            ...(tooltipAfterLabel !== false ? {
+              afterLabel: tooltipAfterLabel ?? ((context) => {
+                const allData = (context.dataset.data as (number | null)[])
+                  .map(Number)
+                  .filter((v): v is number => Number.isFinite(v));
+                if (allData.length === 0) return '';
+                const max = Math.max(...allData);
+                if (max === 0) return '';
+                const pct = Math.round((Number(context.raw) / max) * 100);
+                const sorted = allData.slice().sort((a, b) => b - a);
+                const rank = sorted.indexOf(Number(context.raw)) + 1;
+                return `Rank #${rank} · ${pct}% do máximo`;
+              }),
+            } : {}),
           },
         },
       },
