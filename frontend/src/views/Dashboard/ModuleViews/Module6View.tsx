@@ -28,7 +28,8 @@ type IndicatorMap = Record<string, ModuleIndicatorResponse>;
 
 type IndicatorGroup = 'tributacao' | 'percapita' | 'desempenho' | 'causal';
 
-const TREND_YEARS_BACK = 6;
+// Módulo 6 usa janela temporal fixa (2018-2023) — TREND_YEARS_BACK não é mais usado
+// const TREND_YEARS_BACK = 6;
 
 const INDICATORS_INFO = [
   {
@@ -311,7 +312,7 @@ function GroupTitle({ title, isOpen, onToggle }: { title: string; isOpen: boolea
 export function Module6View() {
   const { t } = useI18n();
   const tInd = useIndicatorLabel();
-  const { selectedYear, selectedMunicipio } = useFilterStore();
+  const { selectedMunicipio } = useFilterStore();
   const [indicators, setIndicators] = useState<IndicatorMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -434,25 +435,35 @@ export function Module6View() {
       setError(null);
 
       try {
-        const startYear = selectedYear - TREND_YEARS_BACK;
-        const yearParams = selectedMunicipio
-          ? {
-              id_municipio: selectedMunicipio,
-              ano_inicio: startYear,
-              ano_fim: selectedYear,
-            }
-          : {
-              ano: selectedYear,
-            };
+        // Janela temporal fixa: 2018-2023 (dados mais completos).
+        // Módulo 6 não usa seletor de ano — os indicadores precisam de séries multi-ano.
+        const ANO_INICIO = 2018;
+        const ANO_FIM = 2023;
+
+        // Params para indicadores tributação/percapita (FINBRA municipal)
+        const paramsFinbra = selectedMunicipio
+          ? { id_municipio: selectedMunicipio, ano_inicio: ANO_INICIO, ano_fim: ANO_FIM }
+          : { ano: ANO_FIM };
+
+        // Params para desempenho (ISS/ton, receita/ton) — precisam de múltiplos anos
+        const paramsDesempenho = selectedMunicipio
+          ? { id_municipio: selectedMunicipio, ano_inicio: ANO_INICIO, ano_fim: ANO_FIM }
+          : { ano: ANO_FIM };
+
+        // Params para causal (correlação, elasticidade) — precisam de ≥5 anos
+        // Sem município selecionado: retorna ranking dos top municípios
+        const paramsCausal = selectedMunicipio
+          ? { id_municipio: selectedMunicipio, min_anos: 5 }
+          : { min_anos: 5 };
 
         const promises = INDICATORS_INFO.map((ind) => {
-          const params = ind.code === 'IND-6.10' || ind.code === 'IND-6.11'
-            ? (selectedMunicipio
-              ? { id_municipio: selectedMunicipio, min_anos: 5 }
-              : {})
-            : selectedYear
-              ? yearParams
-              : {};
+          const isCausal = ind.code === 'IND-6.10' || ind.code === 'IND-6.11';
+          const isDesempenho = ind.group === 'desempenho';
+          const params = isCausal
+            ? paramsCausal
+            : isDesempenho
+              ? paramsDesempenho
+              : paramsFinbra;
 
           return indicatorsService
             .queryIndicator<IndicatorRow>({ codigo_indicador: ind.code, params })
@@ -478,7 +489,7 @@ export function Module6View() {
     };
 
     void loadIndicators();
-  }, [selectedYear, selectedMunicipio]);
+  }, [selectedMunicipio]);
 
   if (isLoading) {
     return (
@@ -501,7 +512,8 @@ export function Module6View() {
         <ExportButton moduleCode="6" />
       </div>
 
-      <FilterBar selectorMode="municipio" />
+      {/* Ano não se aplica aos indicadores de Módulo 6 — dados são multi-ano ou independentes */}
+      <FilterBar selectorMode="municipio" showYear={false} />
 
       {error && <ErrorAlert message={error} className="mb-6" />}
 
@@ -606,10 +618,25 @@ export function Module6View() {
                             />
                           )
                         ) : (
-                          <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
-                            {ind.group === 'causal'
-                              ? 'Sem observações suficientes para cálculo causal (n<5 ou série insuficiente).'
-                              : 'Dados não disponíveis para o filtro atual.'}
+                          <div className="h-64 flex flex-col items-center justify-center text-center gap-2 px-6">
+                            {(ind.group === 'desempenho' || ind.group === 'causal') && !selectedMunicipio ? (
+                              <>
+                                <p className="text-sm font-medium text-gray-600">
+                                  Selecione um porto no filtro acima
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  {ind.group === 'causal'
+                                    ? 'Este indicador requer a série histórica de um porto específico (mínimo 5 anos).'
+                                    : 'Selecione um porto para visualizar o retorno fiscal por tonelada ao longo do tempo.'}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-sm text-gray-500">
+                                {ind.group === 'causal'
+                                  ? 'Sem observações suficientes para o cálculo (n < 5 anos com dados completos).'
+                                  : 'Sem dados disponíveis para este porto no período 2018-2023.'}
+                              </p>
+                            )}
                           </div>
                         )}
                         <div className="mt-3 flex items-start gap-2 text-xs text-gray-500">

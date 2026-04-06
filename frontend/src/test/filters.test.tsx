@@ -46,11 +46,11 @@ describe('MunicipioSelector', () => {
     expect(groups.length).toBe(4);
   });
 
-  it('contains expected municipalities', () => {
+  it('contains expected porto names', () => {
     render(<MunicipioSelector />);
-    expect(screen.getByText('Santos (SP)')).toBeInTheDocument();
-    expect(screen.getByText('Vitória (ES)')).toBeInTheDocument();
-    expect(screen.getByText('Manaus (AM)')).toBeInTheDocument();
+    expect(screen.getByText('Porto de Santos (SP)')).toBeInTheDocument();
+    expect(screen.getByText('Porto de Vitória / Capuaba (ES)')).toBeInTheDocument();
+    expect(screen.getByText('Porto de Manaus (AM)')).toBeInTheDocument();
   });
 
   it('does NOT contain port-specific entries', () => {
@@ -126,7 +126,7 @@ describe('FilterBar', () => {
 
   it('renders municipio selector when selectorMode="municipio"', () => {
     render(<FilterBar selectorMode="municipio" />);
-    expect(screen.getByText('Todos os Municípios')).toBeInTheDocument();
+    expect(screen.getByText('Todos os Portos')).toBeInTheDocument();
   });
 
   it('hides year selector when showYear={false}', () => {

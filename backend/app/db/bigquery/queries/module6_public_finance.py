@@ -417,6 +417,10 @@ def query_receita_fiscal_por_tonelada(
         ON r.id_municipio = t.id_municipio AND r.ano = t.ano
     LEFT JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir
         ON COALESCE(r.id_municipio, t.id_municipio) = dir.id_municipio
+    WHERE
+        -- Sem município específico: retornar apenas portos com receita fiscal e tonelagem
+        COALESCE(r.receita_fiscal_total, 0) > 0
+        AND COALESCE(t.tonelagem_total, 0) > 0
     ORDER BY
         {order_by}
     """
@@ -471,6 +475,10 @@ def query_iss_por_tonelada(
         ON i.id_municipio = t.id_municipio AND i.ano = t.ano
     LEFT JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir
         ON COALESCE(i.id_municipio, t.id_municipio) = dir.id_municipio
+    WHERE
+        -- Sem município específico: retornar apenas portos com ISS e tonelagem válidos
+        COALESCE(i.iss_total, 0) > 0
+        AND COALESCE(t.tonelagem_total, 0) > 0
     ORDER BY
         {order_by}
     """
