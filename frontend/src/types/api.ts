@@ -333,6 +333,33 @@ export interface FiscalElasticidadeResponse {
   nota_metodologica: string;
 }
 
+export interface ParticipacaoISSItem {
+  porto: string;
+  uf: string;
+  nome_municipio: string;
+  ano: number;
+  iss_df_r_mi: number;
+  iss_finbra_r_mi: number;
+  participacao_pct: number;
+}
+
+export interface ParticipacaoISSPorto {
+  porto: string;
+  uf: string;
+  nome_municipio: string;
+  participacao_atual_pct: number;
+  ano_referencia: number;
+  iss_df_r_mi: number;
+  iss_finbra_r_mi: number;
+  tendencia: 'crescente' | 'estavel' | 'decrescente' | 'sem_dados';
+  serie: ParticipacaoISSItem[];
+}
+
+export interface ParticipacaoISSResponse {
+  portos: ParticipacaoISSPorto[];
+  nota_metodologica: string;
+}
+
 export interface SimulacaoFiscalResponse {
   porto: string;
   ano_referencia: number | null;

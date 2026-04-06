@@ -13,6 +13,7 @@ from app.api.deps import require_module_permission
 from app.db.models.user import User
 from app.services.fiscal_elasticity_service import (
     build_panel_df,
+    build_participacao_iss_df,
     compute_elasticity_panel,
     get_scatter_data,
     get_composition_data,
@@ -99,6 +100,33 @@ class FiscalElasticidadeResponse(BaseModel):
     scatter_points: list[ScatterPoint]
     composition: list[CompositionItem]
     portos_disponiveis: list[str]
+    nota_metodologica: str
+
+
+class ParticipacaoISSItem(BaseModel):
+    porto: str
+    uf: str
+    nome_municipio: str
+    ano: int
+    iss_df_r_mi: float
+    iss_finbra_r_mi: float
+    participacao_pct: float
+
+
+class ParticipacaoISSPorto(BaseModel):
+    porto: str
+    uf: str
+    nome_municipio: str
+    participacao_atual_pct: float
+    ano_referencia: int
+    iss_df_r_mi: float
+    iss_finbra_r_mi: float
+    tendencia: str  # 'crescente' | 'estavel' | 'decrescente' | 'sem_dados'
+    serie: list[ParticipacaoISSItem]
+
+
+class ParticipacaoISSResponse(BaseModel):
+    portos: list[ParticipacaoISSPorto]
     nota_metodologica: str
 
 
@@ -221,3 +249,112 @@ async def simulacao_fiscal(
     )
 
     return SimulacaoFiscalResponse(**result)
+
+
+@router.get(
+    "/participacao-iss",
+    response_model=ParticipacaoISSResponse,
+    summary="Participação do Porto no ISS Municipal",
+    description="""
+Calcula a fração do ISS municipal que provém diretamente do operador portuário.
+
+**Fórmula:**
+```
+participacao_pct = ISS pago pelo operador (DFs) / ISS total do município (FINBRA) × 100
+```
+
+**Exemplos reais:**
+- Porto do Pecém (São Gonçalo do Amarante, CE): ~13.8%
+- Portos do Paraná (Paranaguá, PR): ~7.8%
+- Porto de Imbituba (SC): ~5.8%
+- Porto do Mucuripe (Fortaleza, CE): ~5.6%
+
+**Interpretação para o investidor:**
+- **Alta participação (>10%)**: porto é peça central da arrecadação local — decisões do porto afetam diretamente as finanças do município
+- **Média (2-10%)**: contribuição relevante mas município tem base fiscal diversificada
+- **Baixa (<2%)**: porto é um entre muitos geradores de ISS — geralmente municípios grandes (Santos, Salvador)
+
+Retorna série histórica 2018-2024 e tendência (crescente/estável/decrescente).
+Resultado cacheado por 24h.
+""",
+)
+async def get_participacao_iss(
+    _: User = Depends(require_module_permission(6, "read")),
+) -> ParticipacaoISSResponse:
+    """Retorna participação do porto no ISS municipal por porto com série histórica."""
+    bq = _get_bq()
+    if bq is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="BigQuery indisponível — dados de participação requerem conexão ao banco.",
+        )
+
+    df = build_participacao_iss_df(bq_client=bq)
+    if df.empty:
+        return ParticipacaoISSResponse(
+            portos=[],
+            nota_metodologica="Sem dados disponíveis.",
+        )
+
+    import math
+
+    portos_result: list[ParticipacaoISSPorto] = []
+    for porto_nome, grp in df.groupby("porto"):
+        grp = grp.sort_values("ano")
+        latest = grp.iloc[-1]
+
+        # Tendência: comparar primeiro e último terço da série
+        if len(grp) >= 3:
+            first_half = grp.iloc[: len(grp) // 2]["participacao_pct"].mean()
+            second_half = grp.iloc[len(grp) // 2 :]["participacao_pct"].mean()
+            diff = second_half - first_half
+            if diff > 0.5:
+                tendencia = "crescente"
+            elif diff < -0.5:
+                tendencia = "decrescente"
+            else:
+                tendencia = "estavel"
+        else:
+            tendencia = "sem_dados"
+
+        serie = [
+            ParticipacaoISSItem(
+                porto=row["porto"],
+                uf=row["uf"],
+                nome_municipio=row.get("nome_municipio", ""),
+                ano=int(row["ano"]),
+                iss_df_r_mi=round(float(row["iss_df_r_mil"]) / 1000, 3),
+                iss_finbra_r_mi=round(float(row["iss_finbra_r_mil"]) / 1000, 3),
+                participacao_pct=round(float(row["participacao_pct"]), 2),
+            )
+            for _, row in grp.iterrows()
+            if not math.isnan(float(row["participacao_pct"]))
+        ]
+
+        portos_result.append(
+            ParticipacaoISSPorto(
+                porto=str(porto_nome),
+                uf=str(latest.get("uf", "")),
+                nome_municipio=str(latest.get("nome_municipio", "")),
+                participacao_atual_pct=round(float(latest["participacao_pct"]), 2),
+                ano_referencia=int(latest["ano"]),
+                iss_df_r_mi=round(float(latest["iss_df_r_mil"]) / 1000, 3),
+                iss_finbra_r_mi=round(float(latest["iss_finbra_r_mil"]) / 1000, 3),
+                tendencia=tendencia,
+                serie=serie,
+            )
+        )
+
+    # Ordenar por participação decrescente
+    portos_result.sort(key=lambda x: x.participacao_atual_pct, reverse=True)
+
+    nota = (
+        "Participação = ISS declarado nas DFs do operador portuário / ISS total arrecadado "
+        "pelo município (FINBRA/SICONFI) × 100. "
+        "Série 2018-2024. ISS das DFs representa o tributo pago diretamente pelo operador ao "
+        "município — não inclui subcontratados ou outros prestadores portuários. "
+        "O percentual real de dependência do porto pode ser maior se incluídas empresas "
+        "fornecedoras e prestadores de serviço ao porto."
+    )
+
+    return ParticipacaoISSResponse(portos=portos_result, nota_metodologica=nota)

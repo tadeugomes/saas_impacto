@@ -4,6 +4,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ElasticityKPICard } from './ElasticityKPICard';
 import { FiscalCompositionChart } from './FiscalCompositionChart';
 import { FiscalCalculator } from './FiscalCalculator';
+import { ParticipacaoISSChart } from './ParticipacaoISSChart';
 import { ScatterChart } from '../charts/ScatterChart';
 import { ChartCard } from '../charts/ChartCard';
 import { indicatorsService } from '../../api/indicators';
@@ -115,6 +116,18 @@ export function ContribuicaoFiscalSection() {
           composition={data?.composition ?? []}
           loading={loading}
         />
+      </div>
+
+      {/* Participação do Porto no ISS Municipal */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">
+          Dependência Fiscal do Município — Participação do Porto no ISS
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Fração do ISS arrecadado pelo município que provém diretamente do operador portuário.
+          Clique em um card para ver a série histórica.
+        </p>
+        <ParticipacaoISSChart />
       </div>
 
       {/* Calculadora */}

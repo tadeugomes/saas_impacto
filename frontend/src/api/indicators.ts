@@ -11,6 +11,7 @@ import type {
   InstallationMunicipioResolution,
   FiscalElasticidadeResponse,
   SimulacaoFiscalResponse,
+  ParticipacaoISSResponse,
 } from '../types/api';
 
 export const indicatorsService = {
@@ -112,6 +113,13 @@ export const indicatorsService = {
   async getFiscalElasticidade(): Promise<FiscalElasticidadeResponse> {
     const response = await apiClient.get<FiscalElasticidadeResponse>(
       '/api/v1/indicators/module6/fiscal/elasticidade',
+    );
+    return response.data;
+  },
+
+  async getParticipacaoISS(): Promise<ParticipacaoISSResponse> {
+    const response = await apiClient.get<ParticipacaoISSResponse>(
+      '/api/v1/indicators/module6/fiscal/participacao-iss',
     );
     return response.data;
   },

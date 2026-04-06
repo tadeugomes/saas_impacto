@@ -438,3 +438,78 @@ def simulate_fiscal_impact(
         "elasticidade_usada": "media_setor",
         "nota": nota,
     }
+
+
+def build_participacao_iss_df(bq_client) -> pd.DataFrame:
+    """Calcula a participação do porto no ISS municipal (ISS operador / ISS total município).
+
+    Fórmula: participacao_pct = (ISS das DFs do operador / ISS total FINBRA do município) × 100
+
+    Retorna DataFrame com colunas: porto, uf, nome_municipio, ano,
+    iss_df_r_mil, iss_finbra_r_mil, participacao_pct.
+    Retorna DataFrame vazio se BigQuery indisponível.
+    """
+    try:
+        from app.db.bigquery.queries.module6_public_finance import BD_DADOS_FINBRA
+        raw = getattr(bq_client, "client", bq_client)
+
+        # DFs ISS por porto (fixture)
+        rows_fixture = [
+            {
+                "porto": rec["porto"],
+                "uf": rec["uf"],
+                "ano": rec["ano"],
+                "iss_df_r_mil": rec["iss_r_mil"],
+            }
+            for rec in TRIBUTOS_PORTOS
+            if rec.get("iss_r_mil") is not None and rec["iss_r_mil"] > 0 and rec["ano"] <= 2024
+        ]
+        df_fixture = pd.DataFrame(rows_fixture)
+        if df_fixture.empty:
+            return pd.DataFrame()
+
+        # Mapear id_municipio
+        df_fixture["id_municipio"] = df_fixture["porto"].map(
+            {p: v["id_municipio"] for p, v in PORTO_MUNICIPIO_MAP.items()}
+        )
+        df_fixture["nome_municipio"] = df_fixture["porto"].map(
+            {p: v["nome"] for p, v in PORTO_MUNICIPIO_MAP.items()}
+        )
+        df_fixture = df_fixture.dropna(subset=["id_municipio"])
+
+        ids = df_fixture["id_municipio"].unique().tolist()
+        ids_str = ", ".join(f"'{i}'" for i in ids)
+
+        # FINBRA ISS para os mesmos municípios e anos
+        sql = f"""
+            SELECT CAST(id_municipio AS STRING) AS id_municipio,
+                   CAST(ano AS INT64) AS ano,
+                   ROUND(SUM(valor) / 1000, 2) AS iss_finbra_r_mil
+            FROM `{BD_DADOS_FINBRA}`
+            WHERE conta_bd = 'Imposto sobre Serviços de Qualquer Natureza - ISSQN'
+              AND estagio_bd = 'Receitas Brutas Realizadas'
+              AND id_municipio IN ({ids_str})
+              AND ano BETWEEN 2018 AND 2024
+              AND valor > 0
+            GROUP BY id_municipio, ano
+        """
+        df_finbra = pd.DataFrame([dict(r) for r in raw.query(sql)])
+        if df_finbra.empty:
+            return pd.DataFrame()
+
+        df_finbra["id_municipio"] = df_finbra["id_municipio"].astype(str)
+        df_finbra["ano"] = df_finbra["ano"].astype(int)
+
+        # Merge e calcular participação
+        df = df_fixture.merge(df_finbra, on=["id_municipio", "ano"], how="inner")
+        df["participacao_pct"] = (df["iss_df_r_mil"] / df["iss_finbra_r_mil"] * 100).round(2)
+
+        logger.info(
+            "fiscal_elasticity: participacao_iss %d obs de %d portos",
+            len(df), df["porto"].nunique(),
+        )
+        return df.sort_values(["porto", "ano"])
+
+    except Exception as exc:
+        logger.warning("fiscal_elasticity: falha ao calcular participacao_iss: %s", exc)
+        return pd.DataFrame()
