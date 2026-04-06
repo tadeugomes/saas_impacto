@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { ContribuicaoFiscalSection } from '../../../components/fiscalElasticity/ContribuicaoFiscalSection';
 
 import { FilterBar } from '../../../components/filters/FilterBar';
+import { MUNICIPIOS_PORTUARIOS } from '../../../components/filters/MunicipioSelector';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { ErrorAlert } from '../../../components/common/ErrorAlert';
 import { ChartCard } from '../../../components/charts/ChartCard';
@@ -535,6 +536,36 @@ export function Module6View() {
           </details>
         </section>
       </div>
+
+      {/* ── Cabeçalho contextual: indica qual porto está sendo analisado ─── */}
+      {(() => {
+        const portoLabel = selectedMunicipio
+          ? (MUNICIPIOS_PORTUARIOS.find((p) => p.id_municipio === selectedMunicipio)?.label ?? selectedMunicipio)
+          : null;
+        return (
+          <div className="flex items-center justify-between mb-2 mt-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-gray-700">
+                Indicadores de Finanças Municipais
+              </h2>
+              {portoLabel ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#0f2d52] text-white">
+                  {portoLabel}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                  Todos os portos · ano base 2023
+                </span>
+              )}
+            </div>
+            {portoLabel && (
+              <p className="text-xs text-gray-400">
+                Dados do município onde o porto está localizado · FINBRA/SICONFI 2018-2023
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="space-y-6">
         {Object.entries(localizedIndicatorsByGroup).map(([group, indicatorsOfGroup]) => {
