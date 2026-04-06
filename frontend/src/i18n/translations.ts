@@ -226,10 +226,10 @@ const messages: Record<Locale, MessageCatalog> = {
     'module1.score.noData': 'Sem dados de eficiência para esta instalação/período.',
     'module1.score.decomposition': 'Decomposição por componente',
     // Module 6
-    'module6.group.taxation': 'Imposição e Capacidade Fiscal',
-    'module6.group.perCapita': 'Indicadores por habitante',
-    'module6.group.performance': 'Eficiência e Retorno do Porto',
-    'module6.group.causal': 'Relação e Sensibilidade (Associação)',
+    'module6.group.taxation': 'Arrecadação Municipal (FINBRA)',
+    'module6.group.perCapita': 'Indicadores per Capita',
+    'module6.group.performance': 'Eficiência Fiscal por Tonelada',
+    'module6.group.causal': 'Associação Tonelagem × Receita',
     // Module 7
     'module7.composite.description': 'Indicadores integrados que combinam dados operacionais, econômicos, fiscais e ambientais. Cada índice inclui transparência total sobre os componentes utilizados.',
     // Module 9
@@ -366,10 +366,10 @@ const messages: Record<Locale, MessageCatalog> = {
     'module1.score.noData': 'No efficiency data for this facility/period.',
     'module1.score.decomposition': 'Component breakdown',
     // Module 6
-    'module6.group.taxation': 'Tax Capacity',
-    'module6.group.perCapita': 'Per capita indicators',
-    'module6.group.performance': 'Port Efficiency & Return',
-    'module6.group.causal': 'Correlation & Sensitivity',
+    'module6.group.taxation': 'Municipal Revenue (FINBRA)',
+    'module6.group.perCapita': 'Per Capita Indicators',
+    'module6.group.performance': 'Fiscal Efficiency per Tonne',
+    'module6.group.causal': 'Tonnage × Revenue Association',
     // Module 7
     'module7.composite.description': 'Integrated indicators combining operational, economic, fiscal, and environmental data. Each index includes full transparency on the components used.',
     // Module 9
