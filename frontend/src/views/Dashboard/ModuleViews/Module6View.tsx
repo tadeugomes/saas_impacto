@@ -87,14 +87,14 @@ const INDICATORS_INFO = [
   },
   {
     code: 'IND-6.06',
-    name: 'ICMS por Tonelada',
+    name: 'ISS por Tonelada',
     unit: 'R$/ton',
-    desc: 'Eficiência fiscal da movimentação portuária.',
-    valueField: 'icms_por_tonelada',
+    desc: 'Retorno fiscal da movimentação portuária via ISSQN.',
+    valueField: 'iss_por_tonelada',
     group: 'desempenho',
     interpretation:
-      'Quanto ICMS é gerado por tonelada movimentada. Útil para avaliar retorno fiscal da operação.',
-    question: 'Quanto de ICMS o município ganha em média por tonelada movimentada?',
+      'Quanto ISS (Imposto Sobre Serviços) é gerado por tonelada movimentada. A atividade portuária é tributada como serviço — o ICMS tem incidência mínima em portos.',
+    question: 'Quanto de ISS o município arrecada em média por tonelada movimentada?',
   },
   {
     code: 'IND-6.07',

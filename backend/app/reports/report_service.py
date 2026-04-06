@@ -668,7 +668,7 @@ class ReportService:
             "receita_total",
             "receita_per_capita",
             "crescimento_receita_pct",
-            "icms_por_tonelada",
+            "iss_por_tonelada",
             "indice_eficiencia",
             "indice_relevancia",
             "indice_integracao",

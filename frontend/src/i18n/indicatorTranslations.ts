@@ -47,7 +47,7 @@ const EN_TRANSLATIONS: Record<string, IndicatorTranslation> = {
   'IND-6.03': { name: 'Total Municipal Revenue', desc: 'Total municipal revenue' },
   'IND-6.04': { name: 'Per Capita Revenue', desc: 'Revenue per inhabitant' },
   'IND-6.05': { name: 'Revenue Growth', desc: 'Annual revenue change (%)' },
-  'IND-6.06': { name: 'ICMS per Tonne', desc: 'Fiscal efficiency of port movement' },
+  'IND-6.06': { name: 'ISS per Tonne', desc: 'Services tax (ISS/ISSQN) per tonne moved — port activity is taxed as a service, not as merchandise' },
   'IND-6.07': { name: 'Total Tax Revenue', desc: 'ICMS + ISS by municipality' },
   'IND-6.08': { name: 'Tax Revenue per Capita', desc: 'Tax revenue per inhabitant' },
   'IND-6.09': { name: 'Tax Revenue per Tonne', desc: 'Total tax on physical movement' },

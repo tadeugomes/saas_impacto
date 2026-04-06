@@ -414,27 +414,30 @@ def query_receita_fiscal_por_tonelada(
     """
 
 
-def query_icms_por_tonelada(
+def query_iss_por_tonelada(
     id_municipio: Optional[str] = None,
     ano: Optional[int] = None,
     ano_inicio: Optional[int] = None,
     ano_fim: Optional[int] = None,
 ) -> str:
     """
-    IND-6.06: ICMS por Tonelada Movimentada (R$/t).
+    IND-6.06: ISS por Tonelada Movimentada (R$/t).
+
+    Usa ISSQN (Imposto Sobre Serviços de Qualquer Natureza) pois a atividade
+    portuária é tributada como serviço — o ICMS tem incidência mínima em portos.
     """
     receita_where = _as_int_filters(id_municipio, ano, ano_inicio, ano_fim)
     tonelagem_where = _as_mart_filters(id_municipio, ano, ano_inicio, ano_fim)
-    order_by = _safe_order_by_id_ou_ano(id_municipio, "icms_por_tonelada")
+    order_by = _safe_order_by_id_ou_ano(id_municipio, "iss_por_tonelada")
     return f"""
-    WITH icms AS (
+    WITH iss AS (
         SELECT
             CAST(id_municipio AS STRING) AS id_municipio,
             CAST(ano AS INT64) AS ano,
-            SUM(valor) AS icms_total
+            SUM(valor) AS iss_total
         FROM `{BD_DADOS_FINBRA}`
         WHERE
-            conta_bd = 'Cota-Parte do ICMS'
+            conta_bd = 'Imposto sobre Serviços de Qualquer Natureza - ISSQN'
             AND estagio_bd = 'Receitas Brutas Realizadas'
             AND valor IS NOT NULL
             {f"AND {receita_where}" if receita_where else ""}
@@ -452,10 +455,10 @@ def query_icms_por_tonelada(
         COALESCE(i.id_municipio, t.id_municipio) AS id_municipio,
         dir.nome AS nome_municipio,
         COALESCE(i.ano, t.ano) AS ano,
-        COALESCE(i.icms_total, 0) AS icms_total,
+        COALESCE(i.iss_total, 0) AS iss_total,
         COALESCE(t.tonelagem_total, 0) AS tonelagem_total,
-        ROUND(COALESCE(i.icms_total, 0) / NULLIF(COALESCE(t.tonelagem_total, 0), 0), 4) AS icms_por_tonelada
-    FROM icms i
+        ROUND(COALESCE(i.iss_total, 0) / NULLIF(COALESCE(t.tonelagem_total, 0), 0), 4) AS iss_por_tonelada
+    FROM iss i
     FULL OUTER JOIN toneladas t
         ON i.id_municipio = t.id_municipio AND i.ano = t.ano
     LEFT JOIN `{BD_DADOS_DIRETORIO_MUNICIPIO}` dir
@@ -463,6 +466,10 @@ def query_icms_por_tonelada(
     ORDER BY
         {order_by}
     """
+
+
+# Alias para compatibilidade retroativa
+query_icms_por_tonelada = query_iss_por_tonelada
 
 
 def query_correlacao_tonelagem_receita_fiscal(
@@ -600,7 +607,7 @@ QUERIES_MODULE_6 = {
     "IND-6.03": query_receita_total_municipal,
     "IND-6.04": query_receita_per_capita,
     "IND-6.05": query_crescimento_receita,
-    "IND-6.06": query_icms_por_tonelada,
+    "IND-6.06": query_iss_por_tonelada,
     "IND-6.07": query_receita_fiscal_total,
     "IND-6.08": query_receita_fiscal_per_capita,
     "IND-6.09": query_receita_fiscal_por_tonelada,

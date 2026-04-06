@@ -180,7 +180,7 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
             {"code": "IND-6.03", "name": "Receita Total Municipal", "unit": "R$", "description": "Receita total municipal (FINBRA)"},
             {"code": "IND-6.04", "name": "Receita per Capita", "unit": "R$/hab", "description": "Receita municipal por habitante"},
             {"code": "IND-6.05", "name": "Crescimento da Receita", "unit": "%", "description": "Variação anual da receita"},
-            {"code": "IND-6.06", "name": "ICMS por Tonelada", "unit": "R$/ton", "description": "ICMS arrecadado por tonelada movimentada"},
+            {"code": "IND-6.06", "name": "ISS por Tonelada", "unit": "R$/ton", "description": "ISSQN arrecadado por tonelada movimentada (atividade portuária tributada como serviço)"},
             {"code": "IND-6.07", "name": "Receita Fiscal Total", "unit": "R$", "description": "Soma de ICMS + ISS por município"},
             {"code": "IND-6.08", "name": "Receita Fiscal per Capita", "unit": "R$/hab", "description": "Receita fiscal por habitante"},
             {"code": "IND-6.09", "name": "Receita Fiscal por Tonelada", "unit": "R$/ton", "description": "Receita fiscal (ICMS + ISS) por tonelada movimentada"},
@@ -191,7 +191,7 @@ MODULE_TEMPLATES: Dict[str, Dict] = {
         "highlights": [
             {"indicator": "IND-6.03", "role": "headline", "label": "Receita total municipal"},
             {"indicator": "IND-6.05", "role": "trend", "label": "Crescimento da receita"},
-            {"indicator": "IND-6.06", "role": "context", "label": "ICMS por tonelada"},
+            {"indicator": "IND-6.06", "role": "context", "label": "ISS por tonelada"},
         ],
         "methodological_notes": [
             "Dados fiscais: FINBRA/Tesouro Nacional e Secretarias Estaduais de Fazenda.",
