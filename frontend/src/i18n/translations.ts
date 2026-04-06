@@ -16,6 +16,7 @@ export type TranslationKey =
   | 'navigation.module9'
   | 'navigation.module10'
   | 'navigation.module11'
+  | 'navigation.module12'
   // Module 3 — multiplier panel
   | 'module3.multiplier.causalBeta'
   | 'module3.multiplier.causalActive'
@@ -93,6 +94,8 @@ export type TranslationKey =
   | 'module10.subtitle'
   | 'module11.title'
   | 'module11.subtitle'
+  | 'module12.title'
+  | 'module12.subtitle'
   | 'module11.selectPort'
   | 'module11.selectPortHint'
   // Module 1 — tabs & sections
@@ -159,6 +162,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module9': 'Risco Ambiental',
     'navigation.module10': 'Compliance',
     'navigation.module11': 'Previsão de Cargas',
+    'navigation.module12': 'Capacidade Portuária',
     // Module 3 — multiplier panel
     'module3.multiplier.causalBeta': 'Estimativa de impacto aproximada',
     'module3.multiplier.causalActive': 'Estimativa de impacto ativa',
@@ -275,6 +279,8 @@ const messages: Record<Locale, MessageCatalog> = {
     'module10.subtitle': 'Monitoramento regulatório do ecossistema portuário',
     'module11.title': 'Previsão de Movimentação de Cargas',
     'module11.subtitle': 'Projeção de 5 anos com base em indicadores econômicos, operacionais, safra e clima',
+    'module12.title': 'Capacidade Portuária',
+    'module12.subtitle': 'Análise de capacidade de cais (Eq. 1b), BOR/BUR e identificação de gargalos para investidores',
     'module11.selectPort': 'Selecione um porto para gerar a previsão de cargas.',
     'module11.selectPortHint': 'A projeção utiliza o histórico operacional da instalação selecionada.',
     'dashboard.title': 'Dashboard',
@@ -299,6 +305,7 @@ const messages: Record<Locale, MessageCatalog> = {
     'navigation.module9': 'Environmental Risk',
     'navigation.module10': 'Compliance',
     'navigation.module11': 'Cargo Forecast',
+    'navigation.module12': 'Port Capacity',
     // Module 3 — multiplier panel
     'module3.multiplier.causalBeta': 'Approximate impact estimate',
     'module3.multiplier.causalActive': 'Active impact estimate',
@@ -415,6 +422,8 @@ const messages: Record<Locale, MessageCatalog> = {
     'module10.subtitle': 'Regulatory monitoring of the port ecosystem',
     'module11.title': 'Cargo Movement Forecast',
     'module11.subtitle': '5-year projection based on economic, operational, crop, and climate indicators',
+    'module12.title': 'Port Capacity',
+    'module12.subtitle': 'Berth capacity analysis (Eq. 1b), BOR/BUR and bottleneck identification for investors',
     'module11.selectPort': 'Select a port to generate the cargo forecast.',
     'module11.selectPortHint': 'The projection uses the operational history of the selected facility.',
     'dashboard.title': 'Dashboard',

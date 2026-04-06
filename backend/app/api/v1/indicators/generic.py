@@ -503,6 +503,31 @@ async def get_modules_overview() -> JSONResponse:
             "fonte_principal": "Múltiplas",
             "descricao": "Índices compostos e rankings",
         },
+        8: {
+            "nome": "Macro Econômico",
+            "fonte_principal": "BACEN + IBGE",
+            "descricao": "Indicadores macroeconômicos (SELIC, IPCA, câmbio, IBC-Br)",
+        },
+        9: {
+            "nome": "Ambiental",
+            "fonte_principal": "ANA + INPE",
+            "descricao": "Risco hídrico, incêndio e índice ambiental",
+        },
+        10: {
+            "nome": "Compliance",
+            "fonte_principal": "PNCP + TCU + Querido Diário + DataJud",
+            "descricao": "Licitações, sanções, acórdãos e governança portuária",
+        },
+        11: {
+            "nome": "Forecasting",
+            "fonte_principal": "ANTAQ + Comex Stat + SARIMAX",
+            "descricao": "Previsões de tonelagem e comércio exterior",
+        },
+        12: {
+            "nome": "Capacidade Portuária",
+            "fonte_principal": "ANTAQ + Config Terminal",
+            "descricao": "Capacidade de cais (Eq. 1b), BOR/BUR, saturação e gargalos",
+        },
     }
 
     module_counts = {}
@@ -514,8 +539,9 @@ async def get_modules_overview() -> JSONResponse:
         if meta.get("unctad"):
             module_counts[modulo]["unctad_compliant"] += 1
 
+    all_modules = sorted(set(module_metadata.keys()) | set(module_counts.keys()))
     modules = []
-    for modulo in range(1, 8):
+    for modulo in all_modules:
         info = module_metadata.get(modulo, {})
         totals = module_counts.get(modulo, {"total_indicadores": 0, "unctad_compliant": 0})
         modules.append({
@@ -535,6 +561,6 @@ async def get_modules_overview() -> JSONResponse:
         "versao": "1.0",
         "total_indicadores": total,
         "unctad_compliant": unctad,
-        "total_modulos": 7,
+        "total_modulos": len(modules),
         "modulos": modules,
     })

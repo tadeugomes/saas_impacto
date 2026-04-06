@@ -5,6 +5,7 @@ from app.db.models.economic_impact_analysis import EconomicImpactAnalysis
 from app.db.models.tenant_module_permission import TenantModulePermission
 from app.db.models.audit_log import AuditLog
 from app.db.models.notification_preference import NotificationPreference
+from app.db.models.terminal_capacity_config import TerminalCapacityConfig
 
 __all__ = [
     "Tenant",
@@ -14,4 +15,5 @@ __all__ = [
     "TenantModulePermission",
     "AuditLog",
     "NotificationPreference",
+    "TerminalCapacityConfig",
 ]

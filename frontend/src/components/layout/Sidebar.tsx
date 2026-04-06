@@ -12,6 +12,7 @@ import {
   Settings,
   Shield,
   FileCheck,
+  Gauge,
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -108,6 +109,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       moduleColor: 'module11',
     },
     {
+      path: '/dashboard/module12',
+      icon: Gauge,
+      label: t('navigation.module12'),
+      description: 'Eq. 1b, BOR/BUR (8)',
+      moduleColor: 'module12',
+    },
+    {
       path: '/admin',
       icon: Settings,
       label: 'Admin',
@@ -190,6 +198,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             'bg-orange-500': item.moduleColor === 'module9',
                             'bg-rose-500': item.moduleColor === 'module10',
                             'bg-violet-500': item.moduleColor === 'module11',
+                            'bg-cyan-600': item.moduleColor === 'module12',
                           }
                         )} />
                       )}

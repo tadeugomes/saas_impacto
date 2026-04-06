@@ -210,6 +210,14 @@ from app.db.bigquery.queries.module11_forecasting import (
     QUERIES_MODULE_11,
 )
 
+# Module 12 - Port Capacity
+from app.db.bigquery.queries.module12_capacity import (
+    query_base_depurada_nao_conteiner,
+    query_base_depurada_conteiner,
+    query_contagem_bercos,
+    QUERIES_MODULE_12,
+)
+
 # Dicionário consolidado de todos os módulos
 ALL_QUERIES = {
     **QUERIES_MODULE_1,
@@ -227,6 +235,7 @@ ALL_QUERIES = {
     **QUERIES_DEFLATED,
     **QUERIES_MODULE_10,
     **QUERIES_MODULE_11,
+    **QUERIES_MODULE_12,
 }
 
 __all__ = [
