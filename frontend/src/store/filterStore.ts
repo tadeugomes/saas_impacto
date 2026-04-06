@@ -14,7 +14,7 @@ interface FilterState {
   resetFilters: () => void;
 }
 
-const DEFAULT_YEAR = 2023; // Use 2023 as default since database has data for this year
+const DEFAULT_YEAR = 2026; // Use 2026 as default — BigQuery has data up to Jan 2026
 
 export const useFilterStore = create<FilterState>((set) => ({
   selectedYear: DEFAULT_YEAR,

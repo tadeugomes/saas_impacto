@@ -32,6 +32,13 @@ TABLE_MERCADORIA = f"{ANTAQ_DATASET}.mercadoria_carga"
 # Helpers
 # ============================================================================
 
+def _pdt(col: str) -> str:
+    """COALESCE de SAFE.PARSE_DATETIME para formatos mistos ANTAQ (YYYY-MM-DD / DD/MM/YYYY)."""
+    return (
+        f"COALESCE(SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', {col}), "
+        f"SAFE.PARSE_DATETIME('%d/%m/%Y %H:%M:%S', {col}))"
+    )
+
 def _build_where(
     id_instalacao: Optional[str] = None,
     ano: Optional[int] = None,
@@ -93,13 +100,13 @@ def query_base_depurada_nao_conteiner(
             -- Perfil de carga dominante (pela maior tonelagem)
             ARRAY_AGG(
                 CASE
-                    WHEN LOWER(m.grupo_mercadoria) LIKE '%mineral%'
-                      OR LOWER(m.grupo_mercadoria) LIKE '%granel%'
-                      OR LOWER(m.subgrupo_mercadoria) LIKE '%sólido%'
+                    WHEN LOWER(m.string_field_3) LIKE '%mineral%'
+                      OR LOWER(m.string_field_3) LIKE '%granel%'
+                      OR LOWER(m.string_field_4) LIKE '%sólido%'
                     THEN 'Granel Sólido'
-                    WHEN LOWER(m.grupo_mercadoria) LIKE '%líquido%'
-                      OR LOWER(m.grupo_mercadoria) LIKE '%petróleo%'
-                      OR LOWER(m.subgrupo_mercadoria) LIKE '%líquido%'
+                    WHEN LOWER(m.string_field_3) LIKE '%líquido%'
+                      OR LOWER(m.string_field_3) LIKE '%petróleo%'
+                      OR LOWER(m.string_field_4) LIKE '%líquido%'
                     THEN 'Granel Líquido'
                     ELSE 'Carga Geral'
                 END
@@ -109,11 +116,11 @@ def query_base_depurada_nao_conteiner(
             c.sentido
         FROM `{VIEW_CARGA}` c
         LEFT JOIN `{TABLE_MERCADORIA}` m
-            ON c.cdmercadoria = m.cd_mercadoria
+            ON c.cdmercadoria = m.string_field_0
         WHERE c.vlpesocargabruta_oficial IS NOT NULL
           AND c.vlpesocargabruta_oficial > 0
           -- Excluir carga conteinerizada (TEU preenchido)
-          AND (c.cdteucarga IS NULL OR SAFE_CAST(c.cdteucarga AS INT64) = 0)
+          AND (c.teu IS NULL OR SAFE_CAST(c.teu AS INT64) = 0)
         GROUP BY c.idatracacao, c.sentido
     )
     SELECT
@@ -127,34 +134,34 @@ def query_base_depurada_nao_conteiner(
 
         -- Tempos operacionais (horas)
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
-            PARSE_DATETIME('%d/%m/%Y %H:%M:%S', a.data_chegada),
+            {_pdt('a.data_atracacao')},
+            {_pdt('a.data_chegada')},
             MINUTE
         ) / 60.0, 4) AS lineup_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
+            {_pdt('a.data_inicio_operacao')},
+            {_pdt('a.data_atracacao')},
             MINUTE
         ) / 60.0, 4) AS inop_pre_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+            {_pdt('a.data_termino_operacao')},
+            {_pdt('a.data_inicio_operacao')},
             MINUTE
         ) / 60.0, 4) AS t_op_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_desatracacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
+            {_pdt('a.data_desatracacao')},
+            {_pdt('a.data_termino_operacao')},
             MINUTE
         ) / 60.0, 4) AS inop_pos_h,
 
         -- Ta = inop_pre + t_op + inop_pos
         ROUND((
             DATETIME_DIFF(
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_desatracacao),
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
+                {_pdt('a.data_desatracacao')},
+                {_pdt('a.data_atracacao')},
                 MINUTE
             )
         ) / 60.0, 4) AS ta_h,
@@ -163,8 +170,8 @@ def query_base_depurada_nao_conteiner(
         ROUND(ca.lm_tons, 2) AS lm_tons,
         ROUND(ca.lm_tons / NULLIF(
             DATETIME_DIFF(
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+                {_pdt('a.data_termino_operacao')},
+                {_pdt('a.data_inicio_operacao')},
                 MINUTE
             ) / 60.0,
             0
@@ -175,8 +182,8 @@ def query_base_depurada_nao_conteiner(
     WHERE {where}
       -- Filtrar T_op > 0 (atracações com operação efetiva)
       AND DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+            {_pdt('a.data_termino_operacao')},
+            {_pdt('a.data_inicio_operacao')},
             MINUTE
           ) > 0
     ORDER BY a.ano, a.porto_atracacao, a.idatracacao
@@ -224,11 +231,11 @@ def query_base_depurada_conteiner(
         -- com TEU parciais. Somamos para obter o total.
         SELECT
             c.idatracacao,
-            SUM(SAFE_CAST(c.cdteucarga AS INT64)) AS lm_teu,
+            SUM(SAFE_CAST(c.teu AS INT64)) AS lm_teu,
             c.sentido
         FROM `{VIEW_CARGA}` c
-        WHERE c.cdteucarga IS NOT NULL
-          AND SAFE_CAST(c.cdteucarga AS INT64) > 0
+        WHERE c.teu IS NOT NULL
+          AND SAFE_CAST(c.teu AS INT64) > 0
         GROUP BY c.idatracacao, c.sentido
     )
     SELECT
@@ -242,33 +249,33 @@ def query_base_depurada_conteiner(
 
         -- Tempos operacionais (horas)
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
-            PARSE_DATETIME('%d/%m/%Y %H:%M:%S', a.data_chegada),
+            {_pdt('a.data_atracacao')},
+            {_pdt('a.data_chegada')},
             MINUTE
         ) / 60.0, 4) AS lineup_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
+            {_pdt('a.data_inicio_operacao')},
+            {_pdt('a.data_atracacao')},
             MINUTE
         ) / 60.0, 4) AS inop_pre_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+            {_pdt('a.data_termino_operacao')},
+            {_pdt('a.data_inicio_operacao')},
             MINUTE
         ) / 60.0, 4) AS t_op_h,
 
         ROUND(DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_desatracacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
+            {_pdt('a.data_desatracacao')},
+            {_pdt('a.data_termino_operacao')},
             MINUTE
         ) / 60.0, 4) AS inop_pos_h,
 
         ROUND((
             DATETIME_DIFF(
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_desatracacao),
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_atracacao),
+                {_pdt('a.data_desatracacao')},
+                {_pdt('a.data_atracacao')},
                 MINUTE
             )
         ) / 60.0, 4) AS ta_h,
@@ -277,8 +284,8 @@ def query_base_depurada_conteiner(
         ta.lm_teu,
         ROUND(ta.lm_teu / NULLIF(
             DATETIME_DIFF(
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-                PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+                {_pdt('a.data_termino_operacao')},
+                {_pdt('a.data_inicio_operacao')},
                 MINUTE
             ) / 60.0,
             0
@@ -288,8 +295,8 @@ def query_base_depurada_conteiner(
     INNER JOIN teu_por_atracacao ta ON a.idatracacao = ta.idatracacao
     WHERE {where}
       AND DATETIME_DIFF(
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_termino_operacao),
-            PARSE_DATETIME('%Y-%m-%d %H:%M:%S', a.data_inicio_operacao),
+            {_pdt('a.data_termino_operacao')},
+            {_pdt('a.data_inicio_operacao')},
             MINUTE
           ) > 0
     ORDER BY a.ano, a.porto_atracacao, a.idatracacao
