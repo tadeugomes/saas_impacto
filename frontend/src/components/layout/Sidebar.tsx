@@ -112,7 +112,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       path: '/dashboard/module12',
       icon: Gauge,
       label: t('navigation.module12'),
-      description: 'Eq. 1b, BOR/BUR (8)',
+      description: 'Gargalos e oportunidades (8)',
       moduleColor: 'module12',
     },
     {

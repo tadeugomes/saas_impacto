@@ -23,63 +23,63 @@ interface IndicatorConfig {
 const INDICATORS_INFO: IndicatorConfig[] = [
   {
     code: 'IND-12.01',
-    name: 'Capacidade Bruta do Cais',
+    name: 'Capacidade Máxima de Movimentação',
     unit: 't/ano ou TEU/ano',
-    desc: 'Capacidade via Eq. 1b com BOR admissível UNCTAD',
+    desc: 'Quanto o porto consegue movimentar por ano em cada berço, considerando padrões internacionais de ocupação (UNCTAD)',
     chartType: 'bar',
     valueField: 'c_cais_bruta',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.02',
-    name: 'BOR Observado vs. Admissível',
+    name: 'Nível de Ocupação dos Berços',
     unit: '%',
-    desc: 'Taxa de Ocupação de Berço (sinal de saturação)',
+    desc: 'Quanto do tempo disponível dos berços já está sendo utilizado — valores acima do limite indicam risco de congestionamento e filas',
     chartType: 'bar',
     valueField: 'bor_obs_pct',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.03',
-    name: 'BUR — Taxa de Utilização',
+    name: 'Aproveitamento da Capacidade Instalada',
     unit: '%',
-    desc: 'Movimentação realizada / Capacidade teórica',
+    desc: 'Percentual da capacidade total que está efetivamente sendo utilizado — indica potencial de crescimento ou necessidade de expansão',
     chartType: 'bar',
     valueField: 'bur_obs_pct',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.04',
-    name: 'Lote Médio por Atracação (IQR)',
+    name: 'Volume Médio por Navio',
     unit: 't ou TEU',
-    desc: 'Lm depurado por filtro IQR (parâmetro da Eq. 1b)',
+    desc: 'Carga média movimentada por atracação — valores maiores indicam operações de maior escala e eficiência logística',
     chartType: 'bar',
     valueField: 'mean_lm',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.05',
-    name: 'Tempo Médio Atracado (IQR)',
+    name: 'Tempo Médio de Permanência no Berço',
     unit: 'Horas',
-    desc: 'Ta depurado por IQR',
+    desc: 'Quanto tempo cada navio ocupa o berço em média — tempos menores significam maior rotatividade e produtividade',
     chartType: 'bar',
     valueField: 'mean_ta_h',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.06',
-    name: 'Capacidade Alocada por Perfil',
+    name: 'Distribuição da Capacidade por Tipo de Carga',
     unit: 't/ano ou TEU/ano',
-    desc: 'Capacidade por mix de carga (fração de tempo)',
+    desc: 'Como a capacidade do porto se divide entre granéis, contêineres e carga geral — revela o perfil logístico e oportunidades de diversificação',
     chartType: 'pie',
     valueField: 'c_alocada',
     labelField: 'perfil_carga',
   },
   {
     code: 'IND-12.08',
-    name: 'Folga Operacional',
+    name: 'Capacidade Disponível para Crescimento',
     unit: 't ou TEU',
-    desc: 'Diferença entre capacidade e demanda observada',
+    desc: 'Diferença entre o que o porto pode movimentar e o que efetivamente movimenta — indica espaço para novos contratos ou necessidade de investimento',
     chartType: 'bar',
     valueField: 'folga_operacional',
     labelField: 'perfil_carga',
@@ -225,7 +225,7 @@ export function Module12View() {
           });
           setIndicators(mapped);
         } catch (err: unknown) {
-          setError('Erro ao carregar indicadores de capacidade');
+          setError('Não foi possível carregar os dados de capacidade. Verifique sua conexão e tente novamente.');
         }
       } finally {
         setIsLoading(false);
@@ -281,7 +281,7 @@ export function Module12View() {
 
       {!selectedInstallation && (
         <div className="mt-6 p-4 bg-blue-50 text-blue-700 rounded-lg">
-          Selecione uma instalação para analisar a capacidade portuária.
+          Selecione um porto ou terminal para visualizar a análise de capacidade e oportunidades de investimento.
         </div>
       )}
 
@@ -291,67 +291,77 @@ export function Module12View() {
       {consolidacao && (
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-sm text-gray-500">Capacidade Total (Cais)</div>
+            <div className="text-sm text-gray-500">Capacidade Total do Porto</div>
             <div className="text-2xl font-bold text-gray-900 mt-1">
               {formatNumber(consolidacao.c_cais_total)}
             </div>
-            <div className="text-xs text-gray-400 mt-1">t/ano (todos os perfis)</div>
+            <div className="text-xs text-gray-400 mt-1">toneladas/ano (todos os tipos de carga)</div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-sm text-gray-500">Capacidade Sistêmica</div>
+            <div className="text-sm text-gray-500">Capacidade Efetiva do Sistema</div>
             <div className="text-2xl font-bold text-gray-900 mt-1">
               {formatNumber(consolidacao.c_sistema)}
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              min(cais, arm, hint) = {consolidacao.c_sistema === consolidacao.c_cais_total ? 'cais' : consolidacao.gargalo}
+              Limitada pelo {consolidacao.c_sistema === consolidacao.c_cais_total ? 'cais' : consolidacao.gargalo === 'armazenagem' ? 'armazenamento' : consolidacao.gargalo === 'hinterland' ? 'acesso terrestre' : consolidacao.gargalo}
             </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-sm text-gray-500">Gargalo</div>
+            <div className="text-sm text-gray-500">Principal Restrição</div>
             <div className={`text-2xl font-bold mt-1 ${
               consolidacao.gargalo === 'cais' ? 'text-amber-600' : 'text-red-600'
             }`}>
-              {consolidacao.gargalo === 'cais' ? 'Cais' :
-               consolidacao.gargalo === 'armazenagem' ? 'Armazenagem' :
-               consolidacao.gargalo === 'hinterland' ? 'Hinterlândia' : '-'}
+              {consolidacao.gargalo === 'cais' ? 'Berços de Atracação' :
+               consolidacao.gargalo === 'armazenagem' ? 'Armazenamento' :
+               consolidacao.gargalo === 'hinterland' ? 'Acesso Terrestre' : '-'}
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              Subsistema mais restritivo
+              Fator que mais limita o crescimento
             </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-sm text-gray-500">Perfis Analisados</div>
+            <div className="text-sm text-gray-500">Operações Analisadas</div>
             <div className="text-2xl font-bold text-gray-900 mt-1">
               {consolidacao.n_perfis}
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              Fonte: {analysis?.config_terminal?.fonte === 'config' ? 'Config terminal' : 'Parâmetros default'}
+              {analysis?.config_terminal?.fonte === 'config' ? 'Dados configurados do terminal' : 'Baseado em dados públicos ANTAQ'}
             </div>
           </div>
         </div>
       )}
 
       {/* Saturation Alerts */}
-      {analysis && (
-        <div className="mb-6">
-          {[...(analysis.nao_conteiner || []), ...(analysis.conteiner || [])]
-            .filter((r) => r.saturado)
-            .map((r, idx) => (
+      {analysis && (() => {
+        const saturados = [...(analysis.nao_conteiner || []), ...(analysis.conteiner || [])].filter((r) => r.saturado);
+        if (saturados.length === 0) return null;
+        return (
+          <div className="mb-6">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-3">
+              <span className="text-red-700 font-semibold text-sm">
+                Alerta: {saturados.length} {saturados.length === 1 ? 'berço opera' : 'berços operam'} acima da capacidade recomendada
+              </span>
+              <p className="text-red-600 text-xs mt-1">
+                Berços saturados geram filas de navios, aumento de custos de demurrage e perda de competitividade.
+              </p>
+            </div>
+            {saturados.map((r, idx) => (
               <div
                 key={idx}
                 className="p-3 bg-red-50 border border-red-200 rounded-lg mb-2 flex items-center gap-2"
               >
-                <span className="text-red-500 font-semibold text-sm">SATURADO</span>
+                <span className="text-red-500 font-semibold text-sm">CONGESTIONADO</span>
                 <span className="text-red-700 text-sm">
-                  {r.perfil_carga} no berço {r.berco} — BOR obs {r.bor_obs_pct?.toFixed(1)}% &gt; BOR adm {(r.bor_adm * 100).toFixed(0)}%
+                  {r.perfil_carga} no berço {r.berco} — ocupação de {r.bor_obs_pct?.toFixed(1)}% (limite recomendado: {(r.bor_adm * 100).toFixed(0)}%)
                 </span>
               </div>
             ))}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* Indicator filter */}
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -393,22 +403,25 @@ export function Module12View() {
       {/* Operational Parameters Table */}
       {analysis && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Parâmetros Operacionais (IQR-filtrados)
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Detalhamento por Berço e Tipo de Carga
           </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Visão operacional de cada berço — identifique gargalos específicos e oportunidades de melhoria
+          </p>
           <div className="overflow-x-auto bg-white rounded-xl shadow-sm border">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Perfil</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Tipo de Carga</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Berço</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Ta (h)</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Lm</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">C_cais</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">BOR obs %</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">BOR adm %</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">BUR %</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Permanência (h)</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Vol. Médio/Navio</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Capacidade</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Ocupação</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Limite Recom.</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Utilização</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">Situação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -422,17 +435,17 @@ export function Module12View() {
                       <td className="px-4 py-2 text-right font-medium">
                         {formatNumber(r.c_cais_bruta)}
                       </td>
-                      <td className="px-4 py-2 text-right">{r.bor_obs_pct?.toFixed(1) ?? '-'}</td>
-                      <td className="px-4 py-2 text-right">{(r.bor_adm * 100).toFixed(0)}</td>
-                      <td className="px-4 py-2 text-right">{r.bur_obs_pct?.toFixed(1) ?? '-'}</td>
+                      <td className="px-4 py-2 text-right">{r.bor_obs_pct?.toFixed(1) ? `${r.bor_obs_pct?.toFixed(1)}%` : '-'}</td>
+                      <td className="px-4 py-2 text-right">{(r.bor_adm * 100).toFixed(0)}%</td>
+                      <td className="px-4 py-2 text-right">{r.bur_obs_pct?.toFixed(1) ? `${r.bur_obs_pct?.toFixed(1)}%` : '-'}</td>
                       <td className="px-4 py-2 text-center">
                         {r.saturado ? (
                           <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                            Saturado
+                            Congestionado
                           </span>
                         ) : (
                           <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                            OK
+                            Operacional
                           </span>
                         )}
                       </td>
