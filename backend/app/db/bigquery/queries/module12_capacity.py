@@ -341,6 +341,89 @@ def query_contagem_bercos(
 
 
 # ============================================================================
+# Query: Horas de paralisação por categoria (H_cli, H_mnt, H_nav, H_out)
+# ============================================================================
+
+TABLE_PARALISACAO = f"{ANTAQ_DATASET}.tempos_atracacao_paralisacao"
+
+# Mapeamento dos 29 motivos ANTAQ → categorias do roteiro (Eq. 1c)
+# H_cli: indisponibilidade climática
+# H_mnt: manutenção de equipamentos
+# H_nav: restrições de navegação/maré
+# H_out: outras paralisações (órgãos públicos, segurança, etc.)
+# H_op:  operacional (não reduz H_ef — faz parte do ciclo normal)
+MOTIVO_CATEGORIA = {
+    "Chuva e/ou outras condições climáticas desfavoráveis": "H_cli",
+    "Maré para embarcações com restrição de operação": "H_nav",
+    "Quebra de equipamento do Porto, devidamente comprovada": "H_mnt",
+    "Quebra de equipamento do Operador Portuário, devidamente comprovada": "H_mnt",
+    "Manutenção preventiva": "H_mnt",
+    "Falta de energia elétrica": "H_mnt",
+    "Liberação de órgãos públicos": "H_out",
+    "Greve ou falta de trabalhadores portuários avulsos": "H_out",
+    "Motivo de segurança": "H_out",
+    "Acidente": "H_out",
+}
+# Motivos operacionais (não reduzem H_ef):
+# Mudança de porão, Aguardando transporte, Troca de turno, Limpeza,
+# Arqueação, Rechego, Aguardando carga/vagões, Peação, etc.
+
+
+def query_paralisacoes_por_berco(
+    id_instalacao: Optional[str] = None,
+    ano: Optional[int] = None,
+    ano_inicio: Optional[int] = None,
+    ano_fim: Optional[int] = None,
+) -> str:
+    """Horas de paralisação por berço e categoria H_ef.
+
+    Retorna horas agregadas por berço para cada motivo de paralisação,
+    permitindo calcular H_ef = H_cal - H_cli - H_mnt - H_nav - H_out
+    por berço.
+    """
+    clauses = []
+    if id_instalacao:
+        clauses.append(f"a.porto_atracacao = '{id_instalacao}'")
+    if ano:
+        clauses.append(f"CAST(a.ano AS INT64) = {ano}")
+    elif ano_inicio and ano_fim:
+        clauses.append(
+            f"CAST(a.ano AS INT64) BETWEEN {ano_inicio} AND {ano_fim}"
+        )
+    where = " AND ".join(clauses) if clauses else "1=1"
+
+    pdt_ini = (
+        "COALESCE("
+        "SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%E*S', p.dtinicio), "
+        "SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', p.dtinicio), "
+        "SAFE.PARSE_TIMESTAMP('%d/%m/%Y %H:%M:%S', p.dtinicio))"
+    )
+    pdt_fim = (
+        "COALESCE("
+        "SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%E*S', p.dttermino), "
+        "SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', p.dttermino), "
+        "SAFE.PARSE_TIMESTAMP('%d/%m/%Y %H:%M:%S', p.dttermino))"
+    )
+
+    return f"""
+    SELECT
+        a.porto_atracacao AS id_instalacao,
+        CAST(a.ano AS INT64) AS ano,
+        a.idberco AS berco,
+        p.descricaotempodesconto AS motivo,
+        COUNT(*) AS ocorrencias,
+        ROUND(SUM(TIMESTAMP_DIFF({pdt_fim}, {pdt_ini}, MINUTE)) / 60.0, 2) AS horas
+    FROM `{TABLE_PARALISACAO}` p
+    JOIN `{VIEW_ATRACACAO}` a ON a.idatracacao = p.idatracacao
+    WHERE {where}
+      AND {pdt_ini} IS NOT NULL
+      AND {pdt_fim} IS NOT NULL
+    GROUP BY 1, 2, 3, 4
+    ORDER BY berco, horas DESC
+    """
+
+
+# ============================================================================
 # Dicionário de queries do Módulo 12
 # ============================================================================
 

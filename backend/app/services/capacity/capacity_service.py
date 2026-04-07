@@ -17,6 +17,7 @@ from app.services.capacity.constants import (
     DEFAULT_CLEARANCE_H,
     DEFAULT_FATOR_TEU,
     DEFAULT_H_EF,
+    H_CAL,
 )
 from app.services.capacity.operational_indicators import compute_group_indicators
 
@@ -54,11 +55,33 @@ class CapacityAnalysisService:
             }
         """
         from app.db.bigquery.queries.module12_capacity import (
+            MOTIVO_CATEGORIA,
             query_base_depurada_conteiner,
             query_base_depurada_nao_conteiner,
+            query_paralisacoes_por_berco,
         )
 
-        # 1. Executar queries BQ em paralelo
+        # 0. Buscar dados de paralisação para calcular H_ef real
+        h_ef_breakdown = await self._compute_h_ef_breakdown(
+            id_instalacao, ano, ano_inicio, ano_fim,
+            query_paralisacoes_por_berco, MOTIVO_CATEGORIA,
+        )
+        if h_ef_breakdown:
+            h_ef = h_ef_breakdown["h_ef_medio"]
+            logger.info(
+                "h_ef_from_paralisacoes",
+                extra={
+                    "id_instalacao": id_instalacao,
+                    "h_ef_calculado": h_ef,
+                    "h_cli": h_ef_breakdown["h_cli"],
+                    "h_mnt": h_ef_breakdown["h_mnt"],
+                    "h_nav": h_ef_breakdown["h_nav"],
+                    "h_out": h_ef_breakdown["h_out"],
+                    "n_bercos_com_dados": h_ef_breakdown["n_bercos"],
+                },
+            )
+
+        # 1. Executar queries BQ
         sql_nao_cont = query_base_depurada_nao_conteiner(
             id_instalacao=id_instalacao,
             ano=ano,
@@ -144,4 +167,76 @@ class CapacityAnalysisService:
                 "fator_teu": fator_teu,
                 "bor_adm_override": bor_adm_override,
             },
+            "h_ef_breakdown": h_ef_breakdown,
+        }
+
+    async def _compute_h_ef_breakdown(
+        self,
+        id_instalacao: str,
+        ano: Optional[int],
+        ano_inicio: Optional[int],
+        ano_fim: Optional[int],
+        query_fn: Any,
+        motivo_map: Dict[str, str],
+    ) -> Optional[Dict[str, Any]]:
+        """Calcula H_ef desagregado a partir de paralisações ANTAQ.
+
+        H_ef = H_cal - H_cli - H_mnt - H_nav - H_out  (Eq. 1c)
+
+        Retorna a média ponderada por berço. Se não houver dados
+        de paralisação para a instalação, retorna None (fallback para default).
+        """
+        try:
+            sql = query_fn(
+                id_instalacao=id_instalacao,
+                ano=ano, ano_inicio=ano_inicio, ano_fim=ano_fim,
+            )
+            raw = await self._bq.execute_query(sql, timeout_ms=60000)
+        except Exception as exc:
+            logger.warning("h_ef_paralisacao_query_failed: %s", exc)
+            return None
+
+        if not raw:
+            logger.info("h_ef_paralisacao_sem_dados", extra={"id_instalacao": id_instalacao})
+            return None
+
+        logger.info("h_ef_paralisacao_raw_rows", extra={"n_rows": len(raw), "sample_motivo": raw[0].get("motivo", "") if raw else ""})
+
+        # Agregar horas por berço e categoria
+        berco_cats: Dict[str, Dict[str, float]] = {}
+        for row in raw:
+            berco = row.get("berco", "?")
+            motivo = row.get("motivo", "")
+            horas = float(row.get("horas", 0) or 0)
+            cat = motivo_map.get(motivo)
+            if cat is None:
+                continue  # motivo operacional — não reduz H_ef
+            if berco not in berco_cats:
+                berco_cats[berco] = {"H_cli": 0, "H_mnt": 0, "H_nav": 0, "H_out": 0}
+            berco_cats[berco][cat] += horas
+
+        if not berco_cats:
+            return None
+
+        # Calcular H_ef por berço e média
+        n = len(berco_cats)
+        totals = {"H_cli": 0.0, "H_mnt": 0.0, "H_nav": 0.0, "H_out": 0.0}
+        h_ef_per_berco: List[float] = []
+        for cats in berco_cats.values():
+            perda = sum(cats.values())
+            h_ef_per_berco.append(max(H_CAL - perda, 0))
+            for k in totals:
+                totals[k] += cats[k]
+
+        h_ef_medio = round(sum(h_ef_per_berco) / n, 1)
+
+        return {
+            "h_cal": H_CAL,
+            "h_cli": round(totals["H_cli"] / n, 1),
+            "h_mnt": round(totals["H_mnt"] / n, 1),
+            "h_nav": round(totals["H_nav"] / n, 1),
+            "h_out": round(totals["H_out"] / n, 1),
+            "h_ef_medio": h_ef_medio,
+            "n_bercos": n,
+            "fonte": "ANTAQ paralisações",
         }

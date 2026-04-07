@@ -111,6 +111,16 @@ interface CapacityAnalysis {
     fonte: string;
     nome_terminal: string | null;
   };
+  h_ef_breakdown?: {
+    h_cal: number;
+    h_cli: number;
+    h_mnt: number;
+    h_nav: number;
+    h_out: number;
+    h_ef_medio: number;
+    n_bercos: number;
+    fonte: string;
+  } | null;
 }
 
 interface CapacityResult {
@@ -351,6 +361,45 @@ export function Module12View() {
             </div>
             <div className="text-xs text-gray-400 mt-1">
               {consolidacao.n_bercos_distintos} berços em {consolidacao.n_perfis} combinações de carga
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* H_ef Breakdown */}
+      {analysis?.h_ef_breakdown && (
+        <div className="bg-white rounded-xl shadow-sm border p-5 mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            Disponibilidade Operacional Real (H_ef)
+          </h3>
+          <p className="text-xs text-gray-500 mb-4">
+            Das {analysis.h_ef_breakdown.h_cal.toLocaleString('pt-BR')}h do ano, quantas horas o porto efetivamente opera — baseado em registros reais de paralisação (ANTAQ)
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="text-center">
+              <div className="text-xs text-gray-400">Horas/Ano</div>
+              <div className="text-lg font-bold text-gray-900">{analysis.h_ef_breakdown.h_cal.toLocaleString('pt-BR')}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-red-400">Clima</div>
+              <div className="text-lg font-bold text-red-600">−{Math.round(analysis.h_ef_breakdown.h_cli).toLocaleString('pt-BR')}h</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-orange-400">Manutenção</div>
+              <div className="text-lg font-bold text-orange-600">−{Math.round(analysis.h_ef_breakdown.h_mnt).toLocaleString('pt-BR')}h</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-blue-400">Maré/Navegação</div>
+              <div className="text-lg font-bold text-blue-600">−{Math.round(analysis.h_ef_breakdown.h_nav).toLocaleString('pt-BR')}h</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-gray-400">Outras Paradas</div>
+              <div className="text-lg font-bold text-gray-600">−{Math.round(analysis.h_ef_breakdown.h_out).toLocaleString('pt-BR')}h</div>
+            </div>
+            <div className="text-center bg-green-50 rounded-lg p-2">
+              <div className="text-xs text-green-600 font-medium">H_ef Efetivo</div>
+              <div className="text-lg font-bold text-green-700">{Math.round(analysis.h_ef_breakdown.h_ef_medio).toLocaleString('pt-BR')}h</div>
+              <div className="text-[10px] text-green-500">média de {analysis.h_ef_breakdown.n_bercos} berços</div>
             </div>
           </div>
         </div>
