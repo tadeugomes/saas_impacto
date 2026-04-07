@@ -103,6 +103,8 @@ interface CapacityAnalysis {
     c_sistema: number;
     gargalo: string;
     n_perfis: number;
+    n_atracacoes_total: number;
+    n_bercos_distintos: number;
   };
   parametros: Record<string, unknown>;
   config_terminal?: {
@@ -343,12 +345,12 @@ export function Module12View() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-sm text-gray-500">Operações Analisadas</div>
+            <div className="text-sm text-gray-500">Base de Análise</div>
             <div className="text-2xl font-bold text-gray-900 mt-1">
-              {consolidacao.n_perfis}
+              {consolidacao.n_atracacoes_total.toLocaleString('pt-BR')} <span className="text-base font-normal text-gray-500">atracações</span>
             </div>
             <div className="text-xs text-gray-400 mt-1">
-              {analysis?.config_terminal?.fonte === 'config' ? 'Dados configurados do terminal' : 'Baseado em dados públicos ANTAQ'}
+              {consolidacao.n_bercos_distintos} berços em {consolidacao.n_perfis} combinações de carga
             </div>
           </div>
         </div>

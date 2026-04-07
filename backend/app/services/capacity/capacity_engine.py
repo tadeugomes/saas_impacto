@@ -264,4 +264,6 @@ def consolidate_system(
         "c_sistema": round(c_sistema, 2),
         "gargalo": gargalo,
         "n_perfis": len(capacity_results),
+        "n_atracacoes_total": sum(r.get("n_atracacoes", 0) for r in capacity_results),
+        "n_bercos_distintos": len({r.get("berco") for r in capacity_results if r.get("berco")}),
     }
